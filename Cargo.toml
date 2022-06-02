@@ -1,0 +1,15 @@
+[package]
+name = "rscap"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["std", "custom_layer_selection"]
+std = ["alloc"]
+alloc = []
+custom_layer_selection = ["rscap-macros/custom_layer_selection"]
+
+[dependencies]
+rscap-macros = { path = "../rscap-macros", version = "0.1" }
