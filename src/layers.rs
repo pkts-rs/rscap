@@ -1,211 +1,154 @@
-pub mod inet;
+pub mod ip;
 pub mod l2;
+pub mod mysql;
 pub mod tcp;
 pub mod traits;
 pub mod udp;
 
-use rscap_macros::{OwnedLayerDerives, RefLayerDerives, MutLayerDerives};
-
 use crate::layers::traits::*;
 
+use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+
+use core::any;
 use core::fmt::Debug;
 
-/*
-impl<'a, T: From<&'a [u8]> + ValidateBytes> TryFrom<&'a [u8]> for T {
-    type Error = ValidationError;
-
-    fn try_from(value: &'a [u8]) -> Result<T, Self::Error> {
-        Self::validate(value)?;
-        Ok(Self::from(value))
-    }
-}
-*/
-
-
-#[derive(Clone, OwnedLayerDerives)]
-#[owned_name(Raw)]
+#[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(RawAssociatedMetadata)]
-#[custom_layer_selection(RawLayerSelection)]
+#[ref_type(RawRef)]
 pub struct Raw {
     data: Vec<u8>,
-    /// Kept for the sake of compatibility of methods, but not normally used (unless a custom_layer_selection overrides it)
+    /// Kept for the sake of compatibility, but not normally used (unless a custom_layer_selection overrides it)
+    #[payload_field]
     payload: Option<Box<dyn Layer>>,
 }
 
-impl Debug for Raw {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Raw")
-            .field("data", &self.data)
-            .finish()
+impl ToBytes for Raw {
+    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+        bytes.extend(&self.data);
+        match &self.payload {
+            None => (),
+            Some(p) => p.to_bytes_extend(bytes),
+        }
     }
 }
 
-impl Layer for Raw {
+impl From<&RawRef<'_>> for Raw {
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn Layer> {
-        self.payload.as_ref().map(|p| p.as_ref())
+    fn from(value: &RawRef<'_>) -> Raw {
+        Raw {
+            data: Vec::from(<&[u8]>::from(value)),
+            payload: None,
+        }
     }
+}
 
+impl LayerImpl for Raw {
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn Layer> {
-        self.payload.as_mut().map(|p| p.as_mut())
-    }
-
-    #[inline]
-    fn can_set_payload(&self, payload: Option<&dyn Layer>) -> bool {
+    fn can_set_payload_default(&self, payload: Option<&dyn Layer>) -> bool {
         payload.is_none()
     }
 
     #[inline]
-    fn set_payload_unchecked(&mut self, payload: Option<Box<dyn Layer>>) {
-        self.payload = payload
+    fn len(&self) -> usize {
+        self.data.len()
+            + match &self.payload {
+                Some(i) => i.len(),
+                None => 0,
+            }
     }
 }
 
-impl ValidateBytes for Raw {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-}
-
-impl FromBytes<'_> for Raw {
+impl Raw {
     #[inline]
-    fn from_bytes_unchecked(bytes: &'_ [u8]) -> Self {
-        Raw { data: Vec::from(bytes), payload: None }
+    pub fn data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.data
     }
 }
 
-#[derive(Clone, Debug, RefLayerDerives)]
-#[owned_name(Raw)]
-#[metadata_type(Ipv4AssociatedMetadata)]
-#[custom_layer_selection(Ipv4LayerSelection)]
+#[derive(Clone, Debug, LayerRef, StatelessLayer)]
+#[owned_type(Raw)]
+#[metadata_type(RawAssociatedMetadata)]
 pub struct RawRef<'a> {
+    #[data_field]
     data: &'a [u8],
 }
 
-impl ValidateBytes for RawRef<'_> {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-}
-
-impl<'a> FromBytes<'a> for RawRef<'a> {
+impl<'a> FromBytesRef<'a> for RawRef<'a> {
     #[inline]
     fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
         RawRef { data: packet }
     }
 }
 
-impl<'a> LayerRef<'a> for RawRef<'a> {
+impl LayerByteIndexDefault for RawRef<'_> {
     #[inline]
-    fn as_bytes(&self) -> &'a [u8] {
-        self.data
-    }
-
-    fn get_layer<T: LayerRef<'a>>(&self) -> Option<T> {
-        if self.is_layer::<T>() {
-            return Some(unsafe {
-                RawRef::from_bytes_unchecked(self.data).cast_layer_unchecked::<T>()
-            });
-        }
-
-        #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = self
-            .custom_layer_selection_instance()
-            .as_any()
-            .downcast_ref::<&dyn CustomLayerSelection>()
-        {
-            return custom_selection
-                .get_layer_from_next(self.data, &T::type_layer_id())
-                .map(|offset| T::from_bytes_unchecked(&self.data[offset..]));
-        }
-
+    fn get_layer_byte_index_default(_bytes: &[u8], _layer_type: any::TypeId) -> Option<usize> {
         None
     }
 }
 
-#[derive(Debug, MutLayerDerives)]
-#[owned_name(Raw)]
-#[ref_name(RawRef)]
-#[metadata_type(Ipv4AssociatedMetadata)]
-#[custom_layer_selection(Ipv4LayerSelection)]
+impl Validate for RawRef<'_> {
+    #[inline]
+    fn validate_current_layer(_curr_layer: &[u8]) -> Result<(), ValidationError> {
+        Ok(())
+    }
+
+    #[inline]
+    fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
+impl RawRef<'_> {
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
+#[derive(Debug, LayerMut, StatelessLayer)]
+#[owned_type(Raw)]
+#[ref_type(RawRef)]
+#[metadata_type(RawAssociatedMetadata)]
 pub struct RawMut<'a> {
+    #[data_field]
     data: &'a mut [u8],
-}
-
-impl<'a> LayerMut<'a> for RawMut<'a> {
-    #[inline]
-    fn as_bytes(&'a self) -> &'a [u8] {
-        self.data
-    }
-
-    #[inline]
-    fn as_bytes_mut(&'a mut self) -> &'a mut [u8] {
-        self.data
-    }
-
-    #[inline]
-    fn get_layer<T: LayerRef<'a>>(&'a self) -> Option<T> {
-        #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = self
-            .custom_layer_selection_instance()
-            .as_any()
-            .downcast_ref::<&dyn CustomLayerSelection>()
-        {
-            return custom_selection
-                .get_layer_from_next(self.data, &T::type_layer_id())
-                .map(|offset| T::from_bytes_unchecked(&self.data[offset..]));
-        }
-        
-        Self::get_layer_from_raw(self.data)
-    }
-
-    fn get_layer_mut<T: LayerMut<'a>>(&'a mut self) -> Option<T> {
-        #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = self
-            .custom_layer_selection_instance()
-            .as_any()
-            .downcast_ref::<&dyn CustomLayerSelection>()
-        {
-            return custom_selection
-                .get_layer_from_next(self.data, &T::type_layer_id())
-                .map(|offset| T::from_bytes_unchecked(&mut self.data[offset..]));
-        }
-
-        Self::get_layer_mut_from_raw(self.data)
-    }
-
-    /// The non-custom variant of get_layer (if custom layer selection is used)
-    fn get_layer_from_raw<'b, T: LayerRef<'b>>(_bytes: &'b [u8]) -> Option<T> {
-        None
-    }
-
-    fn get_layer_mut_from_raw<'b, T: LayerMut<'b>>(_bytes: &'b mut [u8]) -> Option<T> {
-        None
-    }
-}
-
-impl ValidateBytes for RawMut<'_> {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
+    #[data_length_field]
+    len: usize,
 }
 
 impl<'a> FromBytesMut<'a> for RawMut<'a> {
     #[inline]
-    fn from_bytes_unchecked(bytes: &'a mut [u8]) -> Self {
-        RawMut { data: bytes }
+    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
+        RawMut {
+            len: length,
+            data: bytes,
+        }
+    }
+}
+
+impl<'a> From<&'a RawMut<'a>> for RawRef<'a> {
+    #[inline]
+    fn from(value: &'a RawMut<'a>) -> Self {
+        RawRef {
+            data: &value.data[..value.len]
+        }
+    }
+}
+
+impl RawMut<'_> {
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        &mut self.data[..self.len]
     }
 }

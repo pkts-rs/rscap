@@ -1,205 +1,106 @@
-use crate::layers::traits::{
-    AnyLayerMut, AnyLayerRef, BaseLayer, BaseLayerAppend, ConstSingleton, FromBytes, FromBytesMut,
-    IntoLayer, Layer, LayerAppend, LayerIndex, LayerMetadata, LayerMut, LayerRef, LayerStruct,
-    TcpAssociatedMetadata, ToOwnedLayer, ValidateBytes, ValidationError,
-};
+use crate::layers::traits::*;
+use core::any;
+use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
-#[cfg(feature = "custom_layer_selection")]
-use crate::layers::traits::{BaseLayerSelection, CustomLayerSelection, TcpLayerSelection};
-
-use core::fmt::Debug;
-use rscap_macros::{MutLayerDerives, OwnedLayerDerives, RefLayerDerives};
-
-#[derive(Clone, OwnedLayerDerives)]
-#[owned_name(Tcp)]
+#[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpAssociatedMetadata)]
-#[custom_layer_selection(TcpLayerSelection)]
+#[ref_type(TcpRef)]
 pub struct Tcp {
     pub sport: u32,
     pub dport: u32,
+    #[payload_field]
     pub payload: Option<Box<dyn Layer>>,
 }
 
-impl Debug for Tcp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TCP")
-            .field("sport", &self.sport)
-            .field("dport", &self.dport)
-            .finish()
-    }
-}
-
-impl Layer for Tcp {
-    #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn Layer> {
-        match &self.payload {
-            Some(p) => Some(p.as_ref()),
-            None => None,
-        }
-    }
-
-    #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn Layer> {
-        match &mut self.payload {
-            Some(p) => Some(p.as_mut()),
-            None => None,
-        }
-    }
-
-    #[inline]
-    fn can_set_payload(&self, _payload: Option<&dyn Layer>) -> bool {
-        true
-    }
-
-    #[inline]
-    fn set_payload(&mut self, payload: Option<Box<dyn Layer>>) -> Result<(), &'static str> {
-        self.payload = payload;
-        Ok(())
-    }
-
-    #[inline]
-    fn set_payload_unchecked(&mut self, payload: Option<Box<dyn Layer>>) {
-        self.payload = payload;
-    }
-}
-
-impl ValidateBytes for Tcp {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
+impl ToBytes for Tcp {
+    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
         todo!()
     }
 }
 
-impl FromBytes<'_> for Tcp {
-    fn from_bytes_unchecked(bytes: &'_ [u8]) -> Self {
+impl From<&TcpRef<'_>> for Tcp {
+    fn from(value: &TcpRef<'_>) -> Self {
         todo!()
     }
 }
 
-#[derive(Clone, Debug, RefLayerDerives)]
-#[owned_name(Tcp)]
+impl FromBytesCurrent for Tcp {
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+}
+
+impl LayerImpl for Tcp {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: Option<&dyn Layer>) -> bool {
+        true // any protocol may be served over TCP
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+#[derive(Clone, Debug, LayerRef, StatelessLayer)]
+#[owned_type(Tcp)]
 #[metadata_type(TcpAssociatedMetadata)]
-#[custom_layer_selection(TcpLayerSelection)]
 pub struct TcpRef<'a> {
+    #[data_field]
     data: &'a [u8],
 }
 
-impl<'a> LayerRef<'a> for TcpRef<'a> {
-    fn as_bytes(&self) -> &'a [u8] {
-        self.data
-    }
-
-    fn get_layer<T: LayerRef<'a>>(&self) -> Option<T> {
-        if self.is_layer::<T>() {
-            return Some(unsafe {
-                TcpRef::from_bytes_unchecked(self.data).cast_layer_unchecked::<T>()
-            });
-        }
-
-        #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = self
-            .custom_layer_selection_instance()
-            .as_any()
-            .downcast_ref::<&dyn CustomLayerSelection>()
-        {
-            return custom_selection
-                .get_layer_from_next(self.data, &T::type_layer_id())
-                .map(|offset| T::from_bytes_unchecked(&self.data[offset..]));
-        }
-        todo!()
-    }
-    /*
-    fn new(data: &'a [u8]) -> Option<Self> {
-        // TODO: check data for soundness here
-        Some(LayerRef::new_unchecked(data))
-    }
-
-    fn new_unchecked(data: &'a [u8]) -> Self {
-        TcpRef { data }
-    }
-    */
-}
-
-impl ValidateBytes for TcpRef<'_> {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
-    }
-}
-
-impl<'a> FromBytes<'a> for TcpRef<'a> {
+impl<'a> FromBytesRef<'a> for TcpRef<'a> {
+    #[inline]
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
         TcpRef { data: bytes }
     }
 }
 
-#[derive(Debug, MutLayerDerives)]
-#[ref_name(TcpRef)]
-#[owned_name(Tcp)]
-#[metadata_type(TcpAssociatedMetadata)]
-#[custom_layer_selection(TcpLayerSelection)]
-pub struct TcpMut<'a> {
-    data: &'a mut [u8],
-    len: usize,
-}
-
-impl<'a> LayerMut<'a> for TcpMut<'a> {
-    /*
-    fn new(data: &'a mut [u8]) -> Option<Self> {
-        // TODO: check data for soundness here
-        Some(LayerMut::new_unchecked(data))
-    }
-
-    fn new_unchecked(data: &'a mut [u8]) -> Self {
-        TcpMut { data }
-    }
-    */
-
-    fn as_bytes(&'a self) -> &'a [u8] {
-        &self.data[0..self.len]
-    }
-
-    fn as_bytes_mut(&'a mut self) -> &'a mut [u8] {
-        &mut self.data[0..self.len]
-    }
-
-    fn get_layer<T: LayerRef<'a>>(&'a self) -> Option<T> {
-        TcpMut::get_layer_from_raw(self.data)
-    }
-
-    fn get_layer_mut<T: LayerMut<'a>>(&'a mut self) -> Option<T> {
-        TcpMut::get_layer_mut_from_raw(self.data)
-    }
-
-    fn get_layer_from_raw<'b, T: LayerRef<'b>>(bytes: &'b [u8]) -> Option<T> {
-        todo!()
-    }
-
-    fn get_layer_mut_from_raw<'b, T: LayerMut<'b>>(bytes: &'b mut [u8]) -> Option<T> {
+impl LayerByteIndexDefault for TcpRef<'_> {
+    fn get_layer_byte_index_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
         todo!()
     }
 }
 
-impl ValidateBytes for TcpMut<'_> {
+impl Validate for TcpRef<'_> {
+    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
 
-    fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
+    #[inline]
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        Ok(()) // By default, we assume the next layer after Tcp is Raw, which has no validation constraints
+    }
+}
+
+#[derive(Debug, LayerMut, StatelessLayer)]
+#[ref_type(TcpRef)]
+#[owned_type(Tcp)]
+#[metadata_type(TcpAssociatedMetadata)]
+pub struct TcpMut<'a> {
+    #[data_field]
+    data: &'a mut [u8],
+    #[data_length_field]
+    len: usize,
+}
+
+impl<'a> From<&'a TcpMut<'a>> for TcpRef<'a> {
+    #[inline]
+    fn from(value: &'a TcpMut<'a>) -> Self {
+        TcpRef {
+            data: &value.data[..value.len]
+        }
     }
 }
 
 impl<'a> FromBytesMut<'a> for TcpMut<'a> {
-    fn from_bytes_unchecked(bytes: &'a mut [u8]) -> Self {
+    #[inline]
+    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
         TcpMut {
-            len: bytes.len(),
+            len: length,
             data: bytes,
         }
     }

@@ -1,6 +1,9 @@
-#![allow(clippy::upper_case_acronyms)]
+//#![allow(clippy::upper_case_acronyms)]
 
-mod layers;
+pub mod defrag;
+pub mod layers;
+pub mod sessions;
+pub mod utils;
 
 mod private {
     pub trait Sealed {}
@@ -8,46 +11,27 @@ mod private {
 
 #[cfg(test)]
 mod tests {
-    use crate::layers::inet::{Ipv4, Ipv4Ref};
-    use crate::layers::tcp::{Tcp, TcpMut};
-    use crate::layers::traits::{FromBytes, FromBytesMut};
-    use crate::layers::udp::Udp;
+    use crate::to_layers;
+    use crate::layers::ip::{Ipv4, Ipv4Ref};
+    use crate::layers::tcp::{Tcp, TcpRef};
+    use crate::layers::traits::FromBytesRef;
+    use crate::layers::traits::FromBytes;
+    use crate::layers::RawRef;
+    use crate::layers::traits::Layer;
 
-    #[test]
-    fn indexable() {
-        let mut t: Tcp = Tcp {
-            sport: 32,
-            dport: 21,
-            payload: None,
-        };
-        //let t2 = t.get_layer_mut::<TCP>();
-        let t2 = &mut t[Tcp];
 
-        let t3 = &t2[Udp];
-        print!("{:?}", &t3.dport);
+    fn than<'wootchlife>(homeslice: &'wootchlife [u8]) -> RawRef<'wootchlife> {
+        let wootch: RawRef = RawRef::from_bytes_unchecked(homeslice);
+        return wootch;
     }
 
     #[test]
-    fn div() {
-        let mut ip = Ipv4::from_bytes_unchecked(b"012");
+    fn from_the_layers() {
+        let bytes = b"herro".as_slice();
+        let tcp = Tcp::from_bytes(bytes);
 
-        let tcp: Tcp = Tcp {
-            sport: 32,
-            dport: 21,
-            payload: None,
-        };
+        let layers = to_layers!(bytes, Tcp, Tcp, Ipv4);
 
-        ip /= tcp.clone();
-        let tunneled = ip / tcp;
-
-        let t = &tunneled[Tcp];
-
-        let ip2 = Ipv4Ref::from_bytes_unchecked(b"01234");
-
-        let retunneled = ip2.clone() / tunneled;
-
-        let mut data = [0u8; 7];
-        let tcp2 = TcpMut::from_bytes_unchecked(data.as_mut());
-        let t3 = ip2 / tcp2;
+        //let layers = Tcp::from_layers(bytes, [Tcp, Ipv4, Tcp]);
     }
 }
