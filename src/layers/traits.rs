@@ -310,7 +310,6 @@ pub trait AnyLayerRef<'a>: Sized {
     }
 }
 
-
 // Casting directly to an immutable variant would introduce UB. Use Into<Self::AssociatedRef> and then cast immutably to be safe.
 pub trait AnyLayerMut<'a>: Sized {
     type AssociatedRef: AnyLayerRef<'a>;
@@ -376,7 +375,7 @@ pub trait AnyLayerMut<'a>: Sized {
     */
 }
 
-pub trait LayerRef<'a>: AnyLayerRef<'a> + BaseLayer + Into<&'a [u8]> { }
+pub trait LayerRef<'a>: AnyLayerRef<'a> + BaseLayer + Into<&'a [u8]> {}
 
 /// The default (non-custom)
 pub trait LayerByteIndexDefault {
@@ -401,7 +400,7 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
     }
 }
 
-pub trait LayerMut<'a>: AnyLayerMut<'a> + BaseLayer + Validate + {}
+pub trait LayerMut<'a>: AnyLayerMut<'a> + BaseLayer + Validate {}
 
 pub trait LayerTypeIndex: crate::private::Sealed {
     type LayerType: Layer;
@@ -409,7 +408,10 @@ pub trait LayerTypeIndex: crate::private::Sealed {
 
 pub trait LayerTypeIndexImpl {
     type Output: Layer + ?Sized;
-    fn associated_type_from_bytes_ignore_payload(&self, bytes: &[u8]) -> Result<Box<Self::Output>, ValidationError>;
+    fn associated_type_from_bytes_ignore_payload(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Box<Self::Output>, ValidationError>;
 
     fn associated_type_id(&self) -> any::TypeId;
 }
@@ -512,20 +514,20 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
 
 /// Indicates that a given [`Layer`] can be decoded directly from bytes without requiring any
 /// additional information.
-/// 
+///
 /// Some [`Layer`] types always have the same structure to their data regardless of the state of the protocol,
 /// while others have several data layout variants that may be ambiguous without accompanying information.
 /// An example of stateless layers would be [`Dns`], which only ever has one data layout, or [`PsqlClient`],
-/// which has information encoded into the first bytes of the packet that allows a decoder to determine the 
+/// which has information encoded into the first bytes of the packet that allows a decoder to determine the
 /// byte layout of the specific packet variant. On the other hand, stateful layers require knowlede of what
 /// packets have been exchanged prior to the given byte packet in order to be successfully converted. An
 /// example of this would be the [`MysqlClient`] and [`MysqlServer`] layers.
-/// 
-/// Any [`Layer`] type implementing [`StatelessLayer`] can be decoded directly from bytes using 
+///
+/// Any [`Layer`] type implementing [`StatelessLayer`] can be decoded directly from bytes using
 /// `from_bytes()`/`from_bytes_unchecked()` or by using a [`Defragment`] type. Layers that do not implement
 /// [`StatelessLayer`] can be decoded from bytes using a [`Session`] type (which keeps track of connection state)
 /// or by using constructor methods specific to that layer that require additional state information.
-pub trait StatelessLayer { }
+pub trait StatelessLayer {}
 
 #[macro_export]
 macro_rules! to_layers {
@@ -592,7 +594,7 @@ pub trait Ipv4Metadata: LayerMetadata {
     */
 }
 
-pub trait MysqlPacketMetadata: LayerMetadata { }
+pub trait MysqlPacketMetadata: LayerMetadata {}
 
 // ==========================================================
 //               Concrete Layer Metadata Types
@@ -641,17 +643,17 @@ impl Ipv4Metadata for UdpAssociatedMetadata {
 
 layer_metadata!(RawAssociatedMetadata);
 
-impl MysqlPacketMetadata for RawAssociatedMetadata { }
+impl MysqlPacketMetadata for RawAssociatedMetadata {}
 
 layer_metadata!(MysqlPacketAssociatedMetadata);
 
 layer_metadata!(MysqlClientAssociatedMetadata);
 
-impl MysqlPacketMetadata for MysqlClientAssociatedMetadata { }
+impl MysqlPacketMetadata for MysqlClientAssociatedMetadata {}
 
 layer_metadata!(MysqlServerAssociatedMetadata);
 
-impl MysqlPacketMetadata for MysqlServerAssociatedMetadata { }
+impl MysqlPacketMetadata for MysqlServerAssociatedMetadata {}
 
 // ===========================================
 //           CUSTOM LAYER SELECTION

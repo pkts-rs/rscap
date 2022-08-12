@@ -91,7 +91,7 @@ impl<'a> From<&'a TcpMut<'a>> for TcpRef<'a> {
     #[inline]
     fn from(value: &'a TcpMut<'a>) -> Self {
         TcpRef {
-            data: &value.data[..value.len]
+            data: &value.data[..value.len],
         }
     }
 }

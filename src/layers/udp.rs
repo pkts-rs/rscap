@@ -17,7 +17,10 @@ pub struct Udp {
 
 impl ToBytes for Udp {
     fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
-        let len: u16 = self.len().try_into().expect("UDP packet payload exceeded maximum permittable size of 2^16 bytes");
+        let len: u16 = self
+            .len()
+            .try_into()
+            .expect("UDP packet payload exceeded maximum permittable size of 2^16 bytes");
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(len.to_be_bytes());
@@ -180,7 +183,7 @@ impl<'a> From<&'a UdpMut<'a>> for UdpRef<'a> {
     #[inline]
     fn from(value: &'a UdpMut<'a>) -> Self {
         UdpRef {
-            data: &value.data[..value.len]
+            data: &value.data[..value.len],
         }
     }
 }
@@ -251,7 +254,7 @@ impl UdpMut<'_> {
 
     #[inline]
     pub fn set_payload_unchecked(&mut self, payload: &[u8]) {
-        let dst = &mut self.data[8..8+payload.len()];
+        let dst = &mut self.data[8..8 + payload.len()];
         for i in 0..payload.len() {
             dst[8 + i] = payload[i];
         }
