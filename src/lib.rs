@@ -11,7 +11,7 @@ mod private {
 
 #[cfg(test)]
 mod tests {
-    use crate::to_layers;
+    use crate::parse_layers;
     use crate::layers::ip::{Ipv4, Ipv4Ref};
     use crate::layers::tcp::{Tcp, TcpRef};
     use crate::layers::traits::FromBytesRef;
@@ -30,7 +30,7 @@ mod tests {
         let bytes = b"herro".as_slice();
         let tcp = Tcp::from_bytes(bytes);
 
-        let layers = to_layers!(bytes, Tcp, Tcp, Ipv4);
+        let layers = parse_layers!(bytes, Tcp, Tcp, Ipv4);
 
         //let layers = Tcp::from_layers(bytes, [Tcp, Ipv4, Tcp]);
     }

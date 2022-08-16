@@ -5,7 +5,7 @@ use core::fmt::Debug;
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
-#[metadata_type(UdpAssociatedMetadata)]
+#[metadata_type(UdpMetadata)]
 #[ref_type(UdpRef)]
 pub struct Udp {
     sport: u16,
@@ -15,8 +15,8 @@ pub struct Udp {
     payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for Udp {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+impl ToByteVec for Udp {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
         let len: u16 = self
             .len()
             .try_into()
@@ -27,7 +27,7 @@ impl ToBytes for Udp {
         bytes.extend(self.chksum.to_be_bytes());
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_extend(bytes),
+            Some(p) => p.to_byte_vec_extend(bytes),
         }
     }
 }
@@ -92,7 +92,7 @@ impl Udp {
 }
 
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
-#[metadata_type(UdpAssociatedMetadata)]
+#[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
 pub struct UdpRef<'a> {
     #[data_field]
@@ -106,9 +106,9 @@ impl<'a> FromBytesRef<'a> for UdpRef<'a> {
     }
 }
 
-impl LayerByteIndexDefault for UdpRef<'_> {
+impl LayerOffset for UdpRef<'_> {
     #[inline]
-    fn get_layer_byte_index_default(_bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
+    fn get_layer_offset_default(_bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
         if any::TypeId::of::<layers::Raw>() == layer_type {
             Some(8)
         } else {
@@ -169,7 +169,7 @@ impl Validate for UdpRef<'_> {
 }
 
 #[derive(Debug, LayerMut, StatelessLayer)]
-#[metadata_type(UdpAssociatedMetadata)]
+#[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
 #[ref_type(UdpRef)]
 pub struct UdpMut<'a> {

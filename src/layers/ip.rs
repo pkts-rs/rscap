@@ -1,47 +1,125 @@
 use core::fmt::Debug;
-use core::{any, cmp, mem};
+use core::{any, mem};
 
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::*;
 
-// Included in this package:
-// Ipv4, Ipv6
+use super::{Raw, RawRef};
+use super::tcp::{Tcp, TcpRef};
+use super::udp::{Udp, UdpRef};
+
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IpVersion {
+    /// Reserved; Internet Protocol, pre-v4
+    Reserved0 = 0,
+    _Unassigned1 = 1,
+    _Unassigned2 = 2,
+    _Unassigned3 = 3,
+    /// Internet Protocol, Version 4 (see RFC 760)
+    Ipv4 = 4,
+    /// Internet Stream Protocol (ST or ST-II) (see RFC 1819)
+    St = 5,
+    /// Internet Protocol, Version 6 (see RFC 2460)
+    Ipv6 = 6,
+    /// TP/IX The Next Internet (IPv7) (see RVC 1475)
+    Tpix = 7,
+    /// P Internet Protocol (see RFC 1621)
+    Pip = 8,
+    /// TCP and UDP over Bigger Addresses (TUBA) (see RFC 1347)
+    Tuba = 9,
+    _Unassigned10 = 10,
+    _Unassigned11 = 11,
+    _Unassigned12 = 12,
+    _Unassigned13 = 13,
+    _Unassigned14 = 14,
+    /// Reserved; version field sentinel value
+    Reserved15 = 15,
+}
+
+impl From<u8> for IpVersion {
+    #[inline]
+    fn from(value: u8) -> Self {
+        unsafe { mem::transmute(value & 0x0F) }
+    }
+}
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
-#[metadata_type(Ipv4AssociatedMetadata)]
+#[metadata_type(Ipv4Metadata)]
 #[ref_type(Ipv4Ref)]
 pub struct Ipv4 {
     // version, ihl, length, protocol, and checksum all calculated dynamically
-    dscp: DiffServ, // also known as tos
+    dscp: DiffServ, // also known as ToS
     ecn: Ecn,
     id: u16,
     flags: Ipv4Flags,
     frag_offset: u16,
     ttl: u8,
-    pub saddr: u32,
-    pub daddr: u32,
+    chksum: u16,
+    saddr: u32,
+    daddr: u32,
     options: Ipv4Options,
     #[payload_field]
-    pub payload: Option<Box<dyn Layer>>,
+    payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for Ipv4 {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
-        todo!()
+impl ToByteVec for Ipv4 {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
+        bytes.push(0b01100000 | (5 + (self.options.byte_len() / 4) as u8));
+        bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
+        bytes.extend(u16::try_from(self.len()).unwrap_or(0xFFFF).to_be_bytes()); // WARNING: packets with contents greater than 65535 bytes will have their length field truncated
+        bytes.extend(self.id.to_be_bytes());
+        bytes.extend((((self.flags.flags as u16) << 8) | self.frag_offset).to_be_bytes());
+        bytes.push(self.ttl);
+        bytes.push(self.payload.as_ref().map(|p| p.layer_metadata().as_any().downcast_ref::<&dyn Ipv4PayloadMetadata>().map(|m| m.ip_protocol_number()).unwrap_or(0xFD)).unwrap_or(0xFD)); // 0xFD when no payload specified
+        bytes.extend(self.chksum.to_be_bytes());
+        bytes.extend(self.saddr.to_be_bytes());
+        bytes.extend(self.daddr.to_be_bytes());
+        self.options.to_byte_vec_extend(bytes);
+        match self.payload.as_ref() {
+            Some(payload) => payload.to_byte_vec_extend(bytes),
+            None => (),
+        }
     }
 }
 
 impl From<&Ipv4Ref<'_>> for Ipv4 {
-    fn from(value: &Ipv4Ref<'_>) -> Self {
-        todo!()
+    fn from(ipv4: &Ipv4Ref<'_>) -> Self {
+        let mut res = Self::from_bytes_current_layer_unchecked(ipv4.into());
+        res.payload = match ipv4.layer_metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
+            Some(layer_selection) => layer_selection.payload_to_boxed(ipv4.into()),
+            None if ipv4.payload_raw().len() == 0 => None,
+            None => match ipv4.protocol() {
+                Ipv4DataProtocol::Tcp => Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw()))),
+                Ipv4DataProtocol::Udp => Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw()))),
+                /* Add additional protocols here */
+                _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
+            }
+        };
+
+        res
     }
 }
 
 impl FromBytesCurrent for Ipv4 {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
-        todo!()
+        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
+        Ipv4 {
+            dscp: ipv4.dscp(),
+            ecn: ipv4.ecn(),
+            id: ipv4.identifier(),
+            flags: ipv4.flags(),
+            frag_offset: ipv4.frag_offset(),
+            ttl: ipv4.ttl(),
+            chksum: ipv4.chksum(),
+            saddr: ipv4.saddr(),
+            daddr: ipv4.daddr(),
+            options: ipv4.options(),
+            payload: None,
+        }
     }
 }
 
@@ -53,7 +131,7 @@ impl LayerImpl for Ipv4 {
             Some(p) => p
                 .layer_metadata()
                 .as_any()
-                .downcast_ref::<&dyn Ipv4Metadata>()
+                .downcast_ref::<&dyn Ipv4PayloadMetadata>()
                 .is_some(),
         }
     }
@@ -70,7 +148,7 @@ impl Ipv4 {
 
 #[derive(Copy, Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Ipv4)]
-#[metadata_type(Ipv4AssociatedMetadata)]
+#[metadata_type(Ipv4Metadata)]
 pub struct Ipv4Ref<'a> {
     #[data_field]
     data: &'a [u8],
@@ -83,14 +161,34 @@ impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
     }
 }
 
-impl LayerByteIndexDefault for Ipv4Ref<'_> {
-    #[inline]
-    fn get_layer_byte_index_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
-        let next_layer = cmp::min(bytes[0] & 0x0F, 5) as usize * 4;
-        if bytes.len() == next_layer {
-            None
-        } else {
-            Some(next_layer)
+impl LayerOffset for Ipv4Ref<'_> {
+    fn get_layer_offset_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
+        let ihl = match bytes.get(0) {
+            Some(l) => (l & 0x0F) as usize * 4,
+            None => return None,
+        };
+
+        if ihl == bytes.len() {
+            return None
+        }
+
+        match bytes.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
+            Some(Ipv4DataProtocol::Tcp) => if layer_type == TcpRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    TcpRef::get_layer_offset_default(&bytes[ihl..], layer_type)
+                }
+            Some(Ipv4DataProtocol::Udp) => if layer_type == UdpRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    UdpRef::get_layer_offset_default(&bytes[ihl..], layer_type)
+                }
+            /* Add more Layer types here (Icmpv4, Icmpv6) */
+            _ => if layer_type == RawRef::layer_id_static() {
+                Some(ihl)
+            } else {
+                None
+            }
         }
     }
 }
@@ -98,18 +196,73 @@ impl LayerByteIndexDefault for Ipv4Ref<'_> {
 impl Validate for Ipv4Ref<'_> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        match curr_layer.len() {
-            0..=19 => Err(ValidationError::InvalidSize),
-            l if l < (curr_layer[0] & 0x0F) as usize * 4 => Err(ValidationError::InvalidSize),
-            _ => {
-                todo!()
-            },
+        let (version, ihl) = match curr_layer.get(0) {
+            None => return Err(ValidationError::InvalidSize), // Not enough bytes for header
+            Some(&b) => (b >> 4, (b & 0x0F) as usize * 4),
+        };
+
+        let total_length = match curr_layer.get(2..4).and_then(|s| <[u8; 2]>::try_from(s).ok()) {
+            None => return Err(ValidationError::InvalidSize),
+            Some(s) => u16::from_be_bytes(s) as usize,
+        };
+
+        if total_length > curr_layer.len() {
+            return Err(ValidationError::InvalidSize)
+        }
+
+        // Now that InvalidSize errors have been checked, we validate values
+        if version != 4 {
+            // Version number not 4 (required for Ipv4)
+            return Err(ValidationError::InvalidValue)
+        }
+
+        if ihl < 20 {
+            // Header length field must be at least 5 (so that corresponding header length is min required 20 bytes)
+            return Err(ValidationError::InvalidValue)
+        }
+
+        // Validate Ipv4 Options
+        let mut remaining_header = &curr_layer[20..ihl];
+        while let Some((&option_type, next)) = remaining_header.split_first() {
+            match option_type {
+                0 => break, // Eool
+                1 => remaining_header = next, // Nop
+                _ => match remaining_header.get(1) {
+                    None | Some(0..=1) => return Err(ValidationError::InvalidValue), // Insufficient bytes for length field OR length field wasn't long enough to cover header
+                    Some(&l) => remaining_header = match remaining_header.get(l as usize..) {
+                        None => return Err(ValidationError::InvalidValue), // Length field was too long
+                        Some(r) => r,
+                    },
+                }
+            }
+        };
+
+        // Lastly, validate for TrailingBytes
+        if total_length < curr_layer.len() {
+            Err(ValidationError::TrailingBytes(curr_layer.len() - total_length))
+        } else {
+            Ok(())
         }
     }
 
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        todo!()
+        let ihl = match curr_layer.get(0) {
+            Some(l) => (l & 0x0F) as usize * 4,
+            None => return Err(ValidationError::InvalidSize),
+        };
+
+        let next_layer = match curr_layer.get(ihl..) {
+            Some(l) => l,
+            None => return Err(ValidationError::InvalidSize),
+        };
+
+        match curr_layer.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
+            Some(Ipv4DataProtocol::Tcp) => TcpRef::validate(next_layer),
+            Some(Ipv4DataProtocol::Udp) => UdpRef::validate(next_layer),
+            /* Add more Layer types here (Icmpv4, Icmpv6) */
+            _ => RawRef::validate(next_layer),
+        }
     }
 }
 
@@ -161,8 +314,8 @@ impl<'a> Ipv4Ref<'a> {
 
     
     #[inline]
-    pub fn protocol(&self) -> Result<Ipv4DataProtocol, ValidationError> {
-        self.data[9].try_into()
+    pub fn protocol(&self) -> Ipv4DataProtocol {
+        self.data[9].into()
     }
 
     #[inline]
@@ -190,12 +343,16 @@ impl<'a> Ipv4Ref<'a> {
         let options_end = core::cmp::min(self.data[0] & 0x0F, 5) as usize * 4;
         Ipv4Options::try_from(&self.data[20..options_end]).unwrap()
     }
+
+    pub fn payload_raw(&self) -> &[u8] {
+        &self.data[self.ihl() as usize * 4..]
+    }
 }
 
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[owned_type(Ipv4)]
 #[ref_type(Ipv4Ref)]
-#[metadata_type(Ipv4AssociatedMetadata)]
+#[metadata_type(Ipv4Metadata)]
 pub struct Ipv4Mut<'a> {
     #[data_field]
     data: &'a mut [u8],
@@ -336,7 +493,7 @@ pub enum Ipv4DataProtocol {
     /// IP in IP encapsulation (see [`Ipv4`], [`Ipv6`], RFC 2003)
     IpInIp = 0x04,
     /// Internet Stream Protocol (see RFC 1190 and RFC 1819)
-    ST = 0x05,
+    St = 0x05,
     /// Transmission Control Protocol (see [`Tcp`], RFC 793)
     Tcp = 0x06,
     /// Core-Based Trees (see RFC 2189)
@@ -615,6 +772,115 @@ pub enum Ipv4DataProtocol {
     Ethernet = 0x8F,
     // Unassigned ports (0x90-0xFC)
     // Unassigned(u8) = 0x90,
+    _Unassigned0x90 = 0x90,
+    _Unassigned0x91 = 0x91,
+    _Unassigned0x92 = 0x92,
+    _Unassigned0x93 = 0x93,
+    _Unassigned0x94 = 0x94,
+    _Unassigned0x95 = 0x95,
+    _Unassigned0x96 = 0x96,
+    _Unassigned0x97 = 0x97,
+    _Unassigned0x98 = 0x98,
+    _Unassigned0x99 = 0x99,
+    _Unassigned0x9A = 0x9A,
+    _Unassigned0x9B = 0x9B,
+    _Unassigned0x9C = 0x9C,
+    _Unassigned0x9D = 0x9D,
+    _Unassigned0x9E = 0x9E,
+    _Unassigned0x9F = 0x9F,
+    _Unassigned0xA0 = 0xA0,
+    _Unassigned0xA1 = 0xA1,
+    _Unassigned0xA2 = 0xA2,
+    _Unassigned0xA3 = 0xA3,
+    _Unassigned0xA4 = 0xA4,
+    _Unassigned0xA5 = 0xA5,
+    _Unassigned0xA6 = 0xA6,
+    _Unassigned0xA7 = 0xA7,
+    _Unassigned0xA8 = 0xA8,
+    _Unassigned0xA9 = 0xA9,
+    _Unassigned0xAA = 0xAA,
+    _Unassigned0xAB = 0xAB,
+    _Unassigned0xAC = 0xAC,
+    _Unassigned0xAD = 0xAD,
+    _Unassigned0xAE = 0xAE,
+    _Unassigned0xAF = 0xAF,
+    _Unassigned0xB0 = 0xB0,
+    _Unassigned0xB1 = 0xB1,
+    _Unassigned0xB2 = 0xB2,
+    _Unassigned0xB3 = 0xB3,
+    _Unassigned0xB4 = 0xB4,
+    _Unassigned0xB5 = 0xB5,
+    _Unassigned0xB6 = 0xB6,
+    _Unassigned0xB7 = 0xB7,
+    _Unassigned0xB8 = 0xB8,
+    _Unassigned0xB9 = 0xB9,
+    _Unassigned0xBA = 0xBA,
+    _Unassigned0xBB = 0xBB,
+    _Unassigned0xBC = 0xBC,
+    _Unassigned0xBD = 0xBD,
+    _Unassigned0xBE = 0xBE,
+    _Unassigned0xBF = 0xBF,
+    _Unassigned0xC0 = 0xC0,
+    _Unassigned0xC1 = 0xC1,
+    _Unassigned0xC2 = 0xC2,
+    _Unassigned0xC3 = 0xC3,
+    _Unassigned0xC4 = 0xC4,
+    _Unassigned0xC5 = 0xC5,
+    _Unassigned0xC6 = 0xC6,
+    _Unassigned0xC7 = 0xC7,
+    _Unassigned0xC8 = 0xC8,
+    _Unassigned0xC9 = 0xC9,
+    _Unassigned0xCA = 0xCA,
+    _Unassigned0xCB = 0xCB,
+    _Unassigned0xCC = 0xCC,
+    _Unassigned0xCD = 0xCD,
+    _Unassigned0xCE = 0xCE,
+    _Unassigned0xCF = 0xCF,
+    _Unassigned0xD0 = 0xD0,
+    _Unassigned0xD1 = 0xD1,
+    _Unassigned0xD2 = 0xD2,
+    _Unassigned0xD3 = 0xD3,
+    _Unassigned0xD4 = 0xD4,
+    _Unassigned0xD5 = 0xD5,
+    _Unassigned0xD6 = 0xD6,
+    _Unassigned0xD7 = 0xD7,
+    _Unassigned0xD8 = 0xD8,
+    _Unassigned0xD9 = 0xD9,
+    _Unassigned0xDA = 0xDA,
+    _Unassigned0xDB = 0xDB,
+    _Unassigned0xDC = 0xDC,
+    _Unassigned0xDD = 0xDD,
+    _Unassigned0xDE = 0xDE,
+    _Unassigned0xDF = 0xDF,
+    _Unassigned0xE0 = 0xE0,
+    _Unassigned0xE1 = 0xE1,
+    _Unassigned0xE2 = 0xE2,
+    _Unassigned0xE3 = 0xE3,
+    _Unassigned0xE4 = 0xE4,
+    _Unassigned0xE5 = 0xE5,
+    _Unassigned0xE6 = 0xE6,
+    _Unassigned0xE7 = 0xE7,
+    _Unassigned0xE8 = 0xE8,
+    _Unassigned0xE9 = 0xE9,
+    _Unassigned0xEA = 0xEA,
+    _Unassigned0xEB = 0xEB,
+    _Unassigned0xEC = 0xEC,
+    _Unassigned0xED = 0xED,
+    _Unassigned0xEE = 0xEE,
+    _Unassigned0xEF = 0xEF,
+    _Unassigned0xF0 = 0xF0,
+    _Unassigned0xF1 = 0xF1,
+    _Unassigned0xF2 = 0xF2,
+    _Unassigned0xF3 = 0xF3,
+    _Unassigned0xF4 = 0xF4,
+    _Unassigned0xF5 = 0xF5,
+    _Unassigned0xF6 = 0xF6,
+    _Unassigned0xF7 = 0xF7,
+    _Unassigned0xF8 = 0xF8,
+    _Unassigned0xF9 = 0xF9,
+    _Unassigned0xFA = 0xFA,
+    _Unassigned0xFB = 0xFB,
+    _Unassigned0xFC = 0xFC,
     /// Use for experimentation and testing
     Exp1 = 0xFD,
     /// Use for experimentation and testing
@@ -623,16 +889,10 @@ pub enum Ipv4DataProtocol {
     Reserved = 0xFF,
 }
 
-impl TryFrom<u8> for Ipv4DataProtocol {
-    type Error = ValidationError;
-
+impl From<u8> for Ipv4DataProtocol {
     #[inline]
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if 0x90 <= value && value <= 0xFC {
-            Err(ValidationError::InvalidValue)
-        } else {
-            Ok(unsafe { mem::transmute(value) })
-        }
+    fn from(value: u8) -> Self {
+        unsafe { mem::transmute(value) }
     }
 }
 
@@ -640,6 +900,24 @@ impl TryFrom<u8> for Ipv4DataProtocol {
 pub struct Ipv4Options {
     options: Option<Vec<Ipv4Option>>,
     padding: Option<Vec<u8>>,
+}
+
+impl ToByteVec for Ipv4Options {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
+        match self.options.as_ref() {
+            None => (),
+            Some(options) => {
+                for option in options.iter() {
+                    option.to_byte_vec_extend(bytes);
+                }
+
+                match self.padding.as_ref() {
+                    None => (),
+                    Some(p) => bytes.extend(p),
+                }
+            }
+        }
+    }
 }
 
 impl TryFrom<&[u8]> for Ipv4Options {
@@ -681,6 +959,12 @@ impl TryFrom<&[u8]> for Ipv4Options {
 
 impl Ipv4Options {
     #[inline]
+    pub fn byte_len(&self) -> usize {
+        return self.padding.as_ref().map(|p| p.len()).unwrap_or(0) + self.options.as_ref().map(|o| o.iter().map(|o| o.byte_len()).sum()).unwrap_or(0)
+    }
+
+
+    #[inline]
     pub fn options(&self) -> &[Ipv4Option] {
         match &self.options {
             None => &[],
@@ -704,6 +988,22 @@ pub struct Ipv4Option {
     value: Option<Vec<u8>>,
 }
 
+impl ToByteVec for Ipv4Option {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
+        bytes.push(self.option_type);
+        match self.option_type {
+            0 | 1 => (),
+            _ => match self.value.as_ref() {
+                None => bytes.push(2),
+                Some(val) => {
+                    bytes.push((2 + val.len()) as u8);
+                    bytes.extend(val);
+                }
+            }
+        }
+    }
+}
+
 impl Ipv4Option {
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Ipv4Option {
@@ -720,6 +1020,14 @@ impl Ipv4Option {
     }
 
     #[inline]
+    pub fn byte_len(&self) -> usize {
+        match self.option_type {
+            0 | 1 => 1,
+            _ => 2 + self.value.as_ref().map(|v| v.len()).unwrap_or(0)
+        }
+    }
+
+    #[inline]
     pub fn option_type(&self) -> u8 {
         self.option_type
     }
@@ -728,16 +1036,6 @@ impl Ipv4Option {
     pub fn copied(&self) -> bool {
         self.option_type & 0x80 > 0
     }
-
-    /*
-    pub fn set_copied(&mut self, copied: bool) {
-        if copied {
-            self.option_type |= 0x80;
-        } else {
-            self.option_type &= !0x80;
-        }
-    }
-    */
 
     #[inline]
     pub fn option_class(&self) -> Ipv4OptionClass {
@@ -807,57 +1105,57 @@ pub enum Ipv4OptionType {
     /// Security (defunct option)
     Sec = 0x02,
     /// Record Route
-    RR = 0x07,
+    Rr = 0x07,
     /// Experimental Measurement
     Zsu = 0x0A,
     /// MTU Probe
-    MTUP = 0x0B,
+    Mtup = 0x0B,
     /// MTU Reply
-    MTUR = 0x0C,
+    Mtur = 0x0C,
     /// ENCODE
-    ENCODE = 0x0F,
+    Encode = 0x0F,
     /// Quick-Start
-    QS = 0x19,
+    Qs = 0x19,
     /// RFC 3692 Experiment
-    EXP1 = 0x1E,
+    Exp1 = 0x1E,
     // Time Stamp
-    TS = 0x44,
+    Ts = 0x44,
     /// Traceroute
-    TR = 0x52,
+    Tr = 0x52,
     /// RFC 3692 Experiment
-    EXP2 = 0x5E,
+    Exp2 = 0x5E,
     /// Security (RIPSO)
-    RIPSO = 0x82,
+    Ripso = 0x82,
     /// Loose Source Route
-    LSR = 0x83,
+    Lsr = 0x83,
     /// Extended Security (RIPSO)
-    ESEC = 0x85,
+    Esec = 0x85,
     /// Commercial IP Security
     CIPSO = 0x86,
     /// Stream ID
-    SID = 0x88,
+    Sid = 0x88,
     /// Strict Source Route
-    SSR = 0x89,
+    Ssr = 0x89,
     /// Experimental Access Control
-    VISA = 0x8E,
+    Visa = 0x8E,
     /// IMI Traffic Descriptor
-    IMITD = 0x90,
+    Imitd = 0x90,
     /// Extended Internet Protocol
-    EIP = 0x91,
+    Eip = 0x91,
     /// Address Extension
-    ADDEXT = 0x93,
+    AddExt = 0x93,
     /// Router Alert
-    RTRALT = 0x94,
+    RtrAlt = 0x94,
     /// Selective Directed Broadcast
-    SDB = 0x95,
+    Sdb = 0x95,
     /// Dynamic Packet State
-    DPS = 0x97,
+    Dps = 0x97,
     /// Upstream Multicast Packet
-    UMP = 0x98,
+    Ump = 0x98,
     /// RFC 3692 Experiment
-    EXP3 = 0x9E,
+    Exp3 = 0x9E,
     /// Experimental Flow Control
-    FINN = 0xCD,
+    Finn = 0xCD,
     /// RFC 3692 Experiment
-    EXP4 = 0xDE,
+    Exp4 = 0xDE,
 }

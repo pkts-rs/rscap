@@ -2,6 +2,9 @@ use core::{any, fmt, mem};
 
 use rscap_macros::layer_metadata;
 
+
+pub type LayerId = any::TypeId;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ValidationError {
     InvalidSize,          // Fatal error--can lead to panic! if used unchecked
@@ -32,9 +35,6 @@ impl<T: any::Any> AsAny for T {
     }
 }
 
-// TODO: convert this into From<Self> for Owned
-// impl<'a> From<TcpMut
-
 /// Utility method to convert a given type into some type implementing [`Layer`].
 /// This is used for converting a type implementing [`LayerRef<'_>] or [`LayerMut<'_>`]
 /// into its corresponding owned type. For example, the [`IPv4Ref<'_>`] type implements
@@ -42,23 +42,7 @@ impl<T: any::Any> AsAny for T {
 /// variant, the [`IPv4`] type.
 pub trait IntoLayer: Into<Self::Output> {
     type Output: Layer;
-
-    /*
-    /// Convert the given instance into its [`Layer`] variant.
-    fn into_layer(self) -> Self::Output;
-    */
 }
-/*
-/// Blanket implementation of [`IntoLayer`] for all types implementing [`Layer`].
-/// A type implementing [`Layer`] can simply return itself to satisfy this trait.
-impl<T: Layer> IntoLayer for T {
-    type Output = Self;
-    #[inline]
-    fn into_layer(self) -> Self::Output {
-        self
-    }
-}
-*/
 
 /// Utility method to convert a given type into a [`Box`]ed instance of [`Layer`].
 /// This is primarily used internally to facilitate appending one layer to another
@@ -154,18 +138,18 @@ pub trait LayerImpl: BaseLayer {
     fn len(&self) -> usize;
 }
 
-pub trait ToBytes {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>);
+pub trait ToByteVec {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>);
 
     #[inline]
-    fn to_bytes(&self) -> Vec<u8> {
+    fn to_byte_vec(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        self.to_bytes_extend(&mut bytes);
+        self.to_byte_vec_extend(&mut bytes);
         bytes
     }
 }
 
-pub trait Layer: AsAny + BaseLayer + LayerImpl + fmt::Debug + ToBytes {
+pub trait Layer: AsAny + BaseLayer + LayerImpl + fmt::Debug + ToByteVec {
     //fn layer_name(&self) -> &'static str;
 
     fn get_payload_ref(&self) -> Option<&dyn Layer>;
@@ -278,11 +262,11 @@ impl<T: Layer + Clone> ToOwnedLayer for T {
 // ==========================================================
 
 pub trait AnyLayerRef<'a>: Sized {
-    fn type_layer_id() -> any::TypeId;
+    fn layer_id_static() -> LayerId;
 
     #[inline]
-    fn layer_id(&self) -> any::TypeId {
-        Self::type_layer_id()
+    fn layer_id(&self) -> LayerId {
+        Self::layer_id_static()
     }
 
     /// Allows for a given `AnyLayer` type to be cast to another instance of itself.
@@ -306,7 +290,7 @@ pub trait AnyLayerRef<'a>: Sized {
 
     #[inline]
     fn is_layer<T: AnyLayerRef<'a>>(&self) -> bool {
-        self.layer_id() == T::type_layer_id()
+        self.layer_id() == T::layer_id_static()
     }
 }
 
@@ -314,11 +298,22 @@ pub trait AnyLayerRef<'a>: Sized {
 pub trait AnyLayerMut<'a>: Sized {
     type AssociatedRef: AnyLayerRef<'a>;
 
-    fn type_layer_id() -> any::TypeId;
+    /// The unique identifier associated with the given [`Layer`].
+    /// This identifier is guaranteed to be the same for [`Layer`], [`LayerRef`] 
+    /// and [`LayerMut`] types implementing the same layer.
+    /// 
+    /// As an example, `Tcp::layer_id_static()` will be equal to 
+    /// `TcpRef::layer_id_static()` and `TcpMut::layer_id_static()`.
+    /// Additionally, any instances of these types will likewise carry
+    /// the same layer ID.
+    /// 
+    /// Layer IDs
+
+    fn layer_id_static() -> LayerId;
 
     #[inline]
-    fn layer_id(&self) -> any::TypeId {
-        Self::type_layer_id()
+    fn layer_id(&self) -> LayerId {
+        Self::layer_id_static()
     }
 
     /// Allows for a given `AnyLayer` type to be cast to another instance of itself.
@@ -364,7 +359,7 @@ pub trait AnyLayerMut<'a>: Sized {
 
     #[inline]
     fn is_layer<T: AnyLayerMut<'a>>(&self) -> bool {
-        self.layer_id() == T::type_layer_id()
+        self.layer_id() == T::layer_id_static()
     }
 
     /*
@@ -378,11 +373,13 @@ pub trait AnyLayerMut<'a>: Sized {
 pub trait LayerRef<'a>: AnyLayerRef<'a> + BaseLayer + Into<&'a [u8]> {}
 
 /// The default (non-custom)
-pub trait LayerByteIndexDefault {
-    fn get_layer_byte_index_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize>;
+pub trait LayerOffset {
+    /// Gets the index of the first byte of the layer specified by `layer_type`, if such a layer exists.
+    /// This will not check the current layer against `layer_type`.
+    fn get_layer_offset_default(bytes: &[u8], layer_type: LayerId) -> Option<usize>;
 }
 
-pub trait LayerRefIndex<'a>: LayerByteIndexDefault {
+pub trait LayerRefIndex<'a>: LayerOffset {
     fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T>;
 
     #[inline]
@@ -406,6 +403,7 @@ pub trait LayerTypeIndex: crate::private::Sealed {
     type LayerType: Layer;
 }
 
+/*
 pub trait LayerTypeIndexImpl {
     type Output: Layer + ?Sized;
     fn associated_type_from_bytes_ignore_payload(
@@ -415,6 +413,7 @@ pub trait LayerTypeIndexImpl {
 
     fn associated_type_id(&self) -> any::TypeId;
 }
+*/
 
 pub trait Validate: BaseLayer + StatelessLayer {
     fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
@@ -440,7 +439,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
 
     fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
         #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = TcpAssociatedMetadata::instance()
+        if let Some(&custom_selection) = TcpMetadata::instance()
             .as_any()
             .downcast_ref::<&dyn CustomLayerSelection>()
         {
@@ -530,12 +529,12 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
 pub trait StatelessLayer {}
 
 #[macro_export]
-macro_rules! to_layers {
+macro_rules! parse_layers {
     ($bytes:expr, $first:ty, $($next:tt),+) => {{
         match <$first as $crate::layers::traits::FromBytesCurrent>::from_bytes_current_layer($bytes) {
             Ok(mut layer) => {
                 let remaining = &$bytes[<$first as $crate::layers::traits::LayerImpl>::len(&layer)..];
-                $crate::to_layers!(remaining; layer, $($next),*)
+                $crate::parse_layers!(remaining; layer, $($next),*)
             }
             Err(e) => Err(e),
         }
@@ -545,7 +544,7 @@ macro_rules! to_layers {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerImpl>::len(&new_layer)..];
                 match $base_layer.set_payload(Some(Box::new(new_layer))) {
-                    Ok(_) => $crate::to_layers!(remaining_bytes; $base_layer, $($next),*),
+                    Ok(_) => $crate::parse_layers!(remaining_bytes; $base_layer, $($next),*),
                     Err(_) => Err($crate::layers::traits::ValidationError::InvalidValue),
                 }
             },
@@ -557,7 +556,7 @@ macro_rules! to_layers {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerImpl>::len(&new_layer)..];
                 match $base_layer.set_payload(Some(Box::new(new_layer))) {
-                    Ok(_) => $crate::to_layers!(remaining_bytes; $base_layer),
+                    Ok(_) => $crate::parse_layers!(remaining_bytes; $base_layer),
                     Err(_) => Err($crate::layers::traits::ValidationError::InvalidValue),
                 }
             },
@@ -572,7 +571,6 @@ macro_rules! to_layers {
             Ok($base_layer)
         }
     }};
-
 }
 
 // ==========================================================
@@ -585,7 +583,7 @@ pub trait ConstSingleton {
     fn instance() -> &'static Self;
 }
 
-pub trait Ipv4Metadata: LayerMetadata {
+pub trait Ipv4PayloadMetadata: LayerMetadata {
     fn ip_protocol_number(&self) -> u8;
 
     /*
@@ -594,7 +592,7 @@ pub trait Ipv4Metadata: LayerMetadata {
     */
 }
 
-pub trait MysqlPacketMetadata: LayerMetadata {}
+pub trait MysqlMetadata: LayerMetadata {}
 
 // ==========================================================
 //               Concrete Layer Metadata Types
@@ -602,7 +600,7 @@ pub trait MysqlPacketMetadata: LayerMetadata {}
 
 // These are left public so that the user can implement further Metadata functions as desired
 
-layer_metadata!(Ipv4AssociatedMetadata);
+layer_metadata!(Ipv4Metadata);
 
 /*
 Note that the layer_metadata! macro is quivalent to:
@@ -623,37 +621,44 @@ impl ConstSingleton for IPv4Metadata {
 ```
 */
 
-layer_metadata!(TcpAssociatedMetadata);
+layer_metadata!(TcpMetadata);
 
-impl Ipv4Metadata for TcpAssociatedMetadata {
+impl Ipv4PayloadMetadata for TcpMetadata {
     #[inline]
     fn ip_protocol_number(&self) -> u8 {
         0x06
     }
 }
 
-layer_metadata!(UdpAssociatedMetadata);
+layer_metadata!(UdpMetadata);
 
-impl Ipv4Metadata for UdpAssociatedMetadata {
+impl Ipv4PayloadMetadata for UdpMetadata {
     #[inline]
     fn ip_protocol_number(&self) -> u8 {
         0x11
     }
 }
 
-layer_metadata!(RawAssociatedMetadata);
+layer_metadata!(RawMetadata);
 
-impl MysqlPacketMetadata for RawAssociatedMetadata {}
+impl Ipv4PayloadMetadata for RawMetadata {
+    #[inline]
+    fn ip_protocol_number(&self) -> u8 {
+        0xFD // Experimental protocol
+    }
+}
 
-layer_metadata!(MysqlPacketAssociatedMetadata);
+impl MysqlMetadata for RawMetadata {}
 
-layer_metadata!(MysqlClientAssociatedMetadata);
+layer_metadata!(MysqlPacketMetadata);
 
-impl MysqlPacketMetadata for MysqlClientAssociatedMetadata {}
+layer_metadata!(MysqlClientMetadata);
 
-layer_metadata!(MysqlServerAssociatedMetadata);
+impl MysqlMetadata for MysqlClientMetadata {}
 
-impl MysqlPacketMetadata for MysqlServerAssociatedMetadata {}
+layer_metadata!(MysqlServerMetadata);
+
+impl MysqlMetadata for MysqlServerMetadata {}
 
 // ===========================================
 //           CUSTOM LAYER SELECTION
@@ -668,7 +673,7 @@ pub trait CustomLayerSelection: BaseLayerSelection {
 
     fn can_set_payload(&self, payload: Option<&dyn Layer>) -> bool;
 
-    fn get_payload_index(&self, curr_layer: &[u8], desired_type: &any::TypeId) -> Option<usize>;
+    fn get_payload_index(&self, curr_layer: &[u8], desired_type: &LayerId) -> Option<usize>;
 
-    fn to_payload_boxed(&self, curr_layer: &[u8]) -> Option<Box<dyn Layer>>;
+    fn payload_to_boxed(&self, curr_layer: &[u8]) -> Option<Box<dyn Layer>>;
 }

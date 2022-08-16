@@ -3,8 +3,14 @@ use std::marker::PhantomData;
 use crate::layers::traits::{Layer, LayerRef, Validate, FromBytes};
 use crate::defrag::{Defragment, DefragmentLayers, BaseDefragment};
 
+
+// A session takes in raw bytes and outputs the type associated with the given session
+
+
 trait Session { // <In: ToOwned + Validate> {
     type Out: Layer;
+
+
 
     // fn prepend_session<I: ToOwned + Validate, S: Session<I, Out = Self::Out>>(self, session: S);
 
@@ -12,7 +18,8 @@ trait Session { // <In: ToOwned + Validate> {
 }
 
 pub struct LayeredSessions<In: ToOwned + Validate> { // <FirstIn: ToOwned + Validate, LastOut: Layer> {
-    sessions: Vec<Box<dyn BaseDefragment>>,
+    sessions: Vec<Box<dyn Session<Out = dyn Layer>>>,
+    defrags: Vec<Box<dyn BaseDefragment>>,
     _in: PhantomData<In>,
 }
 

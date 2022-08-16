@@ -13,7 +13,7 @@ use rscap_macros::{Layer, LayerRef, StatelessLayer};
 // Mysql, unfortunately, is not so simple. It's gonna require some state.
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
-#[metadata_type(MysqlPacketAssociatedMetadata)]
+#[metadata_type(MysqlPacketMetadata)]
 #[ref_type(MysqlPacketRef)]
 pub struct MysqlPacket {
     sequence_id: u8,
@@ -21,8 +21,8 @@ pub struct MysqlPacket {
     payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for MysqlPacket {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+impl ToByteVec for MysqlPacket {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
         todo!()
     }
 }
@@ -75,7 +75,7 @@ impl MysqlPacket {
 
 #[derive(Copy, Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(MysqlPacket)]
-#[metadata_type(MysqlPacketAssociatedMetadata)]
+#[metadata_type(MysqlPacketMetadata)]
 pub struct MysqlPacketRef<'a> {
     #[data_field]
     data: &'a [u8],
@@ -88,11 +88,11 @@ impl<'a> FromBytesRef<'a> for MysqlPacketRef<'a> {
     }
 }
 
-impl<'a> LayerByteIndexDefault for MysqlPacketRef<'a> {
+impl<'a> LayerOffset for MysqlPacketRef<'a> {
     #[inline]
-    fn get_layer_byte_index_default(bytes: &[u8], layer_type: std::any::TypeId) -> Option<usize> {
+    fn get_layer_offset_default(bytes: &[u8], layer_type: std::any::TypeId) -> Option<usize> {
         if (bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0)
-            && RawRef::type_layer_id() == layer_type
+            && RawRef::layer_id_static() == layer_type
         {
             Some(4)
         } else {
@@ -147,7 +147,7 @@ impl<'a> MysqlPacketRef<'a> {
 }
 
 #[derive(Clone, Debug, Layer)]
-#[metadata_type(MysqlClientAssociatedMetadata)]
+#[metadata_type(MysqlClientMetadata)]
 #[ref_type(MysqlClientRef)]
 pub struct MysqlClient {
     pub sequence_id: u8,
@@ -155,8 +155,8 @@ pub struct MysqlClient {
     pub payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for MysqlClient {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+impl ToByteVec for MysqlClient {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
         todo!()
     }
 }
@@ -180,16 +180,16 @@ impl<'a> From<&MysqlClientRef<'a>> for MysqlClient {
 
 #[derive(Copy, Clone, Debug, LayerRef)]
 #[owned_type(MysqlClient)]
-#[metadata_type(MysqlClientAssociatedMetadata)]
+#[metadata_type(MysqlClientMetadata)]
 pub struct MysqlClientRef<'a> {
     #[data_field]
     data: &'a [u8],
     message_type: MessageType,
 }
 
-impl<'a> LayerByteIndexDefault for MysqlClientRef<'a> {
+impl<'a> LayerOffset for MysqlClientRef<'a> {
     #[inline]
-    fn get_layer_byte_index_default(_bytes: &[u8], _layer_type: std::any::TypeId) -> Option<usize> {
+    fn get_layer_offset_default(_bytes: &[u8], _layer_type: std::any::TypeId) -> Option<usize> {
         None // Mysql does not encapsulate any inner layer
     }
 }

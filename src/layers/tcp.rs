@@ -3,7 +3,7 @@ use core::any;
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
-#[metadata_type(TcpAssociatedMetadata)]
+#[metadata_type(TcpMetadata)]
 #[ref_type(TcpRef)]
 pub struct Tcp {
     pub sport: u32,
@@ -12,8 +12,8 @@ pub struct Tcp {
     pub payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for Tcp {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+impl ToByteVec for Tcp {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
         todo!()
     }
 }
@@ -45,7 +45,7 @@ impl LayerImpl for Tcp {
 
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Tcp)]
-#[metadata_type(TcpAssociatedMetadata)]
+#[metadata_type(TcpMetadata)]
 pub struct TcpRef<'a> {
     #[data_field]
     data: &'a [u8],
@@ -58,8 +58,8 @@ impl<'a> FromBytesRef<'a> for TcpRef<'a> {
     }
 }
 
-impl LayerByteIndexDefault for TcpRef<'_> {
-    fn get_layer_byte_index_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
+impl LayerOffset for TcpRef<'_> {
+    fn get_layer_offset_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
         todo!()
     }
 }
@@ -79,7 +79,7 @@ impl Validate for TcpRef<'_> {
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[ref_type(TcpRef)]
 #[owned_type(Tcp)]
-#[metadata_type(TcpAssociatedMetadata)]
+#[metadata_type(TcpMetadata)]
 pub struct TcpMut<'a> {
     #[data_field]
     data: &'a mut [u8],

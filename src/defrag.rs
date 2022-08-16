@@ -1,8 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use crate::layers::traits::{Layer, ValidationError, LayerRef, FromBytes, Validate, Ipv4Metadata, BaseLayerImpl, StatelessLayer};
+use std::cmp;
+
+use crate::layers::traits::{Layer, ValidationError, LayerRef, FromBytes, Validate, Ipv4PayloadMetadata, BaseLayerImpl, StatelessLayer, FromBytesRef, ToOwnedLayer};
 use crate::layers::ip::Ipv4Ref;
 
 pub trait BaseDefragment {
@@ -18,13 +20,13 @@ pub trait BaseDefragment {
 
     fn get_pkt_raw(&mut self) -> Option<Vec<u8>>;
 
-    fn filter(&self) -> Option<fn(&[u8]) -> bool>;
+    fn filter(&self) -> Option<&Box<dyn Fn(&[u8]) -> bool>>;
 
-    fn set_filter(&mut self, filter: Option<fn(&[u8]) -> bool>);
+    fn set_filter_raw(&mut self, filter: Option<fn(&[u8]) -> bool>);
 }
 
 pub trait Defragment<Out: Layer + Validate + FromBytes + StatelessLayer>: BaseDefragment {
-    type In<'a>: LayerRef<'a> + Into<&'a [u8]> + ToOwned + Validate;
+    type In<'a>: LayerRef<'a>;
 
     #[inline]
     fn put_pkt(&mut self, pkt: Self::In<'_>) -> Result<(), ValidationError> {
@@ -43,17 +45,19 @@ pub trait Defragment<Out: Layer + Validate + FromBytes + StatelessLayer>: BaseDe
         self.get_pkt_raw().and_then(|pkt| Some(Out::from_bytes_unchecked(pkt.as_ref())))
     }
 
+    fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filter: Option<F>);
+
 //    fn set_filter<'a>(&mut self, filter: Option<impl Fn(&Self::In<'a>) -> bool>);
 }
 
-pub struct DefragmentLayers<FirstIn: ToOwned + Validate, LastOut: Layer + Validate + FromBytes + StatelessLayer> {
+pub struct DefragmentLayers<FirstIn: ToOwnedLayer + Validate, LastOut: Layer + Validate + FromBytes + StatelessLayer> {
     sessions: Vec<Box<dyn BaseDefragment>>,
     _in: PhantomData<FirstIn>,
     _out: PhantomData<LastOut>,
 }
 
 
-impl<'a, In: for<'b> LayerRef<'b> + ToOwned + Validate, Out: Layer + Validate + FromBytes> DefragmentLayers<In, Out> {
+impl<'a, In: for<'b> LayerRef<'b> + ToOwnedLayer + Validate, Out: Layer + Validate + FromBytes> DefragmentLayers<In, Out> {
     #[inline]
     pub fn new<S: Defragment<Out, In<'a> = In> + 'static>(sequence: S) -> Self {
         DefragmentLayers {
@@ -119,16 +123,16 @@ impl<'a, In: for<'b> LayerRef<'b> + ToOwned + Validate, Out: Layer + Validate + 
 }
 
 pub struct Ipv4Session<Out: Layer + Validate + FromBytes + BaseLayerImpl> {
-    // filter: Option<fn(&[u8]) -> bool>,
-    filter: Option<fn(&[u8]) -> bool>,
-    fragments: HashMap<Ipv4BufferIdentifier, Ipv4Fragments>,
+    filter: Option<Box<dyn Fn(&[u8]) -> bool>>,
+    fragments: HashMap<u16, Ipv4Fragments>,
+    reassembled: VecDeque<Vec<u8>>,
     _out: PhantomData<Out>,
 }
 
 impl<Out: Layer + Validate + FromBytes + BaseLayerImpl> Ipv4Session<Out> {
     #[inline]
     pub fn new() -> Self {
-        if Out::layer_metadata_instance().as_any().downcast_ref::<&dyn Ipv4Metadata>().is_none() {
+        if Out::layer_metadata_instance().as_any().downcast_ref::<&dyn Ipv4PayloadMetadata>().is_none() {
             // TODO: is this the best way to handle this? Should we just allow sessions to accept arbitrary `Out` types?
             panic!("Ipv4Session instances can only be created for Layer types that implement `Ipv4Metadata` for their associated metadata")
         }
@@ -136,54 +140,67 @@ impl<Out: Layer + Validate + FromBytes + BaseLayerImpl> Ipv4Session<Out> {
         Ipv4Session {
             filter: None,
             fragments: HashMap::new(),
+            reassembled: VecDeque::new(),
             _out: PhantomData::default(),
         }
     }
 
     #[inline]
     pub fn new_filtered(filter: fn(&[u8]) -> bool) -> Self {
-        if Out::layer_metadata_instance().as_any().downcast_ref::<&dyn Ipv4Metadata>().is_none() {
+        if Out::layer_metadata_instance().as_any().downcast_ref::<&dyn Ipv4PayloadMetadata>().is_none() {
             // TODO: is this the best way to handle this? Should we just allow sessions to accept arbitrary `Out` types?
             panic!("Ipv4Session instances can only be created for Layer types that implement `Ipv4Metadata` for their associated metadata")
         }
 
         Ipv4Session {
-            filter: Some(filter),
+            filter: Some(Box::new(filter)),
             fragments: HashMap::new(),
+            reassembled: VecDeque::new(),
             _out: PhantomData::default(),
         }
     }
 }
 
 impl<Out: Layer + Validate + FromBytes + BaseLayerImpl + StatelessLayer> BaseDefragment for Ipv4Session<Out> {
-    /*
     #[inline]
-    fn process_pkt_unchecked(&mut self, pkt: Vec<u8>) -> Result<Option<Vec<u8>>, ValidationError> {
+    fn set_filter_raw(&mut self, filt: Option<fn(&[u8]) -> bool>) {
+        self.filter = match filt {
+            Some(f) => Some(Box::new(f)),
+            None => None,
+        }
+    }
+
+    #[inline]
+    fn filter(&self) -> Option<&Box<dyn Fn(&[u8]) -> bool>> {
+        self.filter.as_ref()
+    }
+
+    fn put_unfiltered_pkt_unchecked(&mut self, pkt: Vec<u8>) -> Result<(), ValidationError> {
         let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt.as_slice());
         let ihl = cmp::max(ipv4.ihl() as usize, 5) * 4;
         let tl = cmp::max(ipv4.total_length() as usize, ihl);
         let data = pkt.get(ihl..tl).unwrap();
 
-        // The following algorithm is implemented near-verbatim from RFC 791
-        let buf_id = Ipv4BufferIdentifier {
-            saddr: ipv4.saddr(),
-            daddr: ipv4.daddr(),
-            id: ipv4.identifier()
-        };
 
         let mf = ipv4.flags().more_fragments();
         let fo = ipv4.frag_offset() as usize;
 
         if fo == 0 && mf == false {
-            self.fragments.remove(&buf_id);
-            return Ok(Some(pkt)) // TODO: discard first n bytes that form Ipv4 header
+            self.fragments.remove(&ipv4.identifier());
+
+            Out::validate_current_layer(&pkt[ihl..])?;
+            let payload = pkt[ihl..].to_vec();
+            self.reassembled.push_back(payload);
+            return Ok(())
         }
 
-        let mut frag = match self.fragments.remove(&buf_id) {
+        let mut frag = match self.fragments.remove(&ipv4.identifier()) {
             Some(f) => f,
             None => Ipv4Fragments::new(),
         };
-        
+
+        todo!();
+        /* 
         let data_start = fo * 8;
         let data_end = data_start + (tl - (ihl*4));
 
@@ -213,25 +230,11 @@ impl<Out: Layer + Validate + FromBytes + BaseLayerImpl + StatelessLayer> BaseDef
         // TODO: finish
 
         Ok(Some(pkt))
-    }
-    */
-
-    #[inline]
-    fn set_filter(&mut self, filter: Option<fn(&[u8]) -> bool>) {
-        self.filter = filter
-    }
-
-    #[inline]
-    fn filter(&self) -> Option<fn(&[u8]) -> bool> {
-        self.filter
-    }
-
-    fn put_unfiltered_pkt_unchecked(&mut self, pkt: Vec<u8>) -> Result<(), ValidationError> {
-        todo!()
+        */
     }
 
     fn get_pkt_raw(&mut self) -> Option<Vec<u8>> {
-        todo!()
+        self.reassembled.pop_front()
     }
 }
 
@@ -240,18 +243,33 @@ impl<Out: Layer + Validate + FromBytes + BaseLayerImpl + StatelessLayer> BaseDef
 // by other `Layer` types unless they implement StatelessLayer
 impl<L: Layer + BaseLayerImpl + FromBytes + StatelessLayer> Defragment<L> for Ipv4Session<L> {
     type In<'a> = Ipv4Ref<'a>;
+
+    fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filt: Option<F>) {
+        self.filter = match filt {
+            Some(f) => Some(Box::new(move |i| f(Ipv4Ref::from_bytes_unchecked(i)))),
+            None => None,
+        }
+    }
+}
+
+
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Ipv4StreamId {
+    pub saddr: u32,
+    pub daddr: u32,
+    pub protocol: u8,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct Ipv4BufferIdentifier {
-    saddr: u32,
-    daddr: u32,
-    id: u16,
+struct Ipv4FragmentId {
+    pub stream_id: Ipv4StreamId,
+    pub fragment_id: u16,
 }
 
 struct Ipv4Fragments {
-    pub total_length: usize,
-    pub data_buf: Vec<u8>, // length of this is total_data_len
+    pub tdl: usize,
+    pub data: Vec<u8>, // length of this is total_data_len
     pub rcvbt: Vec<u64>,
     pub rcvbt_len: usize,
 }
@@ -260,8 +278,8 @@ impl Ipv4Fragments {
     #[inline]
     fn new() -> Self {
         Ipv4Fragments {
-            total_length: 0,
-            data_buf: Vec::new(),
+            tdl: 0,
+            data: Vec::new(),
             rcvbt: Vec::new(),
             rcvbt_len: 0,
         }

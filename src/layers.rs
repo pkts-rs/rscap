@@ -13,7 +13,7 @@ use core::any;
 use core::fmt::Debug;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
-#[metadata_type(RawAssociatedMetadata)]
+#[metadata_type(RawMetadata)]
 #[ref_type(RawRef)]
 pub struct Raw {
     data: Vec<u8>,
@@ -22,12 +22,12 @@ pub struct Raw {
     payload: Option<Box<dyn Layer>>,
 }
 
-impl ToBytes for Raw {
-    fn to_bytes_extend(&self, bytes: &mut Vec<u8>) {
+impl ToByteVec for Raw {
+    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
         bytes.extend(&self.data);
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_extend(bytes),
+            Some(p) => p.to_byte_vec_extend(bytes),
         }
     }
 }
@@ -72,7 +72,7 @@ impl Raw {
 
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Raw)]
-#[metadata_type(RawAssociatedMetadata)]
+#[metadata_type(RawMetadata)]
 pub struct RawRef<'a> {
     #[data_field]
     data: &'a [u8],
@@ -85,9 +85,9 @@ impl<'a> FromBytesRef<'a> for RawRef<'a> {
     }
 }
 
-impl LayerByteIndexDefault for RawRef<'_> {
+impl LayerOffset for RawRef<'_> {
     #[inline]
-    fn get_layer_byte_index_default(_bytes: &[u8], _layer_type: any::TypeId) -> Option<usize> {
+    fn get_layer_offset_default(_bytes: &[u8], _layer_type: any::TypeId) -> Option<usize> {
         None
     }
 }
@@ -114,7 +114,7 @@ impl RawRef<'_> {
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[owned_type(Raw)]
 #[ref_type(RawRef)]
-#[metadata_type(RawAssociatedMetadata)]
+#[metadata_type(RawMetadata)]
 pub struct RawMut<'a> {
     #[data_field]
     data: &'a mut [u8],
