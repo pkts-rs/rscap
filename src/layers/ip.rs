@@ -1,15 +1,17 @@
 use core::fmt::Debug;
-use core::{any, mem};
+use core::mem;
 
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
+use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
+use crate::{error::*, LendingIterator};
 
-use super::{Raw, RawRef};
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
+use super::{Raw, RawRef};
 
-
+/// The Version number of an Internet Protocol (IP) packet.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IpVersion {
@@ -40,12 +42,15 @@ pub enum IpVersion {
 }
 
 impl From<u8> for IpVersion {
+    /// Uses the least significant 4 bytes of `value` to determine the internet protocol version.
     #[inline]
     fn from(value: u8) -> Self {
+        // SAFETY: all enum variants from 0x00 to 0x0F are defined
         unsafe { mem::transmute(value & 0x0F) }
     }
 }
 
+/// An IPv4 (Internet Protocol version 4) packet.
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(Ipv4Metadata)]
 #[ref_type(Ipv4Ref)]
@@ -61,45 +66,202 @@ pub struct Ipv4 {
     saddr: u32,
     daddr: u32,
     options: Ipv4Options,
-    #[payload_field]
-    payload: Option<Box<dyn Layer>>,
+    payload: Option<Box<dyn LayerObject>>,
 }
 
-impl ToByteVec for Ipv4 {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
-        bytes.push(0b01100000 | (5 + (self.options.byte_len() / 4) as u8));
+impl Ipv4 {
+    #[inline]
+    pub fn ihl(&self) -> u8 {
+        self.options.byte_len() as u8 // TODO: use expect() here
+    }
+
+    #[inline]
+    pub fn dscp(&self) -> DiffServ {
+        self.dscp
+    }
+
+    #[inline]
+    pub fn set_dscp(&mut self, dscp: DiffServ) {
+        self.dscp = dscp;
+    }
+
+    #[inline]
+    pub fn ecn(&self) -> Ecn {
+        self.ecn
+    }
+
+    #[inline]
+    pub fn set_ecn(&mut self, ecn: Ecn) {
+        self.ecn = ecn;
+    }
+
+    #[inline]
+    pub fn total_length(&self) -> u16 {
+        todo!()
+    }
+
+    #[inline]
+    pub fn identifier(&self) -> u16 {
+        self.id
+    }
+
+    #[inline]
+    pub fn set_identifier(&mut self, id: u16) {
+        self.id = id;
+    }
+
+    #[inline]
+    pub fn flags(&self) -> Ipv4Flags {
+        self.flags
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: Ipv4Flags) {
+        self.flags = flags;
+    }
+
+    #[inline]
+    pub fn frag_offset(&self) -> u16 {
+        self.frag_offset
+    }
+
+    #[inline]
+    pub fn set_frag_offset(&mut self, offset: u16) {
+        assert!(offset <= 0b_0001_1111_1111_1111);
+        self.frag_offset = offset;
+    }
+
+    #[inline]
+    pub fn ttl(&self) -> u8 {
+        self.ttl
+    }
+
+    #[inline]
+    pub fn set_ttl(&mut self, ttl: u8) {
+        self.ttl = ttl;
+    }
+
+    #[inline]
+    pub fn protocol(&self) -> Ipv4DataProtocol {
+        match self.payload.as_ref() {
+            None => Ipv4DataProtocol::Exp1,
+            Some(p) => {
+                let payload_metadata = p
+                    .layer_metadata()
+                    .as_any()
+                    .downcast_ref::<&dyn Ipv4PayloadMetadata>()
+                    .expect("unknown payload protocol found in IPv4 packet");
+                payload_metadata.ip_data_protocol()
+            }
+        }
+    }
+
+    #[inline]
+    pub fn chksum(&self) -> u16 {
+        self.chksum
+    }
+
+    #[inline]
+    pub fn set_chksum(&mut self, chksum: u16) {
+        self.chksum = chksum;
+    }
+
+    #[inline]
+    pub fn saddr(&self) -> u32 {
+        self.saddr
+    }
+
+    #[inline]
+    pub fn set_saddr(&mut self, saddr: u32) {
+        self.saddr = saddr;
+    }
+
+    #[inline]
+    pub fn daddr(&self) -> u32 {
+        self.daddr
+    }
+
+    #[inline]
+    pub fn set_daddr(&mut self, daddr: u32) {
+        self.daddr = daddr;
+    }
+}
+
+impl LayerLength for Ipv4 {
+    /// The total length (in bytes) of the Ipv4 header and payload.
+    fn len(&self) -> usize {
+        20 + self.options.byte_len()
+            + match self.payload.as_ref() {
+                Some(p) => p.len(),
+                None => 0,
+            }
+    }
+}
+
+impl LayerObject for Ipv4 {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_ref().map(|p| p.as_ref())
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_mut().map(|p| p.as_mut())
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl ToBytes for Ipv4 {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        bytes.push(0x40 | (5 + (self.options.byte_len() / 4) as u8));
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
         bytes.extend(u16::try_from(self.len()).unwrap_or(0xFFFF).to_be_bytes()); // WARNING: packets with contents greater than 65535 bytes will have their length field truncated
         bytes.extend(self.id.to_be_bytes());
         bytes.extend((((self.flags.flags as u16) << 8) | self.frag_offset).to_be_bytes());
         bytes.push(self.ttl);
-        bytes.push(self.payload.as_ref().map(|p| p.layer_metadata().as_any().downcast_ref::<&dyn Ipv4PayloadMetadata>().map(|m| m.ip_protocol_number()).unwrap_or(0xFD)).unwrap_or(0xFD)); // 0xFD when no payload specified
+        bytes.push(
+            self.payload
+                .as_ref()
+                .map(|p| {
+                    p.layer_metadata()
+                        .as_any()
+                        .downcast_ref::<&dyn Ipv4PayloadMetadata>()
+                        .map(|m| m.ip_data_protocol())
+                        .expect("unknown payload protocol found in IPv4 packet")
+                })
+                .unwrap_or(Ipv4DataProtocol::Exp1) as u8,
+        ); // 0xFD when no payload specified
         bytes.extend(self.chksum.to_be_bytes());
         bytes.extend(self.saddr.to_be_bytes());
         bytes.extend(self.daddr.to_be_bytes());
-        self.options.to_byte_vec_extend(bytes);
+        self.options.to_bytes_extended(bytes);
         match self.payload.as_ref() {
-            Some(payload) => payload.to_byte_vec_extend(bytes),
+            Some(payload) => payload.to_bytes_extended(bytes),
             None => (),
         }
-    }
-}
-
-impl From<&Ipv4Ref<'_>> for Ipv4 {
-    fn from(ipv4: &Ipv4Ref<'_>) -> Self {
-        let mut res = Self::from_bytes_current_layer_unchecked(ipv4.into());
-        res.payload = match ipv4.layer_metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
-            Some(layer_selection) => layer_selection.payload_to_boxed(ipv4.into()),
-            None if ipv4.payload_raw().len() == 0 => None,
-            None => match ipv4.protocol() {
-                Ipv4DataProtocol::Tcp => Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw()))),
-                Ipv4DataProtocol::Udp => Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw()))),
-                /* Add additional protocols here */
-                _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
-            }
-        };
-
-        res
     }
 }
 
@@ -117,33 +279,40 @@ impl FromBytesCurrent for Ipv4 {
             chksum: ipv4.chksum(),
             saddr: ipv4.saddr(),
             daddr: ipv4.daddr(),
-            options: ipv4.options(),
+            options: Ipv4Options::from(ipv4.options()),
             payload: None,
         }
     }
-}
 
-impl LayerImpl for Ipv4 {
     #[inline]
-    fn can_set_payload_default(&self, payload: Option<&dyn Layer>) -> bool {
-        match payload {
-            None => true,
-            Some(p) => p
-                .layer_metadata()
-                .as_any()
-                .downcast_ref::<&dyn Ipv4PayloadMetadata>()
-                .is_some(),
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
+        if ipv4.payload_raw().len() == 0 {
+            self.payload = None;
+        } else {
+            self.payload = match ipv4.protocol() {
+                Ipv4DataProtocol::Tcp => {
+                    Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw())))
+                }
+                Ipv4DataProtocol::Udp => {
+                    Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
+                }
+                /* Add additional protocols here */
+                _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
+            };
         }
     }
-
-    #[inline]
-    fn len(&self) -> usize {
-        todo!()
-    }
 }
 
-impl Ipv4 {
-
+impl CanSetPayload for Ipv4 {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn Ipv4PayloadMetadata>()
+            .is_some()
+    }
 }
 
 #[derive(Copy, Clone, Debug, LayerRef, StatelessLayer)]
@@ -154,137 +323,33 @@ pub struct Ipv4Ref<'a> {
     data: &'a [u8],
 }
 
-impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
-    #[inline]
-    fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
-        Ipv4Ref { data: packet }
-    }
-}
-
-impl LayerOffset for Ipv4Ref<'_> {
-    fn get_layer_offset_default(bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
-        let ihl = match bytes.get(0) {
-            Some(l) => (l & 0x0F) as usize * 4,
-            None => return None,
-        };
-
-        if ihl == bytes.len() {
-            return None
-        }
-
-        match bytes.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
-            Some(Ipv4DataProtocol::Tcp) => if layer_type == TcpRef::layer_id_static() {
-                    Some(ihl)
-                } else {
-                    TcpRef::get_layer_offset_default(&bytes[ihl..], layer_type)
-                }
-            Some(Ipv4DataProtocol::Udp) => if layer_type == UdpRef::layer_id_static() {
-                    Some(ihl)
-                } else {
-                    UdpRef::get_layer_offset_default(&bytes[ihl..], layer_type)
-                }
-            /* Add more Layer types here (Icmpv4, Icmpv6) */
-            _ => if layer_type == RawRef::layer_id_static() {
-                Some(ihl)
-            } else {
-                None
-            }
-        }
-    }
-}
-
-impl Validate for Ipv4Ref<'_> {
-    #[inline]
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        let (version, ihl) = match curr_layer.get(0) {
-            None => return Err(ValidationError::InvalidSize), // Not enough bytes for header
-            Some(&b) => (b >> 4, (b & 0x0F) as usize * 4),
-        };
-
-        let total_length = match curr_layer.get(2..4).and_then(|s| <[u8; 2]>::try_from(s).ok()) {
-            None => return Err(ValidationError::InvalidSize),
-            Some(s) => u16::from_be_bytes(s) as usize,
-        };
-
-        if total_length > curr_layer.len() {
-            return Err(ValidationError::InvalidSize)
-        }
-
-        // Now that InvalidSize errors have been checked, we validate values
-        if version != 4 {
-            // Version number not 4 (required for Ipv4)
-            return Err(ValidationError::InvalidValue)
-        }
-
-        if ihl < 20 {
-            // Header length field must be at least 5 (so that corresponding header length is min required 20 bytes)
-            return Err(ValidationError::InvalidValue)
-        }
-
-        // Validate Ipv4 Options
-        let mut remaining_header = &curr_layer[20..ihl];
-        while let Some((&option_type, next)) = remaining_header.split_first() {
-            match option_type {
-                0 => break, // Eool
-                1 => remaining_header = next, // Nop
-                _ => match remaining_header.get(1) {
-                    None | Some(0..=1) => return Err(ValidationError::InvalidValue), // Insufficient bytes for length field OR length field wasn't long enough to cover header
-                    Some(&l) => remaining_header = match remaining_header.get(l as usize..) {
-                        None => return Err(ValidationError::InvalidValue), // Length field was too long
-                        Some(r) => r,
-                    },
-                }
-            }
-        };
-
-        // Lastly, validate for TrailingBytes
-        if total_length < curr_layer.len() {
-            Err(ValidationError::TrailingBytes(curr_layer.len() - total_length))
-        } else {
-            Ok(())
-        }
-    }
-
-    #[inline]
-    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        let ihl = match curr_layer.get(0) {
-            Some(l) => (l & 0x0F) as usize * 4,
-            None => return Err(ValidationError::InvalidSize),
-        };
-
-        let next_layer = match curr_layer.get(ihl..) {
-            Some(l) => l,
-            None => return Err(ValidationError::InvalidSize),
-        };
-
-        match curr_layer.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
-            Some(Ipv4DataProtocol::Tcp) => TcpRef::validate(next_layer),
-            Some(Ipv4DataProtocol::Udp) => UdpRef::validate(next_layer),
-            /* Add more Layer types here (Icmpv4, Icmpv6) */
-            _ => RawRef::validate(next_layer),
-        }
-    }
-}
-
 impl<'a> Ipv4Ref<'a> {
     #[inline]
     pub fn version(&self) -> u8 {
-        self.data[0] >> 4
+        self.data
+            .get(0)
+            .expect("insufficient bytes in Ipv4Ref to retrieve IP Version field")
+            >> 4
     }
 
     #[inline]
     pub fn ihl(&self) -> u8 {
-        self.data[0] & 0x0F
+        self.data
+            .get(0)
+            .expect("insufficient bytes in Ipv4Ref to retrieve Internet Header Length field")
+            & 0x0F
     }
 
     #[inline]
     pub fn dscp(&self) -> DiffServ {
-        DiffServ::from(self.data[1])
+        DiffServ::from(*self.data.get(1).expect("insufficient bytes in Ipv4Ref to retrieve Differentiated Services Code Point (DSCP) field"))
     }
 
     #[inline]
     pub fn ecn(&self) -> Ecn {
-        Ecn::from(self.data[1])
+        Ecn::from(*self.data.get(1).expect(
+            "insufficient bytes in Ipv4Ref to retrieve Explicit Congestion Notification field",
+        ))
     }
 
     #[inline]
@@ -312,7 +377,6 @@ impl<'a> Ipv4Ref<'a> {
         self.data[8]
     }
 
-    
     #[inline]
     pub fn protocol(&self) -> Ipv4DataProtocol {
         self.data[9].into()
@@ -339,13 +403,190 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     #[inline]
-    pub fn options(&self) -> Ipv4Options {
+    pub fn options(&self) -> Ipv4OptionsRef<'a> {
         let options_end = core::cmp::min(self.data[0] & 0x0F, 5) as usize * 4;
-        Ipv4Options::try_from(&self.data[20..options_end]).unwrap()
+        Ipv4OptionsRef::from_bytes_unchecked(&self.data[20..options_end])
     }
 
+    #[inline]
     pub fn payload_raw(&self) -> &[u8] {
         &self.data[self.ihl() as usize * 4..]
+    }
+}
+
+impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
+    #[inline]
+    fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
+        Ipv4Ref { data: packet }
+    }
+}
+
+impl LayerOffset for Ipv4Ref<'_> {
+    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+        let ihl = match bytes.get(0) {
+            Some(l) => (l & 0x0F) as usize * 4,
+            None => return None,
+        };
+
+        if ihl == bytes.len() {
+            return None;
+        }
+
+        match bytes.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
+            Some(Ipv4DataProtocol::Tcp) => {
+                if layer_type == TcpRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                }
+            }
+            Some(Ipv4DataProtocol::Udp) => {
+                if layer_type == UdpRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                }
+            }
+            /* Add more Layer types here */
+            _ => {
+                if layer_type == RawRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl Validate for Ipv4Ref<'_> {
+    #[inline]
+    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        let (version, ihl) =
+            match curr_layer.get(0) {
+                None => return Err(ValidationError {
+                    layer: Ipv4::name(),
+                    err_type: ValidationErrorType::InvalidSize,
+                    reason:
+                        "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
+                }),
+                Some(&b) => (b >> 4, (b & 0x0F) as usize * 4),
+            };
+
+        let total_length = match curr_layer
+            .get(2..4)
+            .and_then(|s| <[u8; 2]>::try_from(s).ok())
+        {
+            None => {
+                return Err(ValidationError {
+                    layer: Ipv4::name(),
+                    err_type: ValidationErrorType::InvalidSize,
+                    reason:
+                        "packet too short for Ipv4 frame--missing length field bytes in Ipv4 header",
+                })
+            }
+            Some(s) => u16::from_be_bytes(s) as usize,
+        };
+
+        if total_length > curr_layer.len() {
+            return Err(ValidationError {
+                layer: Ipv4::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "total packet length reported in Ipv4 header exceeded the available bytes",
+            });
+        }
+
+        // Now that InvalidSize errors have been checked, we validate values
+        if version != 4 {
+            // Version number not 4 (required for Ipv4)
+            return Err(ValidationError {
+                layer: Ipv4::name(),
+                err_type: ValidationErrorType::InvalidValue,
+                reason: "version number of Ipv4 header was not equal to 0x04",
+            });
+        }
+
+        if ihl < 20 {
+            // Header length field must be at least 5 (so that corresponding header length is min required 20 bytes)
+            return Err(ValidationError {
+                layer: Ipv4Ref::name(),
+                err_type: ValidationErrorType::InvalidValue,
+                reason: "invalid Ipv4 header length value (IHL must be a value of 5 or more)",
+            });
+        }
+
+        // Validate Ipv4 Options
+        let mut remaining_header = &curr_layer[20..ihl];
+        while let Some((&option_type, next)) = remaining_header.split_first() {
+            match option_type {
+                0 => break, // Eool
+                1 => remaining_header = next, // Nop
+                _ => match remaining_header.get(1) {
+                    None => return Err(ValidationError {
+                        layer: Ipv4Ref::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "length field missing from Ipv4 Option",
+                    }),
+                    Some(0..=1) => return Err(ValidationError {
+                        layer: Ipv4Ref::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "invalid value in Ipv4 Option length field (must be at least 2)",
+                    }),
+                    Some(&l) => remaining_header = match remaining_header.get(l as usize..) {
+                        None => return Err(ValidationError {
+                        layer: Ipv4Ref::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "invalid length field in Ipv4 Option--insufficient option bytes available for specified length",
+                        }),
+                        Some(r) => r,
+                    },
+                }
+            }
+        }
+
+        // Lastly, validate for TrailingBytes
+        if total_length < curr_layer.len() {
+            Err(ValidationError {
+                layer: Ipv4Ref::name(),
+                err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - total_length),
+                reason:
+                    "invalid length field in Ipv4 header--extra bytes remaining at end of packet",
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    #[inline]
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        let ihl =
+            match curr_layer.get(0) {
+                Some(l) => (l & 0x0F) as usize * 4,
+                None => return Err(ValidationError {
+                    layer: Ipv4Ref::name(),
+                    err_type: ValidationErrorType::InvalidSize,
+                    reason:
+                        "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
+                }),
+            };
+
+        let next_layer =
+            match curr_layer.get(ihl..) {
+                Some(l) => l,
+                None => return Err(ValidationError {
+                    layer: Ipv4Ref::name(),
+                    err_type: ValidationErrorType::InvalidSize,
+                    reason:
+                        "packet too short for Ipv4 frame--insufficient bytes available for header",
+                }),
+            };
+
+        match curr_layer.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
+            Some(Ipv4DataProtocol::Tcp) => TcpRef::validate(next_layer),
+            Some(Ipv4DataProtocol::Udp) => UdpRef::validate(next_layer),
+            /* Add more Layer types here */
+            _ => RawRef::validate(next_layer),
+        }
     }
 }
 
@@ -379,9 +620,194 @@ impl<'a> FromBytesMut<'a> for Ipv4Mut<'a> {
     }
 }
 
-// =========================================
-//           INTERNAL FIELDS
-// =========================================
+impl<'a> Ipv4Mut<'a> {
+    pub fn version(&self) -> u8 {
+        self.data[0] >> 4
+    }
+
+    #[inline]
+    pub fn set_version_unchecked(&mut self, version: IpVersion) {
+        self.data[0] &= 0x0F;
+        self.data[0] |= (version as u8) << 4;
+    }
+
+    #[inline]
+    pub fn ihl(&self) -> u8 {
+        self.data[0] & 0x0F
+    }
+
+    #[inline]
+    pub fn set_ihl_unchecked(&mut self, ihl: u8) {
+        self.data[0] &= 0xF0;
+        self.data[0] |= ihl & 0x0F;
+    }
+
+    #[inline]
+    pub fn dscp(&self) -> DiffServ {
+        DiffServ::from(self.data[1])
+    }
+
+    #[inline]
+    pub fn set_dscp(&mut self, dscp: DiffServ) {
+        self.data[1] &= 0b0000_0011;
+        self.data[1] |= dscp.dscp & 0b1111_1100;
+    }
+
+    #[inline]
+    pub fn ecn(&self) -> Ecn {
+        Ecn::from(self.data[1])
+    }
+
+    #[inline]
+    pub fn set_ecn(&mut self, ecn: Ecn) {
+        self.data[1] &= 0b1111_1100;
+        self.data[1] |= ecn as u8 & 0b0000_0011;
+    }
+
+    #[inline]
+    pub fn total_length(&self) -> u16 {
+        u16::from_be_bytes(self.data[2..4].try_into().unwrap())
+    }
+
+    #[inline]
+    pub fn set_total_length(&mut self, len: u16) {
+        self.data[2] = (len >> 8) as u8;
+        self.data[3] = (len & 0xFF) as u8;
+    }
+
+    #[inline]
+    pub fn identifier(&self) -> u16 {
+        u16::from_be_bytes(self.data[4..6].try_into().unwrap())
+    }
+
+    #[inline]
+    pub fn set_identifier(&mut self, id: u16) {
+        self.data[4] = (id >> 8) as u8;
+        self.data[5] = (id & 0x00FF) as u8;
+    }
+
+    #[inline]
+    pub fn flags(&self) -> Ipv4Flags {
+        Ipv4Flags::from(self.data[6])
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: Ipv4Flags) {
+        self.data[6] &= 0b_0001_1111;
+        self.data[6] |= flags.flags;
+    }
+
+    #[inline]
+    pub fn frag_offset(&self) -> u16 {
+        u16::from_be_bytes(self.data[6..8].try_into().unwrap()) & 0b_0001_1111_1111_1111
+    }
+
+    #[inline]
+    pub fn set_frag_offset(&mut self, offset: u16) {
+        self.data[6] &= 0b_1110_0000;
+        self.data[6] |= ((offset << 8) as u8) & 0b_0001_1111;
+        self.data[7] = (offset & 0x00FF) as u8;
+    }
+
+    #[inline]
+    pub fn ttl(&self) -> u8 {
+        self.data[8]
+    }
+
+    #[inline]
+    pub fn set_ttl(&mut self, ttl: u8) {
+        self.data[8] = ttl;
+    }
+
+    #[inline]
+    pub fn set_protocol(&mut self, proto: Ipv4DataProtocol) {
+        self.data[9] = proto as u8;
+    }
+
+    #[inline]
+    pub fn protocol_raw(&self) -> u8 {
+        self.data[9]
+    }
+
+    #[inline]
+    pub fn set_protocol_raw(&mut self, proto: u8) {
+        self.data[9] = proto;
+    }
+
+    #[inline]
+    pub fn chksum(&self) -> u16 {
+        u16::from_be_bytes(self.data[10..12].try_into().unwrap())
+    }
+
+    #[inline]
+    pub fn set_chksum(&mut self, chksum: u16) {
+        self.data[10] = (chksum >> 8) as u8;
+        self.data[11] = (chksum & 0x00FF) as u8;
+    }
+
+    #[inline]
+    pub fn saddr(&self) -> u32 {
+        u32::from_be_bytes(self.data[12..16].try_into().unwrap())
+    }
+
+    #[inline]
+    pub fn set_saddr(&mut self, saddr: u32) {
+        self.data[12] = (saddr >> 24) as u8;
+        self.data[13] = ((saddr >> 16) & 0x000000FF) as u8;
+        self.data[14] = ((saddr >> 8) & 0x000000FF) as u8;
+        self.data[15] = (saddr & 0x000000FF) as u8;
+    }
+
+    #[inline]
+    pub fn daddr(&self) -> u32 {
+        u32::from_be_bytes(self.data[16..20].try_into().unwrap())
+    }
+
+    #[inline]
+    pub fn set_daddr(&mut self, daddr: u32) {
+        self.data[16] = (daddr >> 24) as u8;
+        self.data[17] = ((daddr >> 16) & 0x000000FF) as u8;
+        self.data[18] = ((daddr >> 8) & 0x000000FF) as u8;
+        self.data[19] = (daddr & 0x000000FF) as u8;
+    }
+
+    #[inline]
+    pub fn options(&'a self) -> Ipv4OptionsRef<'a> {
+        let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
+        Ipv4OptionsRef::from_bytes_unchecked(&self.data[20..options_end])
+    }
+
+    #[inline]
+    pub fn options_mut(&'a mut self) -> Ipv4OptionsMut<'a> {
+        let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
+        Ipv4OptionsMut::from_bytes_unchecked(&mut self.data[20..options_end])
+    }
+
+    pub fn set_options(&mut self, options: Ipv4OptionRef<'_>) {
+        todo!()
+    }
+
+    #[inline]
+    pub fn payload(&self) -> &[u8] {
+        &self.data[self.ihl() as usize * 4..]
+    }
+
+    pub fn set_payload_unchecked(&mut self, payload: &[u8]) {
+        let payload_idx = self.ihl() as usize * 4;
+        let payload_destination = self
+            .data
+            .get_mut(payload_idx..payload_idx + payload.len())
+            .expect("insufficient bytes in Ipv4Mut buffer to set payload");
+        for (&src, dst) in payload.iter().zip(payload_destination) {
+            *dst = src;
+        }
+        self.len = payload_idx + payload.len();
+    }
+}
+
+// =============================================================================
+//                              INTERNAL FIELDS
+// =============================================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiffServ {
@@ -400,6 +826,7 @@ impl DiffServ {
     }
 }
 
+/// Explicit Congestion Notification (ECN) values available in an Ipv4 packet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Ecn {
@@ -414,6 +841,8 @@ pub enum Ecn {
 }
 
 impl From<u8> for Ecn {
+    /// Converts the least significant two bits of the given byte into Explicit Congestion
+    /// Notification flags.
     fn from(value: u8) -> Self {
         match (value & 0b10 > 0, value & 0b01 > 0) {
             (false, false) => Ecn::NonEct,
@@ -428,6 +857,7 @@ const RESERVED_BIT: u8 = 0b10000000;
 const DONT_FRAGMENT_BIT: u8 = 0b01000000;
 const MORE_FRAGMENTS_BIT: u8 = 0b00100000;
 
+/// Flags available in an IPv4 packet
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ipv4Flags {
     flags: u8,
@@ -472,6 +902,7 @@ impl Ipv4Flags {
 }
 
 impl From<u8> for Ipv4Flags {
+    /// Converts the most significant 3 bits of the given byte into Ipv4-specific flags.
     fn from(value: u8) -> Self {
         Ipv4Flags {
             flags: value & 0b11100000,
@@ -502,7 +933,7 @@ pub enum Ipv4DataProtocol {
     Egp = 0x08,
     /// Interior gateway Protocol
     Igp = 0x09,
-    /// BBN RCC Monitoring
+    /// BBN RCC Monitoringdata[0] & 0x0F
     BbnRccMon = 0x0A,
     /// Network Voide Protocol (see RFC 741)
     Nvp2 = 0x0B,
@@ -902,67 +1333,29 @@ pub struct Ipv4Options {
     padding: Option<Vec<u8>>,
 }
 
-impl ToByteVec for Ipv4Options {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
-        match self.options.as_ref() {
-            None => (),
-            Some(options) => {
-                for option in options.iter() {
-                    option.to_byte_vec_extend(bytes);
-                }
-
-                match self.padding.as_ref() {
-                    None => (),
-                    Some(p) => bytes.extend(p),
-                }
-            }
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for Ipv4Options {
-    type Error = ValidationError;
-
-    fn try_from(mut value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() == 0 {
-            return Ok(Ipv4Options {
-                options: None,
-                padding: None,
-            });
-        }
-
-        if value.len() % 4 != 0 {
-            return Err(ValidationError::InvalidValue);
-        }
-
-        let mut options = Vec::new();
-        while value.len() > 0 {
-            let option = Ipv4Option::try_from(value)?;
-            value = &value[option.option_length()..];
-            let is_eool = option.option_type() == Ipv4OptionType::Eool as u8;
-            options.push(option);
-            if is_eool {
-                break;
-            }
-        }
-
-        Ok(Ipv4Options {
-            options: Some(options),
-            padding: if value.len() > 0 {
-                Some(Vec::from(value))
-            } else {
-                None
-            },
-        })
-    }
-}
-
 impl Ipv4Options {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        Self::from(Ipv4OptionsRef::from_bytes_unchecked(bytes))
+    }
+
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        Ipv4OptionsRef::validate(bytes)
+    }
+
     #[inline]
     pub fn byte_len(&self) -> usize {
-        return self.padding.as_ref().map(|p| p.len()).unwrap_or(0) + self.options.as_ref().map(|o| o.iter().map(|o| o.byte_len()).sum()).unwrap_or(0)
+        return self.padding.as_ref().map(|p| p.len()).unwrap_or(0)
+            + self
+                .options
+                .as_ref()
+                .map(|o| o.iter().map(|o| o.byte_len()).sum())
+                .unwrap_or(0);
     }
-
 
     #[inline]
     pub fn options(&self) -> &[Ipv4Option] {
@@ -970,6 +1363,11 @@ impl Ipv4Options {
             None => &[],
             Some(o) => o.as_slice(),
         }
+    }
+
+    #[inline]
+    pub fn options_mut(&mut self) -> &mut Option<Vec<Ipv4Option>> {
+        &mut self.options
     }
 
     #[inline]
@@ -981,6 +1379,261 @@ impl Ipv4Options {
     }
 }
 
+impl ToBytes for Ipv4Options {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        match self.options.as_ref() {
+            None => (),
+            Some(options) => {
+                for option in options.iter() {
+                    option.to_bytes_extended(bytes);
+                }
+
+                match self.padding.as_ref() {
+                    None => (),
+                    Some(p) => bytes.extend(p),
+                }
+            }
+        }
+    }
+}
+
+impl From<&Ipv4OptionsRef<'_>> for Ipv4Options {
+    fn from(value: &Ipv4OptionsRef<'_>) -> Self {
+        let (options, padding) = if value.iter().next().is_none() {
+            (None, None)
+        } else {
+            let mut opts = Vec::new();
+            let mut iter = value.iter();
+            while let Some(opt) = iter.next() {
+                opts.push(Ipv4Option::from(opt));
+            }
+            match iter.bytes {
+                &[] => (Some(opts), None),
+                padding => (Some(opts), Some(Vec::from(padding))),
+            }
+        };
+
+        Ipv4Options { options, padding }
+    }
+}
+
+impl From<Ipv4OptionsRef<'_>> for Ipv4Options {
+    fn from(value: Ipv4OptionsRef<'_>) -> Self {
+        Self::from(&value)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Ipv4OptionsRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> Ipv4OptionsRef<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+        Ipv4OptionsRef { bytes }
+    }
+
+    pub fn validate(mut bytes: &[u8]) -> Result<(), ValidationError> {
+        if bytes.len() == 0 {
+            return Ok(());
+        }
+
+        if bytes.len() % 4 != 0 {
+            return Err(ValidationError {
+                layer: Ipv4::name(),
+                err_type: ValidationErrorType::InvalidValue,
+                reason: "Ipv4 Options data length must be a multiple of 4",
+            });
+        }
+
+        while let Some(option_type) = bytes.get(0) {
+            match option_type {
+                0 => break,
+                1 => bytes = &bytes[1..],
+                _ => match bytes.get(1) {
+                    Some(0..=1) => return Err(ValidationError {
+                        layer: Ipv4::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "IPv4 option length field contained too small a value",
+                    }),
+                    Some(&len) => {
+                        match bytes.get(len as usize..) {
+                            Some(remaining) => bytes = remaining,
+                            None => return Err(ValidationError {
+                                layer: Ipv4::name(),
+                                err_type: ValidationErrorType::InvalidValue,
+                                reason: "truncated IPv4 option field in options--missing part of option data",
+                            }),
+                        }
+                    }
+                    None => return Err(ValidationError {
+                        layer: Ipv4::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "truncated IPv4 option found in options--missing option length field",
+                    }),
+                },
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn iter(&self) -> Ipv4OptionsIterRef<'a> {
+        Ipv4OptionsIterRef {
+            curr_idx: 0,
+            bytes: self.bytes,
+            end_reached: false,
+        }
+    }
+
+    #[inline]
+    pub fn padding(&self) -> &'a [u8] {
+        let mut iter = self.iter();
+        while iter.next().is_some() {}
+        &iter.bytes[iter.curr_idx..]
+    }
+}
+
+impl<'a> From<&'a Ipv4OptionsMut<'_>> for Ipv4OptionsRef<'a> {
+    fn from(value: &'a Ipv4OptionsMut<'_>) -> Self {
+        Self::from_bytes_unchecked(&value.bytes)
+    }
+}
+
+impl<'a> From<Ipv4OptionsMut<'a>> for Ipv4OptionsRef<'a> {
+    fn from(value: Ipv4OptionsMut<'a>) -> Self {
+        Self::from_bytes_unchecked(value.bytes)
+    }
+}
+
+pub struct Ipv4OptionsIterRef<'a> {
+    curr_idx: usize,
+    bytes: &'a [u8],
+    end_reached: bool,
+}
+
+impl<'b> LendingIterator for Ipv4OptionsIterRef<'b> {
+    type Item<'a> = Ipv4OptionRef<'a> where Self: 'a;
+
+    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+        if self.end_reached {
+            return None;
+        }
+
+        match self.bytes.get(0) {
+            Some(&r @ (0 | 1)) => {
+                let option = &self.bytes[self.curr_idx..self.curr_idx + 1];
+                self.curr_idx += 1;
+                if r == 0 {
+                    self.end_reached = true;
+                }
+                Some(Ipv4OptionRef::from_bytes_unchecked(option))
+            }
+            Some(&op_len) => {
+                let option = &self.bytes[self.curr_idx..self.curr_idx + op_len as usize];
+                self.curr_idx += op_len as usize;
+                Some(Ipv4OptionRef::from_bytes_unchecked(option))
+            }
+            None => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Ipv4OptionsMut<'a> {
+    bytes: &'a mut [u8],
+}
+
+impl<'a> Ipv4OptionsMut<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &'a mut [u8]) -> Self {
+        Ipv4OptionsMut { bytes }
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        Ipv4OptionsRef::validate(bytes)
+    }
+
+    #[inline]
+    pub fn iter(&'a self) -> Ipv4OptionsIterRef<'a> {
+        Ipv4OptionsIterRef {
+            curr_idx: 0,
+            bytes: self.bytes,
+            end_reached: false,
+        }
+    }
+
+    #[inline]
+    pub fn iter_mut(&'a mut self) -> Ipv4OptionsIterMut<'a> {
+        Ipv4OptionsIterMut {
+            curr_idx: 0,
+            bytes: self.bytes,
+            end_reached: false,
+        }
+    }
+
+    #[inline]
+    pub fn padding(&'a self) -> &'a [u8] {
+        let mut iter = self.iter();
+        while iter.next().is_some() {}
+        &iter.bytes[iter.curr_idx..]
+    }
+
+    #[inline]
+    pub fn padding_mut(&'a mut self) -> &'a mut [u8] {
+        let mut iter = self.iter_mut();
+        while iter.next().is_some() {}
+        &mut iter.bytes[iter.curr_idx..]
+    }
+}
+
+pub struct Ipv4OptionsIterMut<'a> {
+    curr_idx: usize,
+    bytes: &'a mut [u8],
+    end_reached: bool,
+}
+
+impl<'b> LendingIterator for Ipv4OptionsIterMut<'b> {
+    type Item<'a> = Ipv4OptionMut<'a> where Self: 'a;
+
+    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+        if self.end_reached {
+            return None;
+        }
+
+        match self.bytes[0] as usize {
+            r @ (0 | 1) => {
+                let option = &mut self.bytes[self.curr_idx..self.curr_idx + 1];
+                self.curr_idx += 1;
+                if r == 0 {
+                    self.end_reached = true;
+                }
+                Some(Ipv4OptionMut::from_bytes_unchecked(option))
+            }
+            op_len => {
+                let option = &mut self.bytes[self.curr_idx..self.curr_idx + op_len];
+                self.curr_idx += op_len;
+                Some(Ipv4OptionMut::from_bytes_unchecked(option))
+            }
+        }
+    }
+}
+
 // EOOL and NOP must have a size of 0
 #[derive(Clone, Debug)]
 pub struct Ipv4Option {
@@ -988,8 +1641,8 @@ pub struct Ipv4Option {
     value: Option<Vec<u8>>,
 }
 
-impl ToByteVec for Ipv4Option {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
+impl ToBytes for Ipv4Option {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.option_type);
         match self.option_type {
             0 | 1 => (),
@@ -999,31 +1652,33 @@ impl ToByteVec for Ipv4Option {
                     bytes.push((2 + val.len()) as u8);
                     bytes.extend(val);
                 }
-            }
+            },
         }
     }
 }
 
 impl Ipv4Option {
     #[inline]
-    pub fn from_bytes_unchecked(bytes: &[u8]) -> Ipv4Option {
-        Ipv4Option {
-            option_type: bytes[0],
-            value: if bytes[0] == Ipv4OptionType::Eool as u8
-                || bytes[0] == Ipv4OptionType::Nop as u8
-            {
-                None
-            } else {
-                Some(Vec::from(&bytes[2..(bytes[1] as usize)]))
-            },
-        }
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        Self::from(Ipv4OptionRef::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        Ipv4OptionRef::validate(bytes)
     }
 
     #[inline]
     pub fn byte_len(&self) -> usize {
         match self.option_type {
             0 | 1 => 1,
-            _ => 2 + self.value.as_ref().map(|v| v.len()).unwrap_or(0)
+            _ => 2 + self.value.as_ref().map(|v| v.len()).unwrap_or(0),
         }
     }
 
@@ -1060,28 +1715,176 @@ impl Ipv4Option {
     }
 }
 
-impl TryFrom<&[u8]> for Ipv4Option {
-    type Error = ValidationError;
+impl From<&Ipv4OptionRef<'_>> for Ipv4Option {
+    #[inline]
+    fn from(ipv4_option: &Ipv4OptionRef<'_>) -> Self {
+        Ipv4Option {
+            option_type: ipv4_option.option_type(),
+            value: match ipv4_option.option_type() {
+                0 | 1 => None,
+                _ => Some(Vec::from(ipv4_option.option_data())),
+            },
+        }
+    }
+}
+
+impl From<Ipv4OptionRef<'_>> for Ipv4Option {
+    #[inline]
+    fn from(ipv4_option: Ipv4OptionRef<'_>) -> Self {
+        Self::from(&ipv4_option)
+    }
+}
+
+pub struct Ipv4OptionRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> Ipv4OptionRef<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
 
     #[inline]
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+        Ipv4OptionRef { bytes }
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match bytes.get(0) {
-            Some(&option_type @ (0 | 1)) => Ok(Ipv4Option {
-                option_type,
-                value: None,
-            }),
-            Some(&option_type) => match bytes.get(1) {
-                Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.get(2..len as usize)
-                {
-                    Some(value) => Ok(Ipv4Option {
-                        option_type,
-                        value: Some(Vec::from(value)),
-                    }),
-                    None => Err(ValidationError::InvalidSize),
-                },
-                _ => Err(ValidationError::InvalidSize),
+            Some(0 | 1) => if bytes.len() == 1 {
+                Ok(())
+            } else {
+                Err(ValidationError {
+                    layer: Ipv4::name(),
+                    err_type: ValidationErrorType::TrailingBytes(bytes.len() - 1),
+                    reason: "excess bytes at end of single-byte IPv4 option"
+                })
             },
-            None => Err(ValidationError::InvalidValue),
+            Some(_) => match bytes.get(1) {
+                Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.len().checked_sub(len as usize) {
+                    Some(0) => Ok(()),
+                    Some(remaining) => Err(ValidationError {
+                        layer: Ipv4::name(),
+                        err_type: ValidationErrorType::TrailingBytes(remaining),
+                        reason: "excess bytes at end of sized IPv4 option",
+                    }),
+                    None => Err(ValidationError {
+                        layer: Ipv4::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "length of IPv4 Option data exceeded available bytes"
+                    }),
+                },
+                _ => Err(ValidationError {
+                    layer: Ipv4::name(),
+                    err_type: ValidationErrorType::InvalidValue,
+                    reason: "insufficient bytes available to read IPv4 Option--missing length byte field"
+                }),
+            },
+            None => Err(ValidationError {
+                layer: Ipv4::name(),
+                err_type: ValidationErrorType::InvalidValue,
+                reason: "insufficient bytes available to read IPv4 Option--missing option_type byte field",
+            })
+        }
+    }
+
+    #[inline]
+    pub fn option_len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    #[inline]
+    pub fn option_type(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    #[inline]
+    pub fn copied(&self) -> bool {
+        self.bytes[0] & 0b_1000_0000 > 0
+    }
+
+    #[inline]
+    pub fn option_class(&self) -> Ipv4OptionClass {
+        // SAFETY: this value can only ever be between 0 and 3 inclusive
+        unsafe { mem::transmute((self.bytes[0] & 0b_0110_0000) >> 5) }
+    }
+
+    #[inline]
+    pub fn option_data(&self) -> &[u8] {
+        match &self.bytes[0] {
+            0 | 1 => &[],
+            _ => &self.bytes[2..self.bytes[1] as usize],
+        }
+    }
+}
+
+impl<'a> From<&'a Ipv4OptionMut<'_>> for Ipv4OptionRef<'a> {
+    fn from(value: &'a Ipv4OptionMut<'_>) -> Self {
+        Ipv4OptionRef { bytes: value.bytes }
+    }
+}
+
+impl<'a> From<Ipv4OptionMut<'a>> for Ipv4OptionRef<'a> {
+    fn from(value: Ipv4OptionMut<'a>) -> Self {
+        Ipv4OptionRef { bytes: value.bytes }
+    }
+}
+
+pub struct Ipv4OptionMut<'a> {
+    bytes: &'a mut [u8],
+}
+
+impl<'a> Ipv4OptionMut<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &'a mut [u8]) -> Self {
+        Ipv4OptionMut { bytes }
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        Ipv4OptionRef::validate(bytes)
+    }
+
+    #[inline]
+    pub fn option_len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    #[inline]
+    pub fn option_type(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    #[inline]
+    pub fn set_option_type(&mut self, option_type: u8) {
+        self.bytes[0] = option_type;
+    }
+
+    #[inline]
+    pub fn copied(&self) -> bool {
+        self.bytes[0] & 0b_1000_0000 > 0
+    }
+
+    #[inline]
+    pub fn option_class(&self) -> Ipv4OptionClass {
+        // SAFETY: this value can only ever be between 0 and 3 inclusive
+        unsafe { mem::transmute((self.bytes[0] & 0b_0110_0000) >> 5) }
+    }
+
+    #[inline]
+    pub fn option_data(&self) -> &[u8] {
+        match &self.bytes[0] {
+            0 | 1 => &[],
+            _ => &self.bytes[2..self.bytes[1] as usize],
         }
     }
 }
@@ -1131,7 +1934,7 @@ pub enum Ipv4OptionType {
     /// Extended Security (RIPSO)
     Esec = 0x85,
     /// Commercial IP Security
-    CIPSO = 0x86,
+    Cipso = 0x86,
     /// Stream ID
     Sid = 0x88,
     /// Strict Source Route

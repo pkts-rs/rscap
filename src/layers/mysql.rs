@@ -1,4 +1,7 @@
-use super::{traits::*, Raw, RawRef};
+use super::{Raw, RawRef};
+use crate::error::*;
+use crate::layers::traits::extras::*;
+use crate::layers::traits::*;
 use rscap_macros::{Layer, LayerRef, StatelessLayer};
 
 // SIDE NOTE: postgres will be able to be a stateless protocol
@@ -17,25 +20,10 @@ use rscap_macros::{Layer, LayerRef, StatelessLayer};
 #[ref_type(MysqlPacketRef)]
 pub struct MysqlPacket {
     sequence_id: u8,
-    #[payload_field]
-    payload: Option<Box<dyn Layer>>,
+    payload: Option<Box<dyn LayerObject>>,
 }
 
-impl ToByteVec for MysqlPacket {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
-        todo!()
-    }
-}
-
-impl LayerImpl for MysqlPacket {
-    #[inline]
-    fn can_set_payload_default(&self, payload: Option<&dyn Layer>) -> bool {
-        match payload {
-            None => true,
-            Some(p) => p.as_any().downcast_ref::<&MysqlClient>().is_some(),
-        }
-    }
-
+impl LayerLength for MysqlPacket {
     #[inline]
     fn len(&self) -> usize {
         4 + match &self.payload {
@@ -45,6 +33,66 @@ impl LayerImpl for MysqlPacket {
     }
 }
 
+impl LayerObject for MysqlPacket {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_ref().map(|p| p.as_ref())
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_mut().map(|p| p.as_mut())
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl ToBytes for MysqlPacket {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        todo!()
+    }
+}
+
+impl FromBytesCurrent for MysqlPacket {
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        todo!()
+    }
+
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+}
+
+impl CanSetPayload for MysqlPacket {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload.as_any().downcast_ref::<&MysqlClient>().is_some()
+    }
+}
+
+/*
 impl<'a> From<&MysqlPacketRef<'a>> for MysqlPacket {
     #[inline]
     fn from(value: &MysqlPacketRef<'a>) -> Self {
@@ -62,6 +110,7 @@ impl<'a> From<&MysqlPacketRef<'a>> for MysqlPacket {
         }
     }
 }
+*/
 
 impl MysqlPacket {
     pub fn sequence_id(&self) -> u8 {
@@ -90,7 +139,7 @@ impl<'a> FromBytesRef<'a> for MysqlPacketRef<'a> {
 
 impl<'a> LayerOffset for MysqlPacketRef<'a> {
     #[inline]
-    fn get_layer_offset_default(bytes: &[u8], layer_type: std::any::TypeId) -> Option<usize> {
+    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         if (bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0)
             && RawRef::layer_id_static() == layer_type
         {
@@ -105,7 +154,11 @@ impl<'a> Validate for MysqlPacketRef<'a> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() < 4 {
-            return Err(ValidationError::InvalidSize);
+            return Err(ValidationError {
+                layer: MysqlPacket::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes for MySQL packet header (4 bytes required)",
+            });
         }
 
         let payload_len = ((curr_layer[0] as usize) << 16)
@@ -113,11 +166,17 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             + curr_layer[2] as usize;
 
         if curr_layer[4..].len() < payload_len {
-            Err(ValidationError::InvalidSize)
+            Err(ValidationError {
+                layer: MysqlPacket::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes for packet length advertised by MySQL header",
+            })
         } else if curr_layer[4..].len() > payload_len {
-            Err(ValidationError::TrailingBytes(
-                curr_layer[4..].len() - payload_len,
-            ))
+            Err(ValidationError {
+                layer: MysqlPacket::name(),
+                err_type: ValidationErrorType::TrailingBytes(curr_layer[4..].len() - payload_len),
+                reason: "more bytes in packet than advertised by the MySQL header length field",
+            })
         } else {
             Ok(())
         }
@@ -151,24 +210,61 @@ impl<'a> MysqlPacketRef<'a> {
 #[ref_type(MysqlClientRef)]
 pub struct MysqlClient {
     pub sequence_id: u8,
-    #[payload_field]
-    pub payload: Option<Box<dyn Layer>>,
+    pub payload: Option<Box<dyn LayerObject>>,
 }
 
-impl ToByteVec for MysqlClient {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
-        todo!()
-    }
-}
-
-impl LayerImpl for MysqlClient {
-    #[inline]
-    fn can_set_payload_default(&self, payload: Option<&dyn Layer>) -> bool {
-        payload.is_none()
-    }
-
+impl LayerLength for MysqlClient {
     fn len(&self) -> usize {
         todo!()
+    }
+}
+
+impl LayerObject for MysqlClient {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_ref().map(|p| p.as_ref())
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_mut().map(|p| p.as_mut())
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl ToBytes for MysqlClient {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        todo!()
+    }
+}
+
+impl CanSetPayload for MysqlClient {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false
     }
 }
 
@@ -189,7 +285,7 @@ pub struct MysqlClientRef<'a> {
 
 impl<'a> LayerOffset for MysqlClientRef<'a> {
     #[inline]
-    fn get_layer_offset_default(_bytes: &[u8], _layer_type: std::any::TypeId) -> Option<usize> {
+    fn payload_byte_index_default(_bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
         None // Mysql does not encapsulate any inner layer
     }
 }

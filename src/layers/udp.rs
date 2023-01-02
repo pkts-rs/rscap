@@ -1,8 +1,11 @@
-use crate::layers;
+use crate::error::*;
+use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use core::any;
-use core::fmt::Debug;
+use crate::layers::{Raw, RawRef};
+
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+
+use core::fmt::Debug;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
@@ -11,52 +14,7 @@ pub struct Udp {
     sport: u16,
     dport: u16,
     chksum: u16,
-    #[payload_field]
-    payload: Option<Box<dyn Layer>>,
-}
-
-impl ToByteVec for Udp {
-    fn to_byte_vec_extend(&self, bytes: &mut Vec<u8>) {
-        let len: u16 = self
-            .len()
-            .try_into()
-            .expect("UDP packet payload exceeded maximum permittable size of 2^16 bytes");
-        bytes.extend(self.sport.to_be_bytes());
-        bytes.extend(self.dport.to_be_bytes());
-        bytes.extend(len.to_be_bytes());
-        bytes.extend(self.chksum.to_be_bytes());
-        match &self.payload {
-            None => (),
-            Some(p) => p.to_byte_vec_extend(bytes),
-        }
-    }
-}
-
-impl From<&UdpRef<'_>> for Udp {
-    #[inline]
-    fn from(value: &UdpRef<'_>) -> Self {
-        Udp {
-            sport: value.sport(),
-            dport: value.dport(),
-            chksum: value.chksum(),
-            payload: Some(Box::new(layers::Raw::from_bytes_unchecked(value.payload()))),
-        }
-    }
-}
-
-impl LayerImpl for Udp {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: Option<&dyn Layer>) -> bool {
-        true // TODO: a TCP payload after UDP wouldn't do, would it? Because the checksum would have to be calculated with IP addresses?
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        8 + match &self.payload {
-            Some(p) => p.len(),
-            None => 0,
-        }
-    }
+    payload: Option<Box<dyn LayerObject>>,
 }
 
 impl Udp {
@@ -91,6 +49,98 @@ impl Udp {
     }
 }
 
+impl LayerLength for Udp {
+    #[inline]
+    fn len(&self) -> usize {
+        8 + match self.payload.as_ref() {
+            Some(p) => p.len(),
+            None => 0,
+        }
+    }
+}
+
+impl LayerObject for Udp {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_ref().map(|p| p.as_ref())
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_mut().map(|p| p.as_mut())
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+}
+
+impl ToBytes for Udp {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        let len: u16 = self
+            .len()
+            .try_into()
+            .expect("UDP packet payload exceeded maximum permittable size of 2^16 bytes");
+        bytes.extend(self.sport.to_be_bytes());
+        bytes.extend(self.dport.to_be_bytes());
+        bytes.extend(len.to_be_bytes());
+        bytes.extend(self.chksum.to_be_bytes());
+        match &self.payload {
+            None => (),
+            Some(p) => p.to_bytes_extended(bytes),
+        }
+    }
+}
+
+impl FromBytesCurrent for Udp {
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let udp = UdpRef::from_bytes_unchecked(bytes);
+        Udp {
+            sport: udp.sport(),
+            dport: udp.dport(),
+            chksum: udp.chksum(),
+            payload: None,
+        }
+    }
+
+    #[inline]
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        self.payload = match bytes.len() {
+            0..=8 => None,
+            _ => Some(Box::new(Raw::from_bytes_unchecked(&bytes[8..]))),
+        }
+    }
+}
+
+impl CanSetPayload for Udp {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        true // TODO: a TCP payload after UDP wouldn't do, would it? Because the checksum would have to be calculated with IP addresses?
+    }
+}
+
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
@@ -108,8 +158,8 @@ impl<'a> FromBytesRef<'a> for UdpRef<'a> {
 
 impl LayerOffset for UdpRef<'_> {
     #[inline]
-    fn get_layer_offset_default(_bytes: &[u8], layer_type: any::TypeId) -> Option<usize> {
-        if any::TypeId::of::<layers::Raw>() == layer_type {
+    fn payload_byte_index_default(_bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+        if layer_type == RawRef::layer_id_static() {
             Some(8)
         } else {
             None
@@ -120,51 +170,93 @@ impl LayerOffset for UdpRef<'_> {
 impl UdpRef<'_> {
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(self.data[0..2].try_into().unwrap())
+        u16::from_be_bytes(
+            self.data[0..2]
+                .try_into()
+                .expect("insufficient bytes in UdpRef to retrieve source port"),
+        )
     }
 
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(self.data[2..4].try_into().unwrap())
+        u16::from_be_bytes(
+            self.data[2..4]
+                .try_into()
+                .expect("insufficient bytes in UdpRef to retrieve destination port"),
+        )
     }
 
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(self.data[4..6].try_into().unwrap())
+        u16::from_be_bytes(
+            self.data[4..6]
+                .try_into()
+                .expect("insufficient bytes in UdpRef to retrieve packet length"),
+        )
     }
 
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(self.data[6..8].try_into().unwrap())
+        u16::from_be_bytes(
+            self.data[6..8]
+                .try_into()
+                .expect("insufficient bytes in UdpRef to retrieve checksum"),
+        )
     }
 
     #[inline]
     pub fn payload(&self) -> &[u8] {
-        &self.data[8..]
+        self.data
+            .get(8..)
+            .expect("insufficient bytes in UdpRef to retrieve payload")
     }
 }
 
 impl Validate for UdpRef<'_> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        if curr_layer.len() < 8 {
-            return Err(ValidationError::InvalidSize);
-        }
-        let length_bytes: [u8; 2] = curr_layer[4..6].try_into().unwrap();
-        let length = u16::from_be_bytes(length_bytes) as usize;
-        if length > curr_layer.len() {
-            Err(ValidationError::InvalidValue)
-        } else if length < curr_layer.len() {
-            Err(ValidationError::TrailingBytes(curr_layer.len() - length))
-        } else {
-            Ok(())
+        match curr_layer.get(4..6) {
+            Some(len_slice) => {
+                let len_bytes: [u8; 2] = len_slice.try_into().unwrap();
+                let length = u16::from_be_bytes(len_bytes) as usize;
+                if length > curr_layer.len() {
+                    Err(ValidationError {
+                        layer: Udp::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "insufficient bytes for payload length advertised by UDP header",
+                    })
+                } else if length < curr_layer.len() {
+                    Err(ValidationError {
+                        layer: Udp::name(),
+                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - length),
+                        reason:
+                            "more bytes in packet than advertised by the UDP header length field",
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            None => Err(ValidationError {
+                layer: Udp::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes in UDP header (8 bytes required)",
+            }),
         }
     }
 
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        // We always consider the next layer after UDP to be Raw
-        layers::Raw::validate(&curr_layer[8..])
+        // We always consider the next layer after UDP to be `Raw`
+        Raw::validate(&curr_layer[8..])
+    }
+}
+
+impl<'a> From<&'a UdpMut<'a>> for UdpRef<'a> {
+    #[inline]
+    fn from(value: &'a UdpMut<'a>) -> Self {
+        UdpRef {
+            data: &value.data[..value.len],
+        }
     }
 }
 
@@ -177,25 +269,6 @@ pub struct UdpMut<'a> {
     data: &'a mut [u8],
     #[data_length_field]
     len: usize,
-}
-
-impl<'a> From<&'a UdpMut<'a>> for UdpRef<'a> {
-    #[inline]
-    fn from(value: &'a UdpMut<'a>) -> Self {
-        UdpRef {
-            data: &value.data[..value.len],
-        }
-    }
-}
-
-impl<'a> FromBytesMut<'a> for UdpMut<'a> {
-    #[inline]
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
-        UdpMut {
-            len: length,
-            data: bytes,
-        }
-    }
 }
 
 impl UdpMut<'_> {
@@ -254,10 +327,23 @@ impl UdpMut<'_> {
 
     #[inline]
     pub fn set_payload_unchecked(&mut self, payload: &[u8]) {
-        let dst = &mut self.data[8..8 + payload.len()];
-        for i in 0..payload.len() {
-            dst[8 + i] = payload[i];
+        let payload_location = self
+            .data
+            .get_mut(8..8 + payload.len())
+            .expect("insufficient bytes in UdpMut buffer to set payload");
+        for (&src, dst) in payload.iter().zip(payload_location) {
+            *dst = src;
         }
         self.len = 8 + payload.len();
+    }
+}
+
+impl<'a> FromBytesMut<'a> for UdpMut<'a> {
+    #[inline]
+    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
+        UdpMut {
+            len: length,
+            data: bytes,
+        }
     }
 }

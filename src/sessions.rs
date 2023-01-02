@@ -1,43 +1,41 @@
 use std::marker::PhantomData;
 
-use crate::layers::traits::{Layer, LayerRef, Validate, FromBytes};
-use crate::defrag::{Defragment, DefragmentLayers, BaseDefragment};
-
+use crate::defrag::{BaseDefragment, Defragment, DefragmentLayers};
+use crate::error::ValidationError;
+use crate::layers::traits::{FromBytes, LayerObject, LayerRef, Validate};
 
 // A session takes in raw bytes and outputs the type associated with the given session
 
+trait Session {
+    type Out: LayerObject;
 
-trait Session { // <In: ToOwned + Validate> {
-    type Out: Layer;
+    fn put(&mut self, pkt: &[u8]) -> Result<(), ValidationError>;
 
-
-
-    // fn prepend_session<I: ToOwned + Validate, S: Session<I, Out = Self::Out>>(self, session: S);
-
-    // fn prepend_defragmentor<I: ToOwned + Validate, S: Session<I, Out = Self::Out>>(self, defrag: S);
-}
-
-pub struct LayeredSessions<In: ToOwned + Validate> { // <FirstIn: ToOwned + Validate, LastOut: Layer> {
-    sessions: Vec<Box<dyn Session<Out = dyn Layer>>>,
-    defrags: Vec<Box<dyn BaseDefragment>>,
-    _in: PhantomData<In>,
-}
-
-struct _ExampleSession {
-    sessions: Vec<Box<dyn BaseDefragment>>,
+    fn get(&mut self) -> Option<Self::Out>;
 }
 
 trait DualSession {
-    type Out1: Layer;
-    type Out2: Layer;
+    type Out1: LayerObject;
+    type Out2: LayerObject;
+
+    fn put1(&mut self, pkt: &[u8]) -> Result<(), ValidationError>;
+
+    fn put2(&mut self, pkt: &[u8]) -> Result<(), ValidationError>;
+
+    fn get1(&mut self) -> Option<Self::Out1>;
+
+    fn get2(&mut self) -> Option<Self::Out2>;
 }
 
 trait MultiSession {
-    type Out: Layer;
+    type Out: LayerObject;
+
+    fn new(session_cnt: usize) -> Self;
+
+    fn put(&mut self, pkt: &[u8], idx: usize) -> Result<(), ValidationError>;
+
+    fn get(&mut self, idx: usize) -> Option<Self::Out>;
 }
-
-
-//  
 
 /*
 trait TwoWaySession<Peer1In: Layer, Peer2In: Layer> {
@@ -60,6 +58,6 @@ impl<In> TwoWaySession<In> for MysqlTwoSession {
 }
 
 // MultiwaySession
-// 
+//
 
 */

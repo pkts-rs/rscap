@@ -1,0 +1,1612 @@
+use crate::layers::traits::extras::*;
+use crate::layers::traits::*;
+use crate::layers::*;
+use crate::utils;
+use crate::LendingIterator;
+
+use core::{cmp, iter};
+
+#[derive(Clone, Debug, Layer, StatelessLayer)]
+#[metadata_type(DiameterMetadata)]
+#[ref_type(DiameterRef)]
+pub struct Diameter {
+    version: u8,
+    flags: CommandFlags,
+    comm_code: u32,
+    app_id: u32,
+    hop_id: u32,
+    end_id: u32,
+    avps: Vec<GenericAvp>,
+    payload: Option<Box<dyn LayerObject>>, // Kept for compatibility purposes // TODO: remove?
+}
+
+impl Diameter {
+    #[inline]
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    #[inline]
+    pub fn set_version(&mut self, version: u8) {
+        self.version = version;
+    }
+
+    #[inline]
+    pub fn flags(&self) -> CommandFlags {
+        self.flags
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: CommandFlags) {
+        self.flags = flags;
+    }
+
+    #[inline]
+    pub fn comm_code(&self) -> u32 {
+        self.comm_code
+    }
+
+    #[inline]
+    pub fn set_comm_code(&mut self, command_code: u32) {
+        assert!(
+            command_code <= 0x00FFFFFF,
+            "Diameter Command Code must be between 0 and 2^24 - 1"
+        );
+        self.comm_code = command_code;
+    }
+
+    #[inline]
+    pub fn app_id(&self) -> u32 {
+        self.app_id
+    }
+
+    #[inline]
+    pub fn set_app_id(&mut self, application_id: u32) {
+        self.app_id = application_id;
+    }
+
+    #[inline]
+    pub fn hop_id(&self) -> u32 {
+        self.hop_id
+    }
+
+    #[inline]
+    pub fn set_hop_id(&mut self, hop_id: u32) {
+        self.hop_id = hop_id;
+    }
+
+    #[inline]
+    pub fn end_id(&self) -> u32 {
+        self.end_id
+    }
+
+    #[inline]
+    pub fn set_end_id(&mut self, end_id: u32) {
+        self.end_id = end_id;
+    }
+
+    #[inline]
+    pub fn avps(&self) -> &Vec<GenericAvp> {
+        &self.avps
+    }
+
+    #[inline]
+    pub fn avps_mut(&mut self) -> &mut Vec<GenericAvp> {
+        &mut self.avps
+    }
+}
+
+impl CanSetPayload for Diameter {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        false
+    }
+}
+
+impl FromBytesCurrent for Diameter {
+    #[inline]
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        return;
+    }
+
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let diam = DiameterRef::from_bytes_unchecked(bytes);
+        Diameter {
+            version: diam.version(),
+            flags: diam.flags(),
+            comm_code: diam.comm_code(),
+            app_id: diam.app_id(),
+            hop_id: diam.hop_id(),
+            end_id: diam.end_id(),
+            avps: {
+                let mut v = Vec::new();
+                let mut i = diam.avp_iter();
+                while let Some(avp) = i.next() {
+                    v.push(avp.into());
+                }
+                v
+            },
+            payload: None,
+        }
+    }
+}
+
+impl LayerLength for Diameter {
+    #[inline]
+    fn len(&self) -> usize {
+        20 + match self.payload.as_ref() {
+            Some(p) => p.len(),
+            None => 0,
+        }
+    }
+}
+
+impl LayerObject for Diameter {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_deref()
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_deref_mut()
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+}
+
+impl ToBytes for Diameter {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        // Version
+        bytes.push(1);
+        let len: u32 = self
+            .len()
+            .try_into()
+            .expect("Diameter packet length exceeded maximum size for Message Length field");
+        assert!(
+            len < 0x_00FF_FFFF,
+            "Diameter packet length exceeded maximum size for Message Length field"
+        );
+        // Message Length
+        bytes.extend(&len.to_be_bytes()[1..]);
+        // Command Flags
+        bytes.push(self.flags.raw());
+        // Command Code
+        bytes.extend(&self.comm_code.to_be_bytes()[1..]);
+        // Application Identifier
+        bytes.extend(self.app_id.to_be_bytes());
+        // Hop-by-Hop Identifier
+        bytes.extend(self.hop_id.to_be_bytes());
+        // End-to-End Identifier
+        bytes.extend(self.end_id.to_be_bytes());
+        // AVPs
+        for avp in self.avps() {
+            avp.to_bytes_extended(bytes);
+        }
+    }
+}
+
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |    Version    |                 Message Length                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// | Command Flags |                  Command Code                 |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                         Application-ID                        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Hop-by-Hop Identifier                    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      End-to-End Identifier                    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  AVPs ...
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-
+/// ```
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
+#[owned_type(Diameter)]
+#[metadata_type(DiameterMetadata)]
+pub struct DiameterRef<'a> {
+    #[data_field]
+    data: &'a [u8],
+}
+
+impl<'a> DiameterRef<'a> {
+    #[inline]
+    pub fn version(&self) -> u8 {
+        *self
+            .data
+            .get(0)
+            .expect("insufficient bytes in DiameterRef for header flags")
+    }
+
+    #[inline]
+    pub fn flags(&self) -> CommandFlags {
+        CommandFlags {
+            flags: *self
+                .data
+                .get(4)
+                .expect("insufficient bytes in DiameterRef for header flags"),
+        }
+    }
+
+    #[inline]
+    pub fn unpadded_len(&self) -> u32 {
+        0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.data, 0)
+                    .expect("insufficient bytes in DiameterRef to retrieve Message Length field"),
+            )
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        utils::padded_length::<4>(self.unpadded_len() as usize)
+    }
+
+    #[inline]
+    pub fn comm_code(&self) -> u32 {
+        0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.data, 4)
+                    .expect("insufficient bytes in DiameterRef to retrieve Command Code field"),
+            )
+    }
+
+    #[inline]
+    pub fn app_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 8).expect(
+                "insufficient bytes in DiameterRef to retrieve Application Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn hop_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 12).expect(
+                "insufficient bytes in DiameterRef to retrieve Hop-by-Hop Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn end_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 16).expect(
+                "insufficient bytes in DiameterRef to retrieve End-to-End Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn avp_iter(&self) -> AvpIterRef<'a> {
+        AvpIterRef {
+            bytes: self
+                .data
+                .get(20..)
+                .expect("insufficient bytes in DiameterRef to retrieve header"),
+        }
+    }
+}
+
+impl<'a> FromBytesRef<'a> for DiameterRef<'a> {
+    #[inline]
+    fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
+        DiameterRef { data: packet }
+    }
+}
+
+impl LayerOffset for DiameterRef<'_> {
+    #[inline]
+    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+        None // Diameter has no payload
+    }
+}
+
+impl Validate for DiameterRef<'_> {
+    #[inline]
+    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        match utils::to_array(curr_layer, 0) {
+            Some(unpadded_len_arr) => {
+                let len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
+
+                // Validate length field (too big) and header bytes
+                if cmp::max(20, len) > curr_layer.len() {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "insufficient bytes in Diameter packet for header/Data payload",
+                    });
+                }
+
+                // Validate length field (too small)
+                if len < 20 {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "Diameter packet Length field was too small for header",
+                    });
+                }
+
+                if len % 4 != 0 {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "Diameter packet Length field was not a multiple of 4",
+                    });
+                }
+
+                // Validate AVPs
+                let mut remainder = &curr_layer[20..];
+                while remainder.len() > 0 {
+                    match GenericAvpRef::validate(remainder) {
+                        Ok(_) => break,
+                        Err(e) => {
+                            if let ValidationErrorType::TrailingBytes(l) = e.err_type {
+                                remainder = &remainder[remainder.len() - l..];
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+
+                // Check for trailing bytes
+                if len < curr_layer.len() {
+                    Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - len),
+                        reason: "extra bytes remain at end of Diameter packet",
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Err(ValidationError {
+                layer: Diameter::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes in DiameterRef for Message Length field",
+            }),
+        }
+    }
+
+    #[inline]
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        Ok(()) // Diameter has no payload
+    }
+}
+
+pub struct AvpIterRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'b> LendingIterator for AvpIterRef<'b> {
+    type Item<'a> = GenericAvpRef<'a> where Self: 'a;
+
+    #[inline]
+    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+        if self.bytes.len() == 0 {
+            return None;
+        }
+
+        let unpadded_len = 0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.bytes, 4)
+                    .expect("insufficient bytes in Diameter AVP for header values"),
+            );
+        let len = cmp::max(utils::padded_length::<4>(unpadded_len as usize), 12);
+        let opt = GenericAvpRef::from_bytes_unchecked(
+            self.bytes
+                .get(..len)
+                .expect("insufficient bytes in Diameter AVP for header and/or Data field"),
+        );
+        self.bytes = &self.bytes[len..];
+        Some(opt)
+    }
+}
+
+// Implementation of specific diameter messages (Base Diameter protocol)
+
+#[derive(Clone, Debug, Layer, StatelessLayer)]
+#[metadata_type(DiamBaseMetadata)]
+#[ref_type(DiamBaseRef)]
+pub struct DiamBase {
+    // version: u8, // version must be equal to 1
+    flags: CommandFlags,
+    app_id: u32,
+    hop_id: u32,
+    end_id: u32,
+    command: BaseCommand,
+    payload: Option<Box<dyn LayerObject>>, // Kept for compatibility purposes // TODO: remove?
+}
+
+impl DiamBase {
+    #[inline]
+    pub fn version(&self) -> u8 {
+        1
+    }
+
+    #[inline]
+    pub fn flags(&self) -> CommandFlags {
+        self.flags
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: CommandFlags) {
+        self.flags = flags;
+    }
+
+    #[inline]
+    pub fn comm_code(&self) -> u32 {
+        self.command.comm_code()
+    }
+
+    #[inline]
+    pub fn app_id(&self) -> u32 {
+        self.app_id
+    }
+
+    #[inline]
+    pub fn set_app_id(&mut self, application_id: u32) {
+        self.app_id = application_id;
+    }
+
+    #[inline]
+    pub fn hop_id(&self) -> u32 {
+        self.hop_id
+    }
+
+    #[inline]
+    pub fn set_hop_id(&mut self, hop_id: u32) {
+        self.hop_id = hop_id;
+    }
+
+    #[inline]
+    pub fn end_id(&self) -> u32 {
+        self.end_id
+    }
+
+    #[inline]
+    pub fn set_end_id(&mut self, end_id: u32) {
+        self.end_id = end_id;
+    }
+
+    #[inline]
+    pub fn command(&self) -> &BaseCommand {
+        &self.command
+    }
+
+    #[inline]
+    pub fn command_mut(&mut self) -> &mut BaseCommand {
+        &mut self.command
+    }
+}
+
+impl CanSetPayload for DiamBase {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        false
+    }
+}
+
+impl FromBytesCurrent for DiamBase {
+    #[inline]
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        return;
+    }
+
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let diam = DiamBaseRef::from_bytes_unchecked(bytes);
+        DiamBase {
+            flags: diam.flags(),
+            app_id: diam.app_id(),
+            hop_id: diam.hop_id(),
+            end_id: diam.end_id(),
+            command: todo!(),
+            payload: None,
+        }
+    }
+}
+
+impl LayerLength for DiamBase {
+    #[inline]
+    fn len(&self) -> usize {
+        20 + match self.payload.as_ref() {
+            Some(p) => p.len(),
+            None => 0,
+        }
+    }
+}
+
+impl LayerObject for DiamBase {
+    #[inline]
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        self.payload.as_deref()
+    }
+
+    #[inline]
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payload.as_deref_mut()
+    }
+
+    #[inline]
+    fn has_payload(&self) -> bool {
+        self.payload.is_some()
+    }
+
+    #[inline]
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        self.payload = None;
+        ret.expect(
+            format!(
+                "remove_payload() called on {} layer when layer had no payload",
+                self.layer_name()
+            )
+            .as_str(),
+        )
+    }
+
+    #[inline]
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+}
+
+impl ToBytes for DiamBase {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        // Version
+        bytes.push(1);
+        let len: u32 = self
+            .len()
+            .try_into()
+            .expect("Diameter packet length exceeded maximum size for Message Length field");
+        assert!(
+            len < 0x_00FF_FFFF,
+            "Diameter packet length exceeded maximum size for Message Length field"
+        );
+        // Message Length
+        bytes.extend(&len.to_be_bytes()[1..]);
+        // Command Flags
+        bytes.push(self.flags.raw());
+        // Command Code
+        todo!();
+        // Application Identifier
+        bytes.extend(self.app_id.to_be_bytes());
+        // Hop-by-Hop Identifier
+        bytes.extend(self.hop_id.to_be_bytes());
+        // End-to-End Identifier
+        bytes.extend(self.end_id.to_be_bytes());
+        // AVPs
+        todo!()
+    }
+}
+
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |    Version    |                 Message Length                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// | Command Flags |                  Command Code                 |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                         Application-ID                        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Hop-by-Hop Identifier                    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      End-to-End Identifier                    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  AVPs ...
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-
+/// ```
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
+#[owned_type(DiamBase)]
+#[metadata_type(DiamBaseMetadata)]
+pub struct DiamBaseRef<'a> {
+    #[data_field]
+    data: &'a [u8],
+}
+
+impl<'a> DiamBaseRef<'a> {
+    #[inline]
+    pub fn version(&self) -> u8 {
+        *self
+            .data
+            .get(0)
+            .expect("insufficient bytes in DiameterRef for header flags")
+    }
+
+    #[inline]
+    pub fn flags(&self) -> CommandFlags {
+        CommandFlags {
+            flags: *self
+                .data
+                .get(4)
+                .expect("insufficient bytes in DiameterRef for header flags"),
+        }
+    }
+
+    #[inline]
+    pub fn unpadded_len(&self) -> u32 {
+        0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.data, 0)
+                    .expect("insufficient bytes in DiameterRef to retrieve Message Length field"),
+            )
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        utils::padded_length::<4>(self.unpadded_len() as usize)
+    }
+
+    #[inline]
+    pub fn comm_code(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 4)
+                .expect("insufficient bytes in DiameterRef to retrieve Command Code field"),
+        )
+    }
+
+    #[inline]
+    pub fn app_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 8).expect(
+                "insufficient bytes in DiameterRef to retrieve Application Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn hop_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 12).expect(
+                "insufficient bytes in DiameterRef to retrieve Hop-by-Hop Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn end_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 16).expect(
+                "insufficient bytes in DiameterRef to retrieve End-to-End Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn avp_iter(&self) -> AvpIterRef<'a> {
+        AvpIterRef {
+            bytes: self
+                .data
+                .get(20..)
+                .expect("insufficient bytes in DiameterRef to retrieve header"),
+        }
+    }
+}
+
+impl<'a> FromBytesRef<'a> for DiamBaseRef<'a> {
+    #[inline]
+    fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
+        DiamBaseRef { data: packet }
+    }
+}
+
+impl LayerOffset for DiamBaseRef<'_> {
+    #[inline]
+    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+        None // Diameter has no payload
+    }
+}
+
+impl Validate for DiamBaseRef<'_> {
+    #[inline]
+    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        match utils::to_array(curr_layer, 0) {
+            Some(unpadded_len_arr) => {
+                let len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
+
+                // Validate length field (too big) and header bytes
+                if cmp::max(20, len) > curr_layer.len() {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "insufficient bytes in Diameter packet for header/Data payload",
+                    });
+                }
+
+                // Validate length field (too small)
+                if len < 20 {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "Diameter packet Length field was too small for header",
+                    });
+                }
+
+                if len % 4 != 0 {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidValue,
+                        reason: "Diameter packet Length field was not a multiple of 4",
+                    });
+                }
+
+                // Validate AVPs
+                let mut remainder = &curr_layer[20..];
+                while remainder.len() > 0 {
+                    match GenericAvpRef::validate(remainder) {
+                        Ok(_) => break,
+                        Err(e) => {
+                            if let ValidationErrorType::TrailingBytes(l) = e.err_type {
+                                remainder = &remainder[remainder.len() - l..];
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+
+                // Check for trailing bytes
+                if len < curr_layer.len() {
+                    Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - len),
+                        reason: "extra bytes remain at end of Diameter packet",
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Err(ValidationError {
+                layer: Diameter::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes in DiameterRef for Message Length field",
+            }),
+        }
+    }
+
+    #[inline]
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        Ok(()) // Diameter has no payload
+    }
+}
+
+/*
+// Implementation of 3GPP S6a Diamemter messages
+
+
+#[derive(Clone, Debug, Layer, StatelessLayer)]
+#[metadata_type(S6aMetadata)]
+#[ref_type(S6aRef)]
+pub struct S6a {
+    avps: Vec<u8>,
+}
+
+impl CanSetPayload for S6a {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        false // No generic payloads are relayed over the S6a protocol
+    }
+}
+
+impl FromBytesCurrent for S6a {
+    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+        todo!()
+    }
+
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+}
+
+impl LayerLength for S6a {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+impl LayerObject for S6a {
+    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+        todo!()
+    }
+
+    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        todo!()
+    }
+
+    fn has_payload(&self) -> bool {
+        todo!()
+    }
+
+    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+        todo!()
+    }
+
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        todo!()
+    }
+}
+
+impl ToBytes for S6a {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        todo!()
+    }
+}
+
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
+#[owned_type(S6a)]
+#[metadata_type(S6aMetadata)]
+pub struct S6aRef<'a> {
+    #[data_field]
+    data: &'a [u8],
+}
+
+impl<'a> FromBytesRef<'a> for S6aRef<'a> {
+    #[inline]
+    fn from_bytes_unchecked(packet: &'a [u8]) -> Self {
+        S6aRef { data: packet }
+    }
+}
+
+impl LayerOffset for S6aRef<'_> {
+    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+        todo!()
+    }
+}
+
+impl Validate for S6aRef<'_> {
+    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        todo!()
+    }
+
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        todo!()
+    }
+}
+*/
+
+// =============================================================================
+//                             Internal Structures
+// =============================================================================
+
+#[derive(Clone, Copy, Debug)]
+pub struct GenericCommandFlags {
+    flags: u8,
+}
+
+const COMM_FLAG_REQUEST: u8 = 0b_1000_0000;
+const COMM_FLAG_PROXIABLE: u8 = 0b_0100_0000;
+const COMM_FLAG_ERROR: u8 = 0b_0010_0000;
+const COMM_FLAG_RETRANSMITTED: u8 = 0b_0001_0000;
+
+impl GenericCommandFlags {
+    #[inline]
+    pub fn raw(&self) -> u8 {
+        self.flags
+    }
+
+    #[inline]
+    pub fn raw_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    #[inline]
+    pub fn request(&self) -> bool {
+        self.flags & COMM_FLAG_REQUEST > 0
+    }
+
+    #[inline]
+    pub fn set_request(&mut self, request: bool) {
+        if request {
+            self.flags |= COMM_FLAG_REQUEST;
+        } else {
+            self.flags &= !COMM_FLAG_REQUEST;
+        }
+    }
+
+    #[inline]
+    pub fn proxiable(&self) -> bool {
+        self.flags & COMM_FLAG_PROXIABLE > 0
+    }
+
+    #[inline]
+    pub fn set_proxiable(&mut self, proxiable: bool) {
+        if proxiable {
+            self.flags |= COMM_FLAG_PROXIABLE;
+        } else {
+            self.flags &= !COMM_FLAG_PROXIABLE;
+        }
+    }
+
+    #[inline]
+    pub fn error(&self) -> bool {
+        self.flags & COMM_FLAG_ERROR > 0
+    }
+
+    #[inline]
+    pub fn set_error(&mut self, error: bool) {
+        if error {
+            self.flags |= COMM_FLAG_ERROR;
+        } else {
+            self.flags &= !COMM_FLAG_ERROR;
+        }
+    }
+
+    #[inline]
+    pub fn retransmitted(&self) -> bool {
+        self.flags & COMM_FLAG_RETRANSMITTED > 0
+    }
+
+    #[inline]
+    pub fn set_retransmitted(&mut self, retransmitted: bool) {
+        if retransmitted {
+            self.flags |= COMM_FLAG_RETRANSMITTED;
+        } else {
+            self.flags &= !COMM_FLAG_RETRANSMITTED;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CommandFlags {
+    flags: u8,
+}
+
+impl CommandFlags {
+    #[inline]
+    pub fn raw(&self) -> u8 {
+        self.flags
+    }
+
+    #[inline]
+    pub fn raw_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    #[inline]
+    pub fn request(&self) -> bool {
+        self.flags & COMM_FLAG_REQUEST > 0
+    }
+
+    #[inline]
+    pub fn proxiable(&self) -> bool {
+        self.flags & COMM_FLAG_PROXIABLE > 0
+    }
+
+    #[inline]
+    pub fn set_proxiable(&mut self, proxiable: bool) {
+        if proxiable {
+            self.flags |= COMM_FLAG_PROXIABLE;
+        } else {
+            self.flags &= !COMM_FLAG_PROXIABLE;
+        }
+    }
+
+    #[inline]
+    pub fn error(&self) -> bool {
+        self.flags & COMM_FLAG_ERROR > 0
+    }
+
+    #[inline]
+    pub fn set_error(&mut self, error: bool) {
+        if error {
+            self.flags |= COMM_FLAG_ERROR;
+        } else {
+            self.flags &= !COMM_FLAG_ERROR;
+        }
+    }
+
+    #[inline]
+    pub fn retransmitted(&self) -> bool {
+        self.flags & COMM_FLAG_RETRANSMITTED > 0
+    }
+
+    #[inline]
+    pub fn set_retransmitted(&mut self, retransmitted: bool) {
+        if retransmitted {
+            self.flags |= COMM_FLAG_RETRANSMITTED;
+        } else {
+            self.flags &= !COMM_FLAG_RETRANSMITTED;
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum BaseCommand {
+    AbortSessionReq(AbortSessionReq),
+    AbortSessionAns(AbortSessionAns),
+    AccountingReq(AccountingReq),
+    AccountingAns(AccountingAns),
+    CapExchangeReq(CapExchangeReq),
+    CapExchangeAns(CapExchangeAns),
+    DevWatchdogReq(DevWatchdogReq),
+    DevWatchdogAns(DevWatchdogAns),
+    DisconnectPeerReq(DisconnectPeerReq),
+    DisconnectPeerAns(DisconnectPeerAns),
+    ReAuthReq(ReAuthReq),
+    ReAuthAns(ReAuthAns),
+    SessionTermReq(SessionTermReq),
+    SessionTermAns(SessionTermAns),
+    /* TODO: Uncomprehensive list annotation */
+}
+
+impl BaseCommand {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        todo!()
+    }
+
+    #[inline]
+    pub fn comm_code(&self) -> u32 {
+        match self {
+            Self::AbortSessionReq(_) | Self::AbortSessionAns(_) => 274,
+            Self::AccountingReq(_) | Self::AccountingAns(_) => 271,
+            Self::CapExchangeReq(_) | Self::CapExchangeAns(_) => 257,
+            Self::DevWatchdogReq(_) | Self::DevWatchdogAns(_) => 280,
+            Self::DisconnectPeerReq(_) | Self::DisconnectPeerAns(_) => 282,
+            Self::ReAuthReq(_) | Self::ReAuthAns(_) => 258,
+            Self::SessionTermReq(_) | Self::SessionTermAns(_) => 275,
+            _ => panic!("Internal Error--unexpected Command Code enum variant for comm_code()"),
+        }
+    }
+}
+
+impl ToBytes for BaseCommand {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        todo!()
+    }
+}
+
+pub enum BaseCommandRef<'a> {
+    AbortSessionReq(AbortSessionReqRef<'a>),
+    AbortSessionAns(AbortSessionAns),
+    AccountingReq(AccountingReq),
+    AccountingAns(AccountingAns),
+    CapExchangeReq(CapExchangeReq),
+    CapExchangeAns(CapExchangeAns),
+    DevWatchdogReq(DevWatchdogReq),
+    DevWatchdogAns(DevWatchdogAns),
+    DisconnectPeerReq(DisconnectPeerReq),
+    DisconnectPeerAns(DisconnectPeerAns),
+    ReAuthReq(ReAuthReq),
+    ReAuthAns(ReAuthAns),
+    SessionTermReq(SessionTermReq),
+    SessionTermAns(SessionTermAns),
+    /* TODO: Uncomprehensive list annotation */
+}
+
+#[derive(Clone, Debug)]
+pub struct AbortSessionReq {
+    avps: Vec<BaseAvp>,
+}
+
+impl AbortSessionReq {
+    #[inline]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        todo!()
+    }
+
+    #[inline]
+    pub fn avps(&self) -> &Vec<BaseAvp> {
+        &self.avps
+    }
+
+    #[inline]
+    pub fn avps_mut(&mut self) -> &mut Vec<BaseAvp> {
+        &mut self.avps
+    }
+}
+
+pub struct AbortSessionReqRef<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> AbortSessionReqRef<'a> {}
+
+#[derive(Clone, Debug)]
+pub struct AbortSessionAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountingReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountingAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CapExchangeReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CapExchangeAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevWatchdogReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevWatchdogAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DisconnectPeerReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DisconnectPeerAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReAuthReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReAuthAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionTermReq {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionTermAns {
+    avps: Vec<BaseAvp>,
+}
+
+#[derive(Clone, Debug)]
+pub enum BaseAvp {
+    Other(GenericAvp),
+}
+
+pub enum BaseAvpRef<'a> {
+    Other(GenericAvpRef<'a>),
+}
+
+impl<'a> BaseAvpRef<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        todo!()
+    }
+}
+
+pub struct BaseAvpIterRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'b> LendingIterator for BaseAvpIterRef<'b> {
+    type Item<'a> = BaseAvpRef<'a> where Self: 'a;
+
+    #[inline]
+    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+        if self.bytes.len() == 0 {
+            return None;
+        }
+
+        let unpadded_len = 0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.bytes, 4)
+                    .expect("insufficient bytes in Diameter Base AVP for header values"),
+            );
+        let len = cmp::max(utils::padded_length::<4>(unpadded_len as usize), 12);
+        let opt = BaseAvpRef::from_bytes_unchecked(
+            self.bytes
+                .get(..len)
+                .expect("insufficient bytes in Diameter Base AVP for header and/or Data field"),
+        );
+        self.bytes = &self.bytes[len..];
+        Some(opt)
+    }
+}
+
+// Data types
+
+pub struct DiameterIdentity {
+    realm: Vec<u8>,
+}
+
+pub struct DiameterIdentityRef<'a> {
+    realm: &'a [u8],
+}
+
+// End Data Types
+
+/*
+pub enum S6aCommand {
+    UpdateLocationReq,
+    UpdateLocationAns,
+    CancelLocationReq,
+    CancelLocationAns,
+    AuthInfoReq,
+    AuthInfoAns,
+    InsertSubDataReq,
+    InsertSubDataAns,
+    DeleteSubDataReq,
+    DeleteSubDataAns,
+    PurgeUeReq,
+    PurgeUeAns,
+    ResetReq,
+    ResetAns,
+    NotifyReq,
+    NotifyAns,
+}
+*/
+
+///
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                           AVP Code                            |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |V M P r r r r r|                  AVP Length                   |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                        Vendor-ID (opt)                        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |    Data ...
+/// +-+-+-+-+-+-+-+-+
+/// ```
+#[derive(Clone, Debug)]
+pub struct GenericAvp {
+    code: u32,
+    flags: AvpFlags,
+    vendor_id: u32,
+    data: Vec<u8>,
+}
+
+impl GenericAvp {
+    #[inline]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        GenericAvpRef::from_bytes_unchecked(bytes).into()
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        GenericAvpRef::validate(bytes)
+    }
+
+    #[inline]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[inline]
+    pub fn set_code(&mut self, code: u32) {
+        self.code = code;
+    }
+
+    #[inline]
+    pub fn flags(&self) -> AvpFlags {
+        self.flags
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: AvpFlags) {
+        self.flags = flags;
+    }
+
+    #[inline]
+    pub fn unpadded_len(&self) -> u32 {
+        let len = (12 + self.data.len())
+            .try_into()
+            .expect("AVP Data payload exceeded maximum size for AVP Length field");
+        assert!(
+            len < 0x_00FF_FFFF,
+            "AVP Data payload exceeded maximum size for AVP Length field"
+        );
+        len
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        12 + utils::padded_length::<4>(self.data.len())
+    }
+
+    #[inline]
+    pub fn vendor_id(&self) -> u32 {
+        self.vendor_id
+    }
+
+    #[inline]
+    pub fn set_vendor_id(&mut self, vendor_id: u32) {
+        self.vendor_id = vendor_id;
+    }
+
+    #[inline]
+    pub fn data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.data
+    }
+}
+
+impl ToBytes for GenericAvp {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        // AVP Code
+        bytes.extend(self.code.to_be_bytes());
+        // Flags
+        bytes.push(self.flags.raw());
+        // AVP Length
+        bytes.extend(&self.unpadded_len().to_be_bytes()[1..]);
+        // Vendor ID
+        bytes.extend(self.vendor_id.to_be_bytes());
+        // Data
+        bytes.extend(&self.data);
+        // Padding
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+    }
+}
+
+impl From<GenericAvpRef<'_>> for GenericAvp {
+    #[inline]
+    fn from(value: GenericAvpRef<'_>) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&GenericAvpRef<'_>> for GenericAvp {
+    #[inline]
+    fn from(value: &GenericAvpRef<'_>) -> Self {
+        GenericAvp {
+            code: value.code(),
+            flags: value.flags(),
+            vendor_id: value.vendor_id(),
+            data: Vec::from(value.data()),
+        }
+    }
+}
+
+pub struct GenericAvpRef<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> GenericAvpRef<'a> {
+    #[inline]
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
+    }
+
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+        GenericAvpRef { data: bytes }
+    }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        match utils::to_array(bytes, 4) {
+            Some(unpadded_len_arr) => {
+                let unpadded_len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
+                let len = utils::padded_length::<4>(unpadded_len);
+
+                // Validate length field (too big) and header bytes
+                if cmp::max(12, len) > bytes.len() {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "insufficient bytes in Diameter AVP for Data payload",
+                    });
+                }
+
+                // Validate length field (too small)
+                if unpadded_len < 12 {
+                    return Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::InvalidSize,
+                        reason: "Diameter AVP Length field was too small for header",
+                    });
+                }
+
+                // Validate padding
+                for i in unpadded_len..len {
+                    if bytes[i] != 0 {
+                        return Err(ValidationError {
+                            layer: Diameter::name(),
+                            err_type: ValidationErrorType::InvalidValue, // TODO: should we add a new ErrorType::UnexpectedValue or ::ValueWarning?
+                            reason: "non-zero padding values found at end of Diameter AVP",
+                        });
+                    }
+                }
+
+                if len < bytes.len() {
+                    Err(ValidationError {
+                        layer: Diameter::name(),
+                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        reason: "extra bytes remain at end of Diameter AVP",
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Err(ValidationError {
+                layer: Diameter::name(),
+                err_type: ValidationErrorType::InvalidSize,
+                reason: "insufficient bytes in Diameter AVP for header",
+            }),
+        }
+    }
+
+    #[inline]
+    pub fn code(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 0)
+                .expect("insufficient bytes in Diameter AvpRef to retrieve AVP Code field"),
+        )
+    }
+
+    #[inline]
+    pub fn flags(&self) -> AvpFlags {
+        AvpFlags {
+            flags: *self
+                .data
+                .get(4)
+                .expect("insufficent bytes in Diameter AvpRef to retrieve AVP Flags field"),
+        }
+    }
+
+    #[inline]
+    pub fn unpadded_len(&self) -> u32 {
+        0x_00FF_FFFF
+            & u32::from_be_bytes(
+                utils::to_array(self.data, 4)
+                    .expect("insufficient bytes in Diameter AvpRef to retrieve AVP Length field"),
+            )
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        utils::padded_length::<4>(self.unpadded_len() as usize)
+    }
+
+    #[inline]
+    pub fn vendor_id(&self) -> u32 {
+        u32::from_be_bytes(
+            utils::to_array(self.data, 8).expect(
+                "insufficient bytes in Diameter AvpRef to retrieve Vendor Identifier field",
+            ),
+        )
+    }
+
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        let end = self.unpadded_len() as usize;
+        assert!(end < 12, "error retrieving AVP Data field--length field in Diameter AvpRef was not long enough for AVP header");
+        self.data
+            .get(12..end)
+            .expect("insufficent bytes in Diameter AvpRef to retrieve Data field")
+    }
+}
+
+const AVP_FLAG_VENDOR_SPECIFIC: u8 = 0b_1000_0000;
+const AVP_FLAG_MANDATORY: u8 = 0b_0100_0000;
+
+#[derive(Clone, Copy, Debug)]
+pub struct AvpFlags {
+    flags: u8,
+}
+
+impl AvpFlags {
+    #[inline]
+    pub fn raw(&self) -> u8 {
+        self.flags
+    }
+
+    #[inline]
+    pub fn raw_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    #[inline]
+    pub fn mandatory(&self) -> bool {
+        self.flags & AVP_FLAG_MANDATORY > 0
+    }
+
+    #[inline]
+    pub fn set_mandatory(&mut self, mandatory: bool) {
+        if mandatory {
+            self.flags |= AVP_FLAG_MANDATORY
+        } else {
+            self.flags &= !AVP_FLAG_MANDATORY
+        }
+    }
+
+    #[inline]
+    pub fn vendor_specific(&self) -> bool {
+        self.flags & AVP_FLAG_VENDOR_SPECIFIC > 0
+    }
+
+    #[inline]
+    pub fn set_vendor_specific(&mut self, vendor_specific: bool) {
+        if vendor_specific {
+            self.flags |= AVP_FLAG_VENDOR_SPECIFIC
+        } else {
+            self.flags &= !AVP_FLAG_VENDOR_SPECIFIC
+        }
+    }
+}
