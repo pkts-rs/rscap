@@ -1,4 +1,6 @@
-use super::{Raw, RawRef};
+use std::cmp::Ordering;
+
+use super::RawRef;
 use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -60,27 +62,23 @@ impl LayerObject for MysqlPacket {
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
         ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
+            "remove_payload() called on MysqlPacket layer when layer had no payload",
         )
     }
 }
 
 impl ToBytes for MysqlPacket {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
         todo!()
     }
 }
 
 impl FromBytesCurrent for MysqlPacket {
-    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
         todo!()
     }
 
-    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+    fn from_bytes_current_layer_unchecked(_bytes: &[u8]) -> Self {
         todo!()
     }
 }
@@ -165,20 +163,18 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             + ((curr_layer[1] as usize) << 8)
             + curr_layer[2] as usize;
 
-        if curr_layer[4..].len() < payload_len {
-            Err(ValidationError {
+        match curr_layer[4..].len().cmp(&payload_len) {
+            Ordering::Less => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 err_type: ValidationErrorType::InvalidSize,
                 reason: "insufficient bytes for packet length advertised by MySQL header",
-            })
-        } else if curr_layer[4..].len() > payload_len {
-            Err(ValidationError {
+            }),
+            Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 err_type: ValidationErrorType::TrailingBytes(curr_layer[4..].len() - payload_len),
                 reason: "more bytes in packet than advertised by the MySQL header length field",
-            })
-        } else {
-            Ok(())
+            }),
+            Ordering::Equal => Ok(())
         }
     }
 
@@ -246,17 +242,13 @@ impl LayerObject for MysqlClient {
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
         ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
+            "remove_payload() called on MysqlClient layer when layer had no payload",
         )
     }
 }
 
 impl ToBytes for MysqlClient {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
         todo!()
     }
 }
@@ -269,7 +261,7 @@ impl CanSetPayload for MysqlClient {
 }
 
 impl<'a> From<&MysqlClientRef<'a>> for MysqlClient {
-    fn from(value: &MysqlClientRef<'a>) -> Self {
+    fn from(_value: &MysqlClientRef<'a>) -> Self {
         todo!()
     }
 }

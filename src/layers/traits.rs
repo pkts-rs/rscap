@@ -75,7 +75,7 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     /// use `can_append_with()` and `appended_with_unchecked()` separately.
     #[inline]
     fn can_append_with<T: BaseLayer + IntoLayer>(&self, other: &T) -> bool {
-        self.can_append_with_boxed(&other.to_boxed_layer())
+        self.can_append_with_boxed(other.to_boxed_layer().as_ref())
     }
 
     /// Append the given layer to the existing packet layer, returning an error if the given layer
@@ -394,13 +394,12 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
     /// If no layer of the given type exists within the sublayers, this method will panic.
     #[inline]
     fn index_layer<T: LayerRef<'a> + FromBytesRef<'a> + BaseLayerMetadata>(&'a self) -> T {
-        self.get_layer().expect(
-            format!(
+        self.get_layer().unwrap_or_else(||
+            panic!(
                 "layer {} not found in instance of {} when index_layer() called",
                 T::name(),
                 self.layer_name()
             )
-            .as_str(),
         )
     }
 
@@ -418,13 +417,12 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
         &'a self,
         n: usize,
     ) -> T {
-        self.get_nth_layer(n).expect(
-            format!(
+        self.get_nth_layer(n).unwrap_or_else(||
+            panic!(
                 "layer {} not found in instance of {} when index_nth_layer() called",
                 T::name(),
                 self.layer_name()
             )
-            .as_str(),
         )
     }
 }
@@ -479,13 +477,12 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
     #[inline]
     fn index_layer_mut<T: LayerMut<'a> + FromBytesMut<'a>>(&'a mut self) -> T {
         let layer_name = self.layer_name();
-        self.get_layer_mut().expect(
-            format!(
+        self.get_layer_mut().unwrap_or_else(||
+            panic!(
                 "layer {} not found in instance of {} when index_layer() called",
                 T::name(),
                 layer_name
             )
-            .as_str(),
         )
     }
 
@@ -503,13 +500,12 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
         &'a self,
         n: usize,
     ) -> T {
-        self.get_nth_layer(n).expect(
-            format!(
-                "layer {} not found in instance of {} when index_nth_layer_mut() called",
+        self.get_nth_layer(n).unwrap_or_else(||
+            panic!(
+                "{} layer not found in instance of {} when index_nth_layer_mut() called",
                 T::name(),
                 self.layer_name()
             )
-            .as_str(),
         )
     }
 }
@@ -908,7 +904,7 @@ pub mod extras {
         /// Sets the given layer's payload to the appropriate layer type, if such a payload exists.
         /// In this context, `bytes` should be the serialized representation of not only the payload,
         /// but of the current layer as well.
-        fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]);
+        fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]);
 
         /// Creates a new layer from the given bytes without setting a payload for the layer, even
         /// if one exists.
@@ -916,15 +912,15 @@ pub mod extras {
     }
 
     pub trait BaseLayerAppendBoxed: BaseLayer + IntoLayer + Sized + ToOwnedLayer {
-        fn can_append_with_boxed(&self, other: &Box<dyn LayerObject>) -> bool {
+        fn can_append_with_boxed(&self, other: &dyn LayerObject) -> bool {
             let base: Self::Owned = self.to_owned(); // Ouch. Heavy allocation here
             if let Some(mut curr) = base.get_payload_ref() {
                 while curr.get_payload_ref().is_some() {
                     curr = curr.get_payload_ref().unwrap();
                 }
-                curr.can_set_payload(other.as_ref())
+                curr.can_set_payload(other)
             } else {
-                base.can_set_payload(other.as_ref())
+                base.can_set_payload(other)
             }
         }
 
@@ -933,7 +929,7 @@ pub mod extras {
             self,
             other: Box<dyn LayerObject>,
         ) -> Result<Self::Output, &'static str> {
-            if self.can_append_with_boxed(&other) {
+            if self.can_append_with_boxed(other.as_ref()) {
                 Ok(self.appended_with_boxed_unchecked(other))
             } else {
                 Err("nope")

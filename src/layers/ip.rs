@@ -15,11 +15,14 @@ use super::{Raw, RawRef};
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IpVersion {
-    /// Reserved; Internet Protocol, pre-v4
-    Reserved0 = 0,
-    _Unassigned1 = 1,
-    _Unassigned2 = 2,
-    _Unassigned3 = 3,
+    /// Reserved (0x0); Internet Protocol, pre-v4
+    R0 = 0,
+    /// Unassigned (0x1)
+    U1 = 1,
+    /// Unassigned (0x2)
+    U2 = 2,
+    /// Unassigned (0x3)
+    U3 = 3,
     /// Internet Protocol, Version 4 (see RFC 760)
     Ipv4 = 4,
     /// Internet Stream Protocol (ST or ST-II) (see RFC 1819)
@@ -32,13 +35,18 @@ pub enum IpVersion {
     Pip = 8,
     /// TCP and UDP over Bigger Addresses (TUBA) (see RFC 1347)
     Tuba = 9,
-    _Unassigned10 = 10,
-    _Unassigned11 = 11,
-    _Unassigned12 = 12,
-    _Unassigned13 = 13,
-    _Unassigned14 = 14,
-    /// Reserved; version field sentinel value
-    Reserved15 = 15,
+    /// Unassigned (0xA)
+    U10 = 10,
+    /// Unassigned (0xB)
+    U11 = 11,
+    /// Unassigned (0xC)
+    U12 = 12,
+    /// Unassigned (0xD)
+    U13 = 13,
+    /// Unassigned (0xE)
+    U14 = 14,
+    /// Reserved (0xF); version field sentinel value
+    R15 = 15,
 }
 
 impl From<u8> for IpVersion {
@@ -224,13 +232,7 @@ impl LayerObject for Ipv4 {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
-        )
+        ret.expect("remove_payload() called on IPv4 layer when layer had no payload")
     }
 }
 
@@ -258,9 +260,8 @@ impl ToBytes for Ipv4 {
         bytes.extend(self.saddr.to_be_bytes());
         bytes.extend(self.daddr.to_be_bytes());
         self.options.to_bytes_extended(bytes);
-        match self.payload.as_ref() {
-            Some(payload) => payload.to_bytes_extended(bytes),
-            None => (),
+        if let Some(payload) = self.payload.as_ref() {
+            payload.to_bytes_extended(bytes)
         }
     }
 }
@@ -285,9 +286,9 @@ impl FromBytesCurrent for Ipv4 {
     }
 
     #[inline]
-    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
-        if ipv4.payload_raw().len() == 0 {
+        if ipv4.payload_raw().is_empty() {
             self.payload = None;
         } else {
             self.payload = match ipv4.protocol() {
@@ -327,7 +328,7 @@ impl<'a> Ipv4Ref<'a> {
     #[inline]
     pub fn version(&self) -> u8 {
         self.data
-            .get(0)
+            .first()
             .expect("insufficient bytes in Ipv4Ref to retrieve IP Version field")
             >> 4
     }
@@ -335,7 +336,7 @@ impl<'a> Ipv4Ref<'a> {
     #[inline]
     pub fn ihl(&self) -> u8 {
         self.data
-            .get(0)
+            .first()
             .expect("insufficient bytes in Ipv4Ref to retrieve Internet Header Length field")
             & 0x0F
     }
@@ -423,7 +424,7 @@ impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
 
 impl LayerOffset for Ipv4Ref<'_> {
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
-        let ihl = match bytes.get(0) {
+        let ihl = match bytes.first() {
             Some(l) => (l & 0x0F) as usize * 4,
             None => return None,
         };
@@ -463,7 +464,7 @@ impl Validate for Ipv4Ref<'_> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let (version, ihl) =
-            match curr_layer.get(0) {
+            match curr_layer.first() {
                 None => return Err(ValidationError {
                     layer: Ipv4::name(),
                     err_type: ValidationErrorType::InvalidSize,
@@ -560,7 +561,7 @@ impl Validate for Ipv4Ref<'_> {
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let ihl =
-            match curr_layer.get(0) {
+            match curr_layer.first() {
                 Some(l) => (l & 0x0F) as usize * 4,
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
@@ -783,9 +784,11 @@ impl<'a> Ipv4Mut<'a> {
         Ipv4OptionsMut::from_bytes_unchecked(&mut self.data[20..options_end])
     }
 
+    /*
     pub fn set_options(&mut self, options: Ipv4OptionRef<'_>) {
         todo!()
     }
+    */
 
     #[inline]
     pub fn payload(&self) -> &[u8] {
@@ -1157,7 +1160,7 @@ pub enum Ipv4DataProtocol {
     Uti = 0x78,
     /// Simple Message Protocol
     Smp = 0x79,
-    /// Simple Multicast Protocol 	draft-perlman-simple-multicast-03
+    /// Simple Multicast Protocol
     Sm = 0x7A,
     /// Performance Transparency Protocol
     Ptp = 0x7B,
@@ -1441,7 +1444,7 @@ impl<'a> Ipv4OptionsRef<'a> {
     }
 
     pub fn validate(mut bytes: &[u8]) -> Result<(), ValidationError> {
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(());
         }
 
@@ -1453,7 +1456,7 @@ impl<'a> Ipv4OptionsRef<'a> {
             });
         }
 
-        while let Some(option_type) = bytes.get(0) {
+        while let Some(option_type) = bytes.first() {
             match option_type {
                 0 => break,
                 1 => bytes = &bytes[1..],
@@ -1504,7 +1507,7 @@ impl<'a> Ipv4OptionsRef<'a> {
 
 impl<'a> From<&'a Ipv4OptionsMut<'_>> for Ipv4OptionsRef<'a> {
     fn from(value: &'a Ipv4OptionsMut<'_>) -> Self {
-        Self::from_bytes_unchecked(&value.bytes)
+        Self::from_bytes_unchecked(value.bytes)
     }
 }
 
@@ -1523,12 +1526,12 @@ pub struct Ipv4OptionsIterRef<'a> {
 impl<'b> LendingIterator for Ipv4OptionsIterRef<'b> {
     type Item<'a> = Ipv4OptionRef<'a> where Self: 'a;
 
-    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+    fn next(&mut self) -> Option<Self::Item<'_>> {
         if self.end_reached {
             return None;
         }
 
-        match self.bytes.get(0) {
+        match self.bytes.first() {
             Some(&r @ (0 | 1)) => {
                 let option = &self.bytes[self.curr_idx..self.curr_idx + 1];
                 self.curr_idx += 1;
@@ -1611,7 +1614,7 @@ pub struct Ipv4OptionsIterMut<'a> {
 impl<'b> LendingIterator for Ipv4OptionsIterMut<'b> {
     type Item<'a> = Ipv4OptionMut<'a> where Self: 'a;
 
-    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+    fn next(&mut self) -> Option<Self::Item<'_>> {
         if self.end_reached {
             return None;
         }
@@ -1753,7 +1756,7 @@ impl<'a> Ipv4OptionRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        match bytes.get(0) {
+        match bytes.first() {
             Some(0 | 1) => if bytes.len() == 1 {
                 Ok(())
             } else {

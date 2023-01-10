@@ -61,14 +61,7 @@ impl LayerObject for Raw {
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
-        self.payload = None;
-        ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
-        )
+        ret.expect("remove_payload() called on Raw layer when layer had no payload")
     }
 }
 
@@ -84,7 +77,7 @@ impl ToBytes for Raw {
 
 impl FromBytesCurrent for Raw {
     #[inline]
-    fn from_bytes_payload_unchecked_default(&mut self, _bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
         self.payload = None;
     }
 

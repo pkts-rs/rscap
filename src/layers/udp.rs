@@ -6,6 +6,7 @@ use crate::layers::{Raw, RawRef};
 use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
+use std::cmp;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
@@ -85,13 +86,7 @@ impl LayerObject for Udp {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
-        )
+        ret.expect("remove_payload() called on UDP layer when layer had no payload")
     }
 }
 
@@ -126,7 +121,7 @@ impl FromBytesCurrent for Udp {
     }
 
     #[inline]
-    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         self.payload = match bytes.len() {
             0..=8 => None,
             _ => Some(Box::new(Raw::from_bytes_unchecked(&bytes[8..]))),
@@ -219,21 +214,19 @@ impl Validate for UdpRef<'_> {
             Some(len_slice) => {
                 let len_bytes: [u8; 2] = len_slice.try_into().unwrap();
                 let length = u16::from_be_bytes(len_bytes) as usize;
-                if length > curr_layer.len() {
-                    Err(ValidationError {
+                match length.cmp(&curr_layer.len()) {
+                    cmp::Ordering::Greater => Err(ValidationError {
                         layer: Udp::name(),
                         err_type: ValidationErrorType::InvalidSize,
                         reason: "insufficient bytes for payload length advertised by UDP header",
-                    })
-                } else if length < curr_layer.len() {
-                    Err(ValidationError {
+                    }),
+                    cmp::Ordering::Less => Err(ValidationError {
                         layer: Udp::name(),
                         err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - length),
                         reason:
                             "more bytes in packet than advertised by the UDP header length field",
-                    })
-                } else {
-                    Ok(())
+                    }),
+                    cmp::Ordering::Equal => Ok(())
                 }
             }
             None => Err(ValidationError {

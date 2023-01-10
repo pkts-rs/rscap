@@ -1,8 +1,5 @@
-use std::marker::PhantomData;
-
-use crate::defrag::{BaseDefragment, Defragment, DefragmentLayers};
 use crate::error::ValidationError;
-use crate::layers::traits::{FromBytes, LayerObject, LayerRef, Validate};
+use crate::layers::traits::LayerObject;
 
 // A session takes in raw bytes and outputs the type associated with the given session
 

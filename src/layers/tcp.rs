@@ -170,13 +170,7 @@ impl LayerObject for Tcp {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect(
-            format!(
-                "remove_payload() called on {} layer when layer had no payload",
-                self.layer_name()
-            )
-            .as_str(),
-        )
+        ret.expect("remove_payload() called on TCP layer when layer had no payload")
     }
 }
 
@@ -223,7 +217,7 @@ impl FromBytesCurrent for Tcp {
     }
 
     #[inline]
-    fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         let tcp = TcpRef::from_bytes_unchecked(bytes);
         let start = cmp::max(tcp.data_offset(), 5) * 4;
         self.payload = if start > bytes.len() {
@@ -337,7 +331,7 @@ impl<'a> TcpRef<'a> {
     pub fn options(&self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
         TcpOptionsRef::from_bytes_unchecked(
-            &self
+            self
                 .data
                 .get(20..end)
                 .expect("insufficient bytes in TcpRef to retrieve TCP Options"),
@@ -596,17 +590,19 @@ impl<'a> TcpMut<'a> {
     pub fn options(&'a self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
         TcpOptionsRef::from_bytes_unchecked(
-            &self
+            self
                 .data
                 .get(20..end)
                 .expect("insufficient bytes in TcpMut to retrieve TCP Options"),
         )
     }
 
+    /*
     #[inline]
     pub fn set_options(&mut self, options: TcpOptionsRef<'_>) {
         todo!()
     }
+    */
 }
 
 impl<'a> FromBytesMut<'a> for TcpMut<'a> {
@@ -623,7 +619,7 @@ impl<'a> FromBytesMut<'a> for TcpMut<'a> {
 //                         Inner Field Data Structures
 // =============================================================================
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TcpFlags {
     data: u16,
 }
@@ -641,7 +637,7 @@ const FIN_BIT: u16 = 0b_0000_0000_0000_0001;
 impl TcpFlags {
     #[inline]
     pub fn new() -> Self {
-        TcpFlags { data: 0 }
+        TcpFlags::default()
     }
 
     #[inline]
@@ -810,7 +806,7 @@ impl TcpOptions {
             .as_ref()
             .map(|opts| opts.iter().map(|opt| opt.byte_len()).sum())
             .unwrap_or(0);
-        return options_len + padding_len;
+        options_len + padding_len
     }
 
     #[inline]
@@ -902,7 +898,7 @@ impl<'a> TcpOptionsRef<'a> {
     }
 
     pub fn validate(mut bytes: &[u8]) -> Result<(), ValidationError> {
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(());
         }
 
@@ -914,7 +910,7 @@ impl<'a> TcpOptionsRef<'a> {
             });
         }
 
-        while let Some(option_type) = bytes.get(0) {
+        while let Some(option_type) = bytes.first() {
             match option_type {
                 0 => break,
                 1 => bytes = &bytes[1..],
@@ -976,12 +972,12 @@ pub struct TcpOptionsIterRef<'a> {
 impl<'b> LendingIterator for TcpOptionsIterRef<'b> {
     type Item<'a> = TcpOptionRef<'a> where Self: 'a;
 
-    fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
+    fn next(&mut self) -> Option<Self::Item<'_>> {
         if self.end_reached {
             return None;
         }
 
-        match self.bytes.get(0) {
+        match self.bytes.first() {
             Some(&r @ (0 | 1)) => {
                 let option = &self.bytes[self.curr_idx..self.curr_idx + 1];
                 self.curr_idx += 1;
@@ -1114,7 +1110,7 @@ impl<'a> TcpOptionRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        match bytes.get(0) {
+        match bytes.first() {
             Some(0 | 1) => if bytes.len() == 1 {
                 Ok(())
             } else {
