@@ -61,9 +61,7 @@ impl LayerObject for MysqlPacket {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect(
-            "remove_payload() called on MysqlPacket layer when layer had no payload",
-        )
+        ret.expect("remove_payload() called on MysqlPacket layer when layer had no payload")
     }
 }
 
@@ -174,7 +172,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
                 err_type: ValidationErrorType::TrailingBytes(curr_layer[4..].len() - payload_len),
                 reason: "more bytes in packet than advertised by the MySQL header length field",
             }),
-            Ordering::Equal => Ok(())
+            Ordering::Equal => Ok(()),
         }
     }
 
@@ -241,9 +239,7 @@ impl LayerObject for MysqlClient {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect(
-            "remove_payload() called on MysqlClient layer when layer had no payload",
-        )
+        ret.expect("remove_payload() called on MysqlClient layer when layer had no payload")
     }
 }
 

@@ -105,7 +105,7 @@ impl CanSetPayload for Diameter {
 
 impl FromBytesCurrent for Diameter {
     #[inline]
-    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) { }
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -513,7 +513,7 @@ impl CanSetPayload for DiamBase {
 
 impl FromBytesCurrent for DiamBase {
     #[inline]
-    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) { }
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -1266,7 +1266,7 @@ impl From<&BaseAvpRef<'_>> for BaseAvp {
     fn from(value: &BaseAvpRef<'_>) -> Self {
         match value {
             BaseAvpRef::Other(avp) => BaseAvp::Other(avp.into()),
-//            _ => todo!(),
+            //            _ => todo!(),
         }
     }
 }

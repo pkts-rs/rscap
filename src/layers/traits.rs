@@ -394,13 +394,13 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
     /// If no layer of the given type exists within the sublayers, this method will panic.
     #[inline]
     fn index_layer<T: LayerRef<'a> + FromBytesRef<'a> + BaseLayerMetadata>(&'a self) -> T {
-        self.get_layer().unwrap_or_else(||
+        self.get_layer().unwrap_or_else(|| {
             panic!(
                 "layer {} not found in instance of {} when index_layer() called",
                 T::name(),
                 self.layer_name()
             )
-        )
+        })
     }
 
     /// Retrieves a reference to the `n`th sublayer of type `T`.
@@ -417,13 +417,13 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
         &'a self,
         n: usize,
     ) -> T {
-        self.get_nth_layer(n).unwrap_or_else(||
+        self.get_nth_layer(n).unwrap_or_else(|| {
             panic!(
                 "layer {} not found in instance of {} when index_nth_layer() called",
                 T::name(),
                 self.layer_name()
             )
-        )
+        })
     }
 }
 
@@ -477,13 +477,13 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
     #[inline]
     fn index_layer_mut<T: LayerMut<'a> + FromBytesMut<'a>>(&'a mut self) -> T {
         let layer_name = self.layer_name();
-        self.get_layer_mut().unwrap_or_else(||
+        self.get_layer_mut().unwrap_or_else(|| {
             panic!(
                 "layer {} not found in instance of {} when index_layer() called",
                 T::name(),
                 layer_name
             )
-        )
+        })
     }
 
     /// Retrieves a mutable reference to the `n`th sublayer of type `T`.
@@ -500,13 +500,13 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
         &'a self,
         n: usize,
     ) -> T {
-        self.get_nth_layer(n).unwrap_or_else(||
+        self.get_nth_layer(n).unwrap_or_else(|| {
             panic!(
                 "{} layer not found in instance of {} when index_nth_layer_mut() called",
                 T::name(),
                 self.layer_name()
             )
-        )
+        })
     }
 }
 

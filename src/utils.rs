@@ -12,10 +12,7 @@ pub(crate) fn to_array<const T: usize>(bytes: &[u8], start: usize) -> Option<[u8
 }
 
 #[inline]
-pub(crate) fn get_array<const T: usize>(
-    mut bytes: &[u8],
-    start: usize,
-) -> Option<&[u8; T]> {
+pub(crate) fn get_array<const T: usize>(mut bytes: &[u8], start: usize) -> Option<&[u8; T]> {
     bytes = bytes.get(start..start + T)?;
 
     // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
@@ -161,7 +158,7 @@ pub struct ArrayRing<T, const N: usize> {
 impl<T, const N: usize> default::Default for ArrayRing<T, N> {
     #[inline]
     fn default() -> Self {
-        Self { 
+        Self {
             start: 0,
             arr: array::from_fn(|_| None),
         }

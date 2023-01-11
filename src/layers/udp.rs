@@ -226,7 +226,7 @@ impl Validate for UdpRef<'_> {
                         reason:
                             "more bytes in packet than advertised by the UDP header length field",
                     }),
-                    cmp::Ordering::Equal => Ok(())
+                    cmp::Ordering::Equal => Ok(()),
                 }
             }
             None => Err(ValidationError {

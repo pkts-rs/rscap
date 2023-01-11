@@ -331,8 +331,7 @@ impl<'a> TcpRef<'a> {
     pub fn options(&self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
         TcpOptionsRef::from_bytes_unchecked(
-            self
-                .data
+            self.data
                 .get(20..end)
                 .expect("insufficient bytes in TcpRef to retrieve TCP Options"),
         )
@@ -590,8 +589,7 @@ impl<'a> TcpMut<'a> {
     pub fn options(&'a self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
         TcpOptionsRef::from_bytes_unchecked(
-            self
-                .data
+            self.data
                 .get(20..end)
                 .expect("insufficient bytes in TcpMut to retrieve TCP Options"),
         )

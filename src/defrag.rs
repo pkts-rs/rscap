@@ -10,7 +10,6 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::{utils, LendingIterator};
 
-
 type PktFilterFn = dyn Fn(&[u8]) -> bool;
 
 // TODO: Rename this crate to "sequence.rs"?
@@ -50,7 +49,8 @@ pub trait Defragment<Out: LayerObject + Validate + FromBytes>: BaseDefragment {
 
     #[inline]
     fn get_pkt(&mut self) -> Option<Out> {
-        self.get_pkt_raw().map(|pkt| Out::from_bytes_unchecked(pkt.as_ref()))
+        self.get_pkt_raw()
+            .map(|pkt| Out::from_bytes_unchecked(pkt.as_ref()))
     }
 
     fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filter: Option<F>);
@@ -140,7 +140,8 @@ impl<
 
     #[inline]
     pub fn get_pkt(&mut self) -> Option<Out> {
-        self.get_pkt_raw().map(|pkt| Out::from_bytes_unchecked(pkt.as_ref()))
+        self.get_pkt_raw()
+            .map(|pkt| Out::from_bytes_unchecked(pkt.as_ref()))
     }
 }
 
@@ -298,7 +299,8 @@ impl Ipv4Fragments {
             self.data[start..].copy_from_slice(&data[..(original_len - start)]);
             self.data.extend_from_slice(&data[original_len..]);
         } else {
-            self.data[start..(start + data.len())].copy_from_slice(&data[..(start + data.len() - start)]);
+            self.data[start..(start + data.len())]
+                .copy_from_slice(&data[..(start + data.len() - start)]);
         }
 
         self.rcvbt.set(start, start + data.len());
@@ -367,8 +369,6 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata> BaseDefragment
     }
 }
 */
-
-
 
 // Note: it is the caller's responsibility to ensure that packets are input from the same src/dst port, in the same direction, and from the same stream identifier.
 // The `SctpDefrag` is only responsible for ensuring packets of a stream come in order (unless the unordered bit is set) and are defragmented.
@@ -490,7 +490,7 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize> Base
     fn filter(&self) -> Option<&PktFilterFn> {
         match &self.filter {
             Some(f) => Some(f.as_ref()),
-            None => None
+            None => None,
         }
     }
 
