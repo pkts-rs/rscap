@@ -8,6 +8,7 @@ use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use core::{cmp, iter};
 
+// Chunk Types
 const CHUNK_TYPE_DATA: u8 = 0;
 const CHUNK_TYPE_INIT: u8 = 1;
 const CHUNK_TYPE_INIT_ACK: u8 = 2;
@@ -22,18 +23,27 @@ const CHUNK_TYPE_COOKIE_ECHO: u8 = 10;
 const CHUNK_TYPE_COOKIE_ACK: u8 = 11;
 const CHUNK_TYPE_SHUTDOWN_COMPLETE: u8 = 14;
 
+// DATA Chunk flags
+const DATA_CHUNK_FLAGS_IMMEDIATE_BIT: u8 = 0b_0000_1000;
+const DATA_CHUNK_FLAGS_UNORDERED_BIT: u8 = 0b_0000_0100;
+const DATA_CHUNK_FLAGS_BEGINNING_BIT: u8 = 0b_0000_0010;
+const DATA_CHUNK_FLAGS_ENDING_BIT: u8 = 0b_0000_0001;
+
+// INIT Chunk Options
 const INIT_OPT_IPV4_ADDRESS: u16 = 5;
 const INIT_OPT_IPV6_ADDRESS: u16 = 6;
 const INIT_OPT_COOKIE_PRESERVATIVE: u16 = 9;
 const INIT_OPT_HOSTNAME_ADDR: u16 = 11;
 const INIT_OPT_SUPP_ADDR_TYPES: u16 = 12;
 
+// INIT ACK Chunk Options
 const INIT_ACK_OPT_STATE_COOKIE: u16 = 7;
 const INIT_ACK_OPT_IPV4_ADDRESS: u16 = 5;
 const INIT_ACK_OPT_IPV6_ADDRESS: u16 = 6;
 const INIT_ACK_OPT_UNRECOGNIZED_PARAM: u16 = 8;
 const INIT_ACK_OPT_HOSTNAME_ADDR: u16 = 11;
 
+// ERROR/ABORT Chunk Options
 const ERR_CODE_INVALID_STREAM_ID: u16 = 1;
 const ERR_CODE_MISSING_MAND_PARAM: u16 = 2;
 const ERR_CODE_STALE_COOKIE: u16 = 3;
@@ -48,24 +58,21 @@ const ERR_CODE_RESTART_ASSOC_NEW_ADDR: u16 = 11;
 const ERR_CODE_USER_INITIATED_ABORT: u16 = 12;
 const ERR_CODE_PROTOCOL_VIOLATION: u16 = 13;
 
+// ABORT Chunk flags
 const ABORT_FLAGS_T_BIT: u8 = 0b_0000_0001;
 
+// SHUTDOWN COMPLETE Chunk flags
 const SHUTDOWN_COMPLETE_FLAGS_T_BIT: u8 = 0b_0000_0001;
-
-const DATA_CHUNK_FLAGS_IMMEDIATE_BIT: u8 = 0b_0000_1000;
-const DATA_CHUNK_FLAGS_UNORDERED_BIT: u8 = 0b_0000_0100;
-const DATA_CHUNK_FLAGS_BEGINNING_BIT: u8 = 0b_0000_0010;
-const DATA_CHUNK_FLAGS_ENDING_BIT: u8 = 0b_0000_0001;
 
 ///
 ///
 /// From the RFC:
 ///
+/// ```text
 /// An SCTP packet is composed of a common header and chunks.
 /// A chunk contains either control information or user data.
 /// The SCTP packet format is shown below:
 ///
-/// ```text
 ///  0                   1                   2                   3
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -262,9 +269,7 @@ impl FromBytesCurrent for Sctp {
         }
     }
 
-    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
-    
-    }
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 }
 
 impl LayerLength for Sctp {
@@ -342,11 +347,11 @@ impl ToBytes for Sctp {
 ///
 /// From the RFC:
 ///
+/// ```text
 /// An SCTP packet is composed of a common header and chunks.
 /// A chunk contains either control information or user data.
 /// The SCTP packet format is shown below:
 ///
-/// ```text
 ///  0                   1                   2                   3
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -640,6 +645,24 @@ impl<'b> LendingIterator for PayloadChunksIterRef<'b> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// The figure below illustrates the field format for the chunks to be
+/// transmitted in the SCTP packet.  Each chunk is formatted with a Chunk
+/// Type field, a chunk-specific Flag field, a Chunk Length field, and a
+/// Value field.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Chunk Type  | Chunk  Flags  |        Chunk Length           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /                          Chunk Value                          /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub enum ChunkRef<'a> {
     Control(ControlChunkRef<'a>),
@@ -941,10 +964,10 @@ impl<'a> ControlChunkRef<'a> {
 ///
 /// From the RFC:
 ///
+/// ```text
 /// This chunk is used to initiate an SCTP association between two endpoints.
 /// The format of the INIT chunk is shown below:
 ///
-/// ```text
 ///  0                   1                   2                   3
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -1124,6 +1147,32 @@ impl From<&InitChunkRef<'_>> for InitChunk {
     }
 }
 
+///
+///
+/// From the RFC:
+///
+/// ```text
+/// This chunk is used to initiate an SCTP association between two endpoints.
+/// The format of the INIT chunk is shown below:
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 1    |  Chunk Flags  |      Chunk Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                         Initiate Tag                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |          Advertised Receiver Window Credit (a_rwnd)           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Number of Outbound Streams   |   Number of Inbound Streams   |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                          Initial TSN                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /              Optional/Variable-Length Parameters              /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct InitChunkRef<'a> {
     data: &'a [u8],
@@ -1331,6 +1380,17 @@ impl<'b> LendingIterator for InitOptionsIterRef<'b> {
 
 #[derive(Clone, Debug)]
 pub enum InitOption {
+    /// From the RFC:
+    ///
+    /// ```text
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |        Type = 5               |      Length = 8               |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |                        IPv4 Address                           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     Ipv4Address(u32),
     Ipv6Address(u128),
     CookiePreservative(u32),
@@ -1610,6 +1670,29 @@ pub enum InitOptionPayloadRef<'a> {
     Unknown(u16, &'a [u8]),
 }
 
+/// From the RFC:
+///
+/// ```text
+/// The format of the INIT ACK chunk is shown below:
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 2    |  Chunk Flags  |      Chunk Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                         Initiate Tag                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |              Advertised Receiver Window Credit                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Number of Outbound Streams   |  Number of Inbound Streams    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                          Initial TSN                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /              Optional/Variable-Length Parameters              /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct InitAckChunk {
     flags: u8,
@@ -1769,6 +1852,29 @@ impl From<&InitAckChunkRef<'_>> for InitAckChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// The format of the INIT ACK chunk is shown below:
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 2    |  Chunk Flags  |      Chunk Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                         Initiate Tag                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |              Advertised Receiver Window Credit                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Number of Outbound Streams   |  Number of Inbound Streams    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                          Initial TSN                          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /              Optional/Variable-Length Parameters              /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct InitAckChunkRef<'a> {
     data: &'a [u8],
@@ -2234,6 +2340,59 @@ pub enum InitAckOptionPayloadRef<'a> {
     Unknown(u16, &'a [u8]),
 }
 
+/// From the RFC:
+///
+/// ```text
+/// This chunk is sent to the peer endpoint to acknowledge received DATA
+/// chunks and to inform the peer endpoint of gaps in the received
+/// subsequences of DATA chunks as represented by their TSNs.
+///
+/// The SACK MUST contain the Cumulative TSN Ack, Advertised Receiver
+/// Window Credit (a_rwnd), Number of Gap Ack Blocks, and Number of
+/// Duplicate TSNs fields.
+///
+/// By definition, the value of the Cumulative TSN Ack parameter is the
+/// last TSN received before a break in the sequence of received TSNs
+/// occurs; the next TSN value following this one has not yet been
+/// received at the endpoint sending the SACK.  This parameter therefore
+/// acknowledges receipt of all TSNs less than or equal to its value.
+///
+/// ...
+///
+/// The SACK also contains zero or more Gap Ack Blocks.  Each Gap Ack
+/// Block acknowledges a subsequence of TSNs received following a break
+/// in the sequence of received TSNs.  By definition, all TSNs
+/// acknowledged by Gap Ack Blocks are greater than the value of the
+/// Cumulative TSN Ack.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 3    |Chunk  Flags   |      Chunk Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Cumulative TSN Ack                       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |          Advertised Receiver Window Credit (a_rwnd)           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// | Number of Gap Ack Blocks = N  |  Number of Duplicate TSNs = X |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Gap Ack Block #1 Start       |   Gap Ack Block #1 End        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                                                               /
+/// \                              ...                              \
+/// /                                                               /
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Gap Ack Block #N Start      |  Gap Ack Block #N End         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                       Duplicate TSN 1                         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                                                               /
+/// \                              ...                              \
+/// /                                                               /
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                       Duplicate TSN X                         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct SackChunk {
     flags: u8,
@@ -2379,6 +2538,59 @@ impl From<&SackChunkRef<'_>> for SackChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// This chunk is sent to the peer endpoint to acknowledge received DATA
+/// chunks and to inform the peer endpoint of gaps in the received
+/// subsequences of DATA chunks as represented by their TSNs.
+///
+/// The SACK MUST contain the Cumulative TSN Ack, Advertised Receiver
+/// Window Credit (a_rwnd), Number of Gap Ack Blocks, and Number of
+/// Duplicate TSNs fields.
+///
+/// By definition, the value of the Cumulative TSN Ack parameter is the
+/// last TSN received before a break in the sequence of received TSNs
+/// occurs; the next TSN value following this one has not yet been
+/// received at the endpoint sending the SACK.  This parameter therefore
+/// acknowledges receipt of all TSNs less than or equal to its value.
+///
+/// ...
+///
+/// The SACK also contains zero or more Gap Ack Blocks.  Each Gap Ack
+/// Block acknowledges a subsequence of TSNs received following a break
+/// in the sequence of received TSNs.  By definition, all TSNs
+/// acknowledged by Gap Ack Blocks are greater than the value of the
+/// Cumulative TSN Ack.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 3    |Chunk  Flags   |      Chunk Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Cumulative TSN Ack                       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |          Advertised Receiver Window Credit (a_rwnd)           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// | Number of Gap Ack Blocks = N  |  Number of Duplicate TSNs = X |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Gap Ack Block #1 Start       |   Gap Ack Block #1 End        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                                                               /
+/// \                              ...                              \
+/// /                                                               /
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Gap Ack Block #N Start      |  Gap Ack Block #N End         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                       Duplicate TSN 1                         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                                                               /
+/// \                              ...                              \
+/// /                                                               /
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                       Duplicate TSN X                         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct SackChunkRef<'a> {
     data: &'a [u8],
@@ -2601,6 +2813,26 @@ impl<'b> Iterator for DuplicateTsnIterRef<'b> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint should send this chunk to its peer endpoint to probe the
+/// reachability of a particular destination transport address defined in
+/// the present association.
+///
+/// The parameter field contains the Heartbeat Information, which is a
+/// variable-length opaque data structure understood only by the sender.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 4    | Chunk  Flags  |      Heartbeat Length         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /            Heartbeat Information TLV (Variable-Length)        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct HeartbeatChunk {
     flags: u8,
@@ -2686,6 +2918,26 @@ impl From<&HeartbeatChunkRef<'_>> for HeartbeatChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint should send this chunk to its peer endpoint to probe the
+/// reachability of a particular destination transport address defined in
+/// the present association.
+///
+/// The parameter field contains the Heartbeat Information, which is a
+/// variable-length opaque data structure understood only by the sender.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 4    | Chunk  Flags  |      Heartbeat Length         |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /            Heartbeat Information TLV (Variable-Length)        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct HeartbeatChunkRef<'a> {
     data: &'a [u8],
@@ -2723,7 +2975,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                         layer: Sctp::name(),
                         err_type: ValidationErrorType::InvalidValue,
                         reason: e.reason,
-                    })
+                    });
                 }
 
                 for b in bytes.iter().take(len).skip(unpadded_len) {
@@ -2789,6 +3041,18 @@ impl<'a> HeartbeatChunkRef<'a> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |    Heartbeat Info Type=1      |         HB Info Length        |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Sender-Specific Heartbeat Info               /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct HeartbeatInfoRef<'a> {
     data: &'a [u8],
@@ -2875,6 +3139,26 @@ impl<'a> HeartbeatInfoRef<'a> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint should send this chunk to its peer endpoint as a response
+/// to a HEARTBEAT chunk. A HEARTBEAT ACK is always
+/// sent to the source IP address of the IP datagram containing the
+/// HEARTBEAT chunk to which this ack is responding.
+///
+/// The parameter field contains a variable-length opaque data structure.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 5    | Chunk  Flags  |    Heartbeat Ack Length       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /            Heartbeat Information TLV (Variable-Length)        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct HeartbeatAckChunk {
     flags: u8,
@@ -2960,6 +3244,26 @@ impl From<&HeartbeatAckChunkRef<'_>> for HeartbeatAckChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint should send this chunk to its peer endpoint as a response
+/// to a HEARTBEAT chunk. A HEARTBEAT ACK is always
+/// sent to the source IP address of the IP datagram containing the
+/// HEARTBEAT chunk to which this ack is responding.
+///
+/// The parameter field contains a variable-length opaque data structure.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 5    | Chunk  Flags  |    Heartbeat Ack Length       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /            Heartbeat Information TLV (Variable-Length)        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct HeartbeatAckChunkRef<'a> {
     data: &'a [u8],
@@ -3054,6 +3358,33 @@ impl<'a> HeartbeatAckChunkRef<'a> {
     }
 }
 
+///
+/// From the RFC:
+///
+/// ```text
+///The ABORT chunk is sent to the peer of an association to close the
+/// association.  The ABORT chunk may contain Cause Parameters to inform
+/// the receiver about the reason of the abort.  DATA chunks MUST NOT be
+/// bundled with ABORT.  Control chunks (except for INIT, INIT ACK, and
+/// SHUTDOWN COMPLETE) MAY be bundled with an ABORT, but they MUST be
+/// placed before the ABORT in the SCTP packet or they will be ignored by
+/// the receiver.
+///
+/// If an endpoint receives an ABORT with a format error or no TCB is
+/// found, it MUST silently discard it.  Moreover, under any
+/// circumstances, an endpoint that receives an ABORT MUST NOT respond to
+/// that ABORT by sending an ABORT of its own.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 6    |Reserved     |T|           Length              |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /                   zero or more Error Causes                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct AbortChunk {
     flags: AbortFlags,
@@ -3148,6 +3479,33 @@ impl From<&AbortChunkRef<'_>> for AbortChunk {
     }
 }
 
+///
+/// From the RFC:
+///
+/// ```text
+///The ABORT chunk is sent to the peer of an association to close the
+/// association.  The ABORT chunk may contain Cause Parameters to inform
+/// the receiver about the reason of the abort.  DATA chunks MUST NOT be
+/// bundled with ABORT.  Control chunks (except for INIT, INIT ACK, and
+/// SHUTDOWN COMPLETE) MAY be bundled with an ABORT, but they MUST be
+/// placed before the ABORT in the SCTP packet or they will be ignored by
+/// the receiver.
+///
+/// If an endpoint receives an ABORT with a format error or no TCB is
+/// found, it MUST silently discard it.  Moreover, under any
+/// circumstances, an endpoint that receives an ABORT MUST NOT respond to
+/// that ABORT by sending an ABORT of its own.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 6    |Reserved     |T|           Length              |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /                   zero or more Error Causes                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct AbortChunkRef<'a> {
     data: &'a [u8],
@@ -3309,33 +3667,284 @@ impl<'b> LendingIterator for ErrorCauseIterRef<'b> {
 #[derive(Clone, Debug)]
 pub enum ErrorCause {
     /// Invalid Stream Identifier
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Invalid Stream Identifier: Indicates endpoint received a DATA chunk
+    /// sent to a nonexistent stream.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=1              |      Cause Length=8           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |        Stream Identifier      |         (Reserved)            |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     InvalidStreamIdentifier(StreamIdentifierError),
+
     /// Missing Mandatory Parameter
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Missing Mandatory Parameter: Indicates that one or more mandatory TLV
+    /// parameters are missing in a received INIT or INIT ACK.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=2              |      Cause Length=8+N*2       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |                   Number of missing params=N                  |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |   Missing Param Type #1       |   Missing Param Type #2       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |   Missing Param Type #N-1     |   Missing Param Type #N       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     MissingMandatoryParameter(MissingParameterError),
+
     /// Stale Cookie
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// Stale Cookie Error: Indicates the receipt of a valid State Cookie
+    /// that has expired.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=3              |       Cause Length=8          |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |                 Measure of Staleness (usec.)                  |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     StaleCookie(StaleCookieError),
+
     /// Out of Resource
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Out of Resource: Indicates that the sender is out of resource.  This
+    /// is usually sent in combination with or within an ABORT.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=4              |      Cause Length=4           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     OutOfResource,
+
     /// Unresolvable Address
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unresolvable Address: Indicates that the sender is not able to
+    /// resolve the specified address parameter (e.g., type of address is not
+    /// supported by the sender).  This is usually sent in combination with
+    /// or within an ABORT.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=5              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unresolvable Address                         /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnresolvableAddress(UnresolvableAddrError),
+
     /// Unrecognized Chunk Type
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unrecognized Chunk Type: This error cause is returned to the
+    /// originator of the chunk if the receiver does not understand the chunk
+    /// and the upper bits of the 'Chunk Type' are set to 01 or 11.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=6              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unrecognized Chunk                           /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnrecognizedChunkType(UnrecognizedChunkError),
+
     /// Invalid Mandatory Parameter
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Invalid Mandatory Parameter: This error cause is returned to the
+    /// originator of an INIT or INIT ACK chunk when one of the mandatory
+    /// parameters is set to an invalid value.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=7              |      Cause Length=4           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     InvalidMandatoryParameter,
+
     /// Unrecognized Parameters
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unrecognized Parameters: This error cause is returned to the
+    /// originator of the INIT ACK chunk if the receiver does not recognize
+    /// one or more Optional TLV parameters in the INIT ACK chunk.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=8              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unrecognized Parameters                      /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnrecognizedParameters(UnrecognizedParamError),
+
     /// No User Data
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// No User Data: This error cause is returned to the originator of a
+    ///
+    /// DATA chunk if a received DATA chunk has no user data.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=9              |      Cause Length=8           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  TSN value                                    /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     NoUserData(NoUserDataError),
+
     /// Cookie Received While Shutting Down
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    /// Cookie Received While Shutting Down: A COOKIE ECHO was received while
+    /// the endpoint was in the SHUTDOWN-ACK-SENT state.  This error is
+    /// usually returned in an ERROR chunk bundled with the retransmitted
+    /// SHUTDOWN ACK.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=10              |      Cause Length=4          |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     CookieDuringShutdown,
+
     /// Restart of an Association with New Address
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    /// Restart of an association with new addresses: An INIT was received on
+    /// an existing association.  But the INIT added addresses to the
+    /// association that were previously NOT part of the association.  The
+    /// new addresses are listed in the error code.  This ERROR is normally
+    /// sent as part of an ABORT refusing the INIT (see Section 5.2).
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=11         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                       New Address TLVs                        /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    ///
+    /// Note: Each New Address TLV is an exact copy of the TLV that was found
+    /// in the INIT chunk that was new, including the Parameter Type and the
+    /// Parameter Length.
+    /// ```
     AssociationNewAddress(AssociationNewAddrError),
+
     /// User-Initiated Abort
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// This error cause MAY be included in ABORT chunks that are sent
+    /// because of an upper-layer request.  The upper layer can specify an
+    /// Upper Layer Abort Reason that is transported by SCTP transparently
+    /// and MAY be delivered to the upper-layer protocol at the peer.
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=12         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                    Upper Layer Abort Reason                   /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UserInitiatedAbort(UserInitiatedAbortError),
-    /// Protocol Violation
+
+    /// Protocol Violation Error
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// This error cause MAY be included in ABORT chunks that are sent
+    /// because an SCTP endpoint detects a protocol violation of the peer
+    /// that is not covered by the error causes described in Section 3.3.10.1
+    /// to Section 3.3.10.12.  An implementation MAY provide additional
+    /// information specifying what kind of protocol violation has been
+    /// detected.
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=13         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                    Additional Information                     /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     ProtocolViolation(ProtocolViolationError),
-    /// Other Unknown error code
-    Unknown(u16, Vec<u8>),
+
+    /// Some other error code not defined in RFC 4960.
+    Unknown(GenericParam),
 }
 
 impl ErrorCause {
@@ -3369,7 +3978,7 @@ impl ErrorCause {
             Self::AssociationNewAddress(e) => e.len(),
             Self::UserInitiatedAbort(e) => e.len(),
             Self::ProtocolViolation(e) => e.len(),
-            Self::Unknown(_, b) => 4 + utils::padded_length::<4>(b.len()),
+            Self::Unknown(e) => e.len(),
         }
     }
 }
@@ -3404,15 +4013,17 @@ impl From<&ErrorCauseRef<'_>> for ErrorCause {
             ErrorCauseRef::AssociationNewAddress(e) => ErrorCause::AssociationNewAddress(e.into()),
             ErrorCauseRef::UserInitiatedAbort(e) => ErrorCause::UserInitiatedAbort(e.into()),
             ErrorCauseRef::ProtocolViolation(e) => ErrorCause::ProtocolViolation(e.into()),
-            ErrorCauseRef::Unknown(b) => ErrorCause::Unknown(
-                u16::from_be_bytes(*utils::get_array(b, 0).expect(
-                    "insufficient bytes in SCTP <unknown> Error Cause to retrieve Error Type field",
-                )),
-                b.get(4..)
-                    .expect(
-                        "insufficient bytes in SCTP <unknown> Error Cause to retrieve Data field",
-                    )
-                    .to_vec(),
+            ErrorCauseRef::Unknown(e) => ErrorCause::Unknown(
+                e.into(), /*
+                          u16::from_be_bytes(*utils::get_array(b, 0).expect(
+                              "insufficient bytes in SCTP <unknown> Error Cause to retrieve Error Type field",
+                          )),
+                          b.get(4..)
+                              .expect(
+                                  "insufficient bytes in SCTP <unknown> Error Cause to retrieve Data field",
+                              )
+                              .to_vec(),
+                          */
             ),
         }
     }
@@ -3443,14 +4054,7 @@ impl ToBytes for ErrorCause {
             ErrorCause::AssociationNewAddress(e) => e.to_bytes_extended(bytes),
             ErrorCause::UserInitiatedAbort(e) => e.to_bytes_extended(bytes),
             ErrorCause::ProtocolViolation(e) => e.to_bytes_extended(bytes),
-            ErrorCause::Unknown(c, b) => {
-                bytes.extend(c.to_be_bytes());
-                let unpadded_len = u16::try_from(4 + b.len()).expect("too many bytes in SCTP <unknown> Error Cause Data field to represent in a 16-bit Length field");
-                let len = utils::padded_length::<4>(unpadded_len as usize);
-                bytes.extend(unpadded_len.to_be_bytes());
-                bytes.extend(b);
-                bytes.extend(iter::repeat(0).take(len - unpadded_len as usize));
-            }
+            ErrorCause::Unknown(e) => e.to_bytes_extended(bytes),
         }
     }
 }
@@ -3458,33 +4062,284 @@ impl ToBytes for ErrorCause {
 #[derive(Clone, Copy, Debug)]
 pub enum ErrorCauseRef<'a> {
     /// Invalid Stream Identifier
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Invalid Stream Identifier: Indicates endpoint received a DATA chunk
+    /// sent to a nonexistent stream.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=1              |      Cause Length=8           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |        Stream Identifier      |         (Reserved)            |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     InvalidStreamIdentifier(StreamIdentifierErrorRef<'a>),
+
     /// Missing Mandatory Parameter
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Missing Mandatory Parameter: Indicates that one or more mandatory TLV
+    /// parameters are missing in a received INIT or INIT ACK.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=2              |      Cause Length=8+N*2       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |                   Number of missing params=N                  |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |   Missing Param Type #1       |   Missing Param Type #2       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |   Missing Param Type #N-1     |   Missing Param Type #N       |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     MissingMandatoryParameter(MissingParameterErrorRef<'a>),
+
     /// Stale Cookie
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// Stale Cookie Error: Indicates the receipt of a valid State Cookie
+    /// that has expired.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=3              |       Cause Length=8          |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |                 Measure of Staleness (usec.)                  |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     StaleCookie(StaleCookieErrorRef<'a>),
+
     /// Out of Resource
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Out of Resource: Indicates that the sender is out of resource.  This
+    /// is usually sent in combination with or within an ABORT.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=4              |      Cause Length=4           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     OutOfResource(&'a [u8]),
+
     /// Unresolvable Address
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unresolvable Address: Indicates that the sender is not able to
+    /// resolve the specified address parameter (e.g., type of address is not
+    /// supported by the sender).  This is usually sent in combination with
+    /// or within an ABORT.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=5              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unresolvable Address                         /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnresolvableAddress(UnresolvableAddrErrorRef<'a>),
+
     /// Unrecognized Chunk Type
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unrecognized Chunk Type: This error cause is returned to the
+    /// originator of the chunk if the receiver does not understand the chunk
+    /// and the upper bits of the 'Chunk Type' are set to 01 or 11.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=6              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unrecognized Chunk                           /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnrecognizedChunkType(UnrecognizedChunkErrorRef<'a>),
+
     /// Invalid Mandatory Parameter
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Invalid Mandatory Parameter: This error cause is returned to the
+    /// originator of an INIT or INIT ACK chunk when one of the mandatory
+    /// parameters is set to an invalid value.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=7              |      Cause Length=4           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     InvalidMandatoryParameter(&'a [u8]),
+
     /// Unrecognized Parameters
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// Unrecognized Parameters: This error cause is returned to the
+    /// originator of the INIT ACK chunk if the receiver does not recognize
+    /// one or more Optional TLV parameters in the INIT ACK chunk.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=8              |      Cause Length             |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  Unrecognized Parameters                      /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UnrecognizedParameters(UnrecognizedParamErrorRef<'a>),
+
     /// No User Data
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    ///
+    /// No User Data: This error cause is returned to the originator of a
+    ///
+    /// DATA chunk if a received DATA chunk has no user data.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=9              |      Cause Length=8           |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                  TSN value                                    /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     NoUserData(NoUserDataErrorRef<'a>),
+
     /// Cookie Received While Shutting Down
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// ---------------
+    /// Cookie Received While Shutting Down: A COOKIE ECHO was received while
+    /// the endpoint was in the SHUTDOWN-ACK-SENT state.  This error is
+    /// usually returned in an ERROR chunk bundled with the retransmitted
+    /// SHUTDOWN ACK.
+    ///
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |     Cause Code=10              |      Cause Length=4          |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     CookieDuringShutdown(&'a [u8]),
+
     /// Restart of an Association with New Address
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    /// Restart of an association with new addresses: An INIT was received on
+    /// an existing association.  But the INIT added addresses to the
+    /// association that were previously NOT part of the association.  The
+    /// new addresses are listed in the error code.  This ERROR is normally
+    /// sent as part of an ABORT refusing the INIT (see Section 5.2).
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=11         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                       New Address TLVs                        /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    ///
+    /// Note: Each New Address TLV is an exact copy of the TLV that was found
+    /// in the INIT chunk that was new, including the Parameter Type and the
+    /// Parameter Length.
+    /// ```
     AssociationNewAddress(AssociationNewAddrErrorRef<'a>),
+
     /// User-Initiated Abort
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// This error cause MAY be included in ABORT chunks that are sent
+    /// because of an upper-layer request.  The upper layer can specify an
+    /// Upper Layer Abort Reason that is transported by SCTP transparently
+    /// and MAY be delivered to the upper-layer protocol at the peer.
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=12         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                    Upper Layer Abort Reason                   /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     UserInitiatedAbort(UserInitiatedAbortErrorRef<'a>),
-    /// ProtocolViolation
+
+    /// Protocol Violation Error
+    ///
+    /// From the RFC:
+    ///
+    /// ```text
+    /// Cause of error
+    /// --------------
+    ///
+    /// This error cause MAY be included in ABORT chunks that are sent
+    /// because an SCTP endpoint detects a protocol violation of the peer
+    /// that is not covered by the error causes described in Section 3.3.10.1
+    /// to Section 3.3.10.12.  An implementation MAY provide additional
+    /// information specifying what kind of protocol violation has been
+    /// detected.
+    ///
+    ///  0                   1                   2                   3
+    ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// |         Cause Code=13         |      Cause Length=Variable    |
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// /                    Additional Information                     /
+    /// \                                                               \
+    /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    /// ```
     ProtocolViolation(ProtocolViolationErrorRef<'a>),
-    /// Other Unknown error code
-    Unknown(&'a [u8]),
+
+    /// Some other error code not defined in RFC 4960.
+    Unknown(GenericParamRef<'a>),
 }
 
 impl<'a> ErrorCauseRef<'a> {
@@ -3534,7 +4389,7 @@ impl<'a> ErrorCauseRef<'a> {
             ERR_CODE_PROTOCOL_VIOLATION => {
                 Self::ProtocolViolation(ProtocolViolationErrorRef::from_bytes_unchecked(bytes))
             }
-            _ => Self::Unknown(bytes),
+            _ => Self::Unknown(GenericParamRef::from_bytes_unchecked(bytes)),
         }
     }
 
@@ -3626,6 +4481,22 @@ impl<'a> ErrorCauseRef<'a> {
     }
 }
 
+/// Invalid Stream Identifier
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Invalid Stream Identifier: Indicates endpoint received a DATA chunk
+/// sent to a nonexistent stream.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=1              |      Cause Length=8           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |        Stream Identifier      |         (Reserved)            |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 #[derive(Clone, Debug)]
 pub struct StreamIdentifierError {
     stream_id: u16,
@@ -3707,6 +4578,21 @@ impl From<&StreamIdentifierErrorRef<'_>> for StreamIdentifierError {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Invalid Stream Identifier: Indicates endpoint received a DATA chunk
+/// sent to a nonexistent stream.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=1              |      Cause Length=8           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |        Stream Identifier      |         (Reserved)            |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct StreamIdentifierErrorRef<'a> {
     data: &'a [u8],
@@ -3810,6 +4696,27 @@ impl<'a> StreamIdentifierErrorRef<'a> {
     }
 }
 
+/// Missing Mandatory Parameter
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Missing Mandatory Parameter: Indicates that one or more mandatory TLV
+/// parameters are missing in a received INIT or INIT ACK.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=2              |      Cause Length=8+N*2       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                   Number of missing params=N                  |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Missing Param Type #1       |   Missing Param Type #2       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Missing Param Type #N-1     |   Missing Param Type #N       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct MissingParameterError {
     missing_params: Vec<u16>,
@@ -3886,6 +4793,27 @@ impl From<&MissingParameterErrorRef<'_>> for MissingParameterError {
     }
 }
 
+/// Missing Mandatory Parameter
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Missing Mandatory Parameter: Indicates that one or more mandatory TLV
+/// parameters are missing in a received INIT or INIT ACK.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=2              |      Cause Length=8+N*2       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                   Number of missing params=N                  |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Missing Param Type #1       |   Missing Param Type #2       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Missing Param Type #N-1     |   Missing Param Type #N       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct MissingParameterErrorRef<'a> {
     data: &'a [u8],
@@ -4021,6 +4949,22 @@ impl<'a> Iterator for MissingParameterIterRef<'a> {
     }
 }
 
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// Stale Cookie Error: Indicates the receipt of a valid State Cookie
+/// that has expired.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=3              |       Cause Length=8          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                 Measure of Staleness (usec.)                  |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct StaleCookieError {
     staleness: u32,
@@ -4089,6 +5033,23 @@ impl From<&StaleCookieErrorRef<'_>> for StaleCookieError {
     }
 }
 
+/// Stale Cookie
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// Stale Cookie Error: Indicates the receipt of a valid State Cookie
+/// that has expired.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=3              |       Cause Length=8          |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                 Measure of Staleness (usec.)                  |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct StaleCookieErrorRef<'a> {
     data: &'a [u8],
@@ -4188,6 +5149,26 @@ impl<'a> StaleCookieErrorRef<'a> {
     }
 }
 
+/// Unresolvable Address
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unresolvable Address: Indicates that the sender is not able to
+/// resolve the specified address parameter (e.g., type of address is not
+/// supported by the sender).  This is usually sent in combination with
+/// or within an ABORT.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=5              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unresolvable Address                         /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct UnresolvableAddrError {
     addr: Vec<u8>,
@@ -4261,6 +5242,26 @@ impl From<&UnresolvableAddrErrorRef<'_>> for UnresolvableAddrError {
     }
 }
 
+/// Unresolvable Address
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unresolvable Address: Indicates that the sender is not able to
+/// resolve the specified address parameter (e.g., type of address is not
+/// supported by the sender).  This is usually sent in combination with
+/// or within an ABORT.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=5              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unresolvable Address                         /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct UnresolvableAddrErrorRef<'a> {
     data: &'a [u8],
@@ -4363,6 +5364,25 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
     }
 }
 
+/// Unrecognized Chunk Type
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unrecognized Chunk Type: This error cause is returned to the
+/// originator of the chunk if the receiver does not understand the chunk
+/// and the upper bits of the 'Chunk Type' are set to 01 or 11.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=6              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unrecognized Chunk                           /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct UnrecognizedChunkError {
     chunk: Vec<u8>,
@@ -4436,6 +5456,25 @@ impl From<&UnrecognizedChunkErrorRef<'_>> for UnrecognizedChunkError {
     }
 }
 
+/// Unrecognized Chunk Type
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unrecognized Chunk Type: This error cause is returned to the
+/// originator of the chunk if the receiver does not understand the chunk
+/// and the upper bits of the 'Chunk Type' are set to 01 or 11.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=6              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unrecognized Chunk                           /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct UnrecognizedChunkErrorRef<'a> {
     data: &'a [u8],
@@ -4521,6 +5560,25 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
     }
 }
 
+/// Unrecognized Parameters
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unrecognized Parameters: This error cause is returned to the
+/// originator of the INIT ACK chunk if the receiver does not recognize
+/// one or more Optional TLV parameters in the INIT ACK chunk.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=8              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unrecognized Parameters                      /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct UnrecognizedParamError {
     params: Vec<GenericParam>,
@@ -4600,6 +5658,25 @@ impl From<&UnrecognizedParamErrorRef<'_>> for UnrecognizedParamError {
     }
 }
 
+/// Unrecognized Parameters
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// Unrecognized Parameters: This error cause is returned to the
+/// originator of the INIT ACK chunk if the receiver does not recognize
+/// one or more Optional TLV parameters in the INIT ACK chunk.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=8              |      Cause Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  Unrecognized Parameters                      /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct UnrecognizedParamErrorRef<'a> {
     data: &'a [u8],
@@ -4716,6 +5793,25 @@ impl<'b> LendingIterator for ParamsIterRef<'b> {
     }
 }
 
+/// No User Data
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// No User Data: This error cause is returned to the originator of a
+///
+/// DATA chunk if a received DATA chunk has no user data.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=9              |      Cause Length=8           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  TSN value                                    /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct NoUserDataError {
     tsn: u32,
@@ -4782,6 +5878,25 @@ impl From<&NoUserDataErrorRef<'_>> for NoUserDataError {
     }
 }
 
+/// No User Data
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// ---------------
+///
+/// No User Data: This error cause is returned to the originator of a
+///
+/// DATA chunk if a received DATA chunk has no user data.
+///
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |     Cause Code=9              |      Cause Length=8           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                  TSN value                                    /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct NoUserDataErrorRef<'a> {
     data: &'a [u8],
@@ -4880,6 +5995,32 @@ impl<'a> NoUserDataErrorRef<'a> {
     }
 }
 
+/// Restart of an Association with New Address
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+/// Restart of an association with new addresses: An INIT was received on
+/// an existing association.  But the INIT added addresses to the
+/// association that were previously NOT part of the association.  The
+/// new addresses are listed in the error code.  This ERROR is normally
+/// sent as part of an ABORT refusing the INIT (see Section 5.2).
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=11         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                       New Address TLVs                        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///
+/// Note: Each New Address TLV is an exact copy of the TLV that was found
+/// in the INIT chunk that was new, including the Parameter Type and the
+/// Parameter Length.
+/// ```
 #[derive(Clone, Debug)]
 pub struct AssociationNewAddrError {
     tlvs: Vec<GenericParam>,
@@ -4959,6 +6100,32 @@ impl From<&AssociationNewAddrErrorRef<'_>> for AssociationNewAddrError {
     }
 }
 
+/// Restart of an Association with New Address
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+/// Restart of an association with new addresses: An INIT was received on
+/// an existing association.  But the INIT added addresses to the
+/// association that were previously NOT part of the association.  The
+/// new addresses are listed in the error code.  This ERROR is normally
+/// sent as part of an ABORT refusing the INIT (see Section 5.2).
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=11         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                       New Address TLVs                        /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///
+/// Note: Each New Address TLV is an exact copy of the TLV that was found
+/// in the INIT chunk that was new, including the Parameter Type and the
+/// Parameter Length.
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct AssociationNewAddrErrorRef<'a> {
     data: &'a [u8],
@@ -5044,6 +6211,28 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
     }
 }
 
+/// User-Initiated Abort
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// This error cause MAY be included in ABORT chunks that are sent
+/// because of an upper-layer request.  The upper layer can specify an
+/// Upper Layer Abort Reason that is transported by SCTP transparently
+/// and MAY be delivered to the upper-layer protocol at the peer.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=12         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                    Upper Layer Abort Reason                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct UserInitiatedAbortError {
     reason: Vec<u8>,
@@ -5118,6 +6307,28 @@ impl From<&UserInitiatedAbortErrorRef<'_>> for UserInitiatedAbortError {
     }
 }
 
+/// User-Initiated Abort
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// This error cause MAY be included in ABORT chunks that are sent
+/// because of an upper-layer request.  The upper layer can specify an
+/// Upper Layer Abort Reason that is transported by SCTP transparently
+/// and MAY be delivered to the upper-layer protocol at the peer.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=12         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                    Upper Layer Abort Reason                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct UserInitiatedAbortErrorRef<'a> {
     data: &'a [u8],
@@ -5201,6 +6412,30 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
     }
 }
 
+/// Protocol Violation Error
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// This error cause MAY be included in ABORT chunks that are sent
+/// because an SCTP endpoint detects a protocol violation of the peer
+/// that is not covered by the error causes described in Section 3.3.10.1
+/// to Section 3.3.10.12.  An implementation MAY provide additional
+/// information specifying what kind of protocol violation has been
+/// detected.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=13         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                    Additional Information                     /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct ProtocolViolationError {
     information: Vec<u8>,
@@ -5275,6 +6510,30 @@ impl From<&ProtocolViolationErrorRef<'_>> for ProtocolViolationError {
     }
 }
 
+/// Protocol Violation Error
+///
+/// From the RFC:
+///
+/// ```text
+/// Cause of error
+/// --------------
+///
+/// This error cause MAY be included in ABORT chunks that are sent
+/// because an SCTP endpoint detects a protocol violation of the peer
+/// that is not covered by the error causes described in Section 3.3.10.1
+/// to Section 3.3.10.12.  An implementation MAY provide additional
+/// information specifying what kind of protocol violation has been
+/// detected.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |         Cause Code=13         |      Cause Length=Variable    |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                    Additional Information                     /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ProtocolViolationErrorRef<'a> {
     data: &'a [u8],
@@ -5578,6 +6837,21 @@ impl From<u8> for AbortFlags {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint in an association MUST use this chunk to initiate a
+/// graceful close of the association with its peer.  This chunk has the
+/// following format.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 7    | Chunk  Flags  |      Length = 8               |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Cumulative TSN Ack                       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct ShutdownChunk {
     flags: u8,
@@ -5659,6 +6933,21 @@ impl From<&ShutdownChunkRef<'_>> for ShutdownChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint in an association MUST use this chunk to initiate a
+/// graceful close of the association with its peer.  This chunk has the
+/// following format.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 7    | Chunk  Flags  |      Length = 8               |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                      Cumulative TSN Ack                       |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ShutdownChunkRef<'a> {
     data: &'a [u8],
@@ -5762,6 +7051,21 @@ impl<'a> ShutdownChunkRef<'a> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+///
+/// This chunk MUST be used to acknowledge the receipt of the SHUTDOWN
+/// chunk at the completion of the shutdown process.
+///
+/// The SHUTDOWN ACK chunk has no parameters.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 8    |Chunk  Flags   |      Length = 4               |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct ShutdownAckChunk {
     flags: u8,
@@ -5916,6 +7220,25 @@ impl<'a> ShutdownAckChunkRef<'a> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint sends this chunk to its peer endpoint to notify it of
+/// certain error conditions.  It contains one or more error causes.  An
+/// Operation Error is not considered fatal in and of itself, but may be
+/// used with an ABORT chunk to report a fatal condition.  It has the
+/// following parameters:
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 9    | Chunk  Flags  |           Length              |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /                    one or more Error Causes                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct ErrorChunk {
     flags: u8,
@@ -6011,6 +7334,25 @@ impl From<&ErrorChunkRef<'_>> for ErrorChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// An endpoint sends this chunk to its peer endpoint to notify it of
+/// certain error conditions.  It contains one or more error causes.  An
+/// Operation Error is not considered fatal in and of itself, but may be
+/// used with an ABORT chunk to report a fatal condition.  It has the
+/// following parameters:
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 9    | Chunk  Flags  |           Length              |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// \                                                               \
+/// /                    one or more Error Causes                   /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ErrorChunkRef<'a> {
     data: &'a [u8],
@@ -6109,14 +7451,15 @@ impl<'a> ErrorChunkRef<'a> {
 }
 
 ///
-///
-/// From RFC 9260:
-///
-/// "This chunk is used only during the initialization of an association.
-/// It is sent by the initiator of an association to its peer to complete the initialization process.
-/// This chunk MUST precede any DATA chunk sent within the association but MAY be bundled with one or more DATA chunks in the same packet."
+/// From the RFC:
 ///
 /// ```text
+/// This chunk is used only during the initialization of an association.
+/// It is sent by the initiator of an association to its peer to complete
+/// the initialization process. This chunk MUST precede any DATA chunk
+/// sent within the association but MAY be bundled with one or more DATA
+/// chunks in the same packet.
+///
 ///  0                   1                   2                   3
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -6214,6 +7557,25 @@ impl From<&CookieEchoChunkRef<'_>> for CookieEchoChunk {
     }
 }
 
+///
+/// From the RFC:
+///
+/// ```text
+/// This chunk is used only during the initialization of an association.
+/// It is sent by the initiator of an association to its peer to complete
+/// the initialization process. This chunk MUST precede any DATA chunk
+/// sent within the association but MAY be bundled with one or more DATA
+/// chunks in the same packet.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 10   |  Chunk Flags  |            Length             |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// /                            Cookie                             /
+/// \                                                               \
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct CookieEchoChunkRef<'a> {
     data: &'a [u8],
@@ -6329,6 +7691,21 @@ impl<'a> CookieEchoChunkRef<'a> {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// This chunk is used only during the initialization of an association.
+/// It is used to acknowledge the receipt of a COOKIE ECHO chunk.  This
+/// chunk MUST precede any DATA or SACK chunk sent within the
+/// association, but MAY be bundled with one or more DATA chunks or SACK
+/// chunk's in the same SCTP packet.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 11   |Chunk  Flags   |     Length = 4                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct CookieAckChunk {
     flags: u8,
@@ -6397,6 +7774,21 @@ impl From<&CookieAckChunkRef<'_>> for CookieAckChunk {
     }
 }
 
+/// From the RFC:
+///
+/// ```text
+/// This chunk is used only during the initialization of an association.
+/// It is used to acknowledge the receipt of a COOKIE ECHO chunk.  This
+/// chunk MUST precede any DATA or SACK chunk sent within the
+/// association, but MAY be bundled with one or more DATA chunks or SACK
+/// chunk's in the same SCTP packet.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 11   |Chunk  Flags   |     Length = 4                |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct CookieAckChunkRef<'a> {
     data: &'a [u8],
@@ -6487,11 +7879,12 @@ impl<'a> CookieAckChunkRef<'a> {
 ///
 ///
 /// From RFC 9260:
+/// ```text
+/// This chunk MUST be used to acknowledge the receipt of the SHUTDOWN
+/// ACK chunk at the completion of the shutdown process.
 ///
-/// This chunk MUST be used to acknowledge the receipt of the SHUTDOWN ACK chunk at the completion of the shutdown process.
 /// The SHUTDOWN COMPLETE chunk has no parameters.
 ///
-/// ```text
 ///  0                   1                   2                   3
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -6566,6 +7959,21 @@ impl From<&ShutdownCompleteChunkRef<'_>> for ShutdownCompleteChunk {
     }
 }
 
+///
+///
+/// From RFC 9260:
+/// ```text
+/// This chunk MUST be used to acknowledge the receipt of the SHUTDOWN
+/// ACK chunk at the completion of the shutdown process.
+///
+/// The SHUTDOWN COMPLETE chunk has no parameters.
+///
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |   Type = 14   |  Reserved   |T|          Length = 4           |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ShutdownCompleteChunkRef<'a> {
     data: &'a [u8],
@@ -6683,6 +8091,8 @@ impl ShutdownCompleteFlags {
     }
 }
 
+/// A chunk containing a Chunk Type value that does not match any
+/// chunk type defined in RFC 4960.
 #[derive(Clone, Debug)]
 pub struct UnknownChunk {
     chunk_type: u8,
@@ -6772,6 +8182,8 @@ impl From<&UnknownChunkRef<'_>> for UnknownChunk {
     }
 }
 
+/// A chunk containing a Chunk Type value that does not match any
+/// chunk type defined in RFC 4960.
 #[derive(Clone, Copy, Debug)]
 pub struct UnknownChunkRef<'a> {
     data: &'a [u8],
@@ -6880,6 +8292,7 @@ impl<'a> UnknownChunkRef<'a> {
 
 /// From the RFC:
 ///
+/// ```text
 /// The following format MUST be used for the DATA chunk:
 ///
 /// 0                   1                   2                   3
@@ -6897,6 +8310,7 @@ impl<'a> UnknownChunkRef<'a> {
 /// /                 User Data (seq n of Stream S)                 /
 /// \                                                               \
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct DataChunk {
     flags: DataChunkFlags,
@@ -7040,6 +8454,7 @@ impl From<DataChunkRef<'_>> for DataChunk {
 
 /// From the RFC:
 ///
+/// ```text
 /// The following format MUST be used for the DATA chunk:
 ///
 /// 0                   1                   2                   3
@@ -7057,6 +8472,7 @@ impl From<DataChunkRef<'_>> for DataChunk {
 /// /                 User Data (seq n of Stream S)                 /
 /// \                                                               \
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct DataChunkRef<'a> {
     data: &'a [u8],
