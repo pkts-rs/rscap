@@ -374,7 +374,7 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata> BaseDefragment
 // The `SctpDefrag` is only responsible for ensuring packets of a stream come in order (unless the unordered bit is set) and are defragmented.
 pub struct SctpDefrag<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize = 25> {
     filter: Option<Box<PktFilterFn>>,
-    fragments: HashMap<u16, Vec<(u32, DataChunkFlags, Vec<u8>)>>,
+    fragments: HashMap<Option<u16>, Vec<(u32, DataChunkFlags, Vec<u8>)>>,
     stream_seq: Option<u16>,
     unordered: utils::ArrayRing<Vec<u8>, WINDOW>,
     out: VecDeque<Vec<u8>>,
@@ -409,6 +409,7 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize>
         }
     }
 
+    #[inline]
     fn put_unordered(&mut self, stream_seq: u16, data: Vec<u8>) {
         match self.stream_seq {
             None => {
@@ -494,7 +495,6 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize> Base
         }
     }
 
-    // How should we handle ValidationErrors here??
     fn put_unfiltered_pkt_unchecked(&mut self, pkt: Vec<u8>) -> Result<(), ValidationError> {
         let sctp = SctpRef::from_bytes_unchecked(pkt.as_slice());
 
@@ -513,7 +513,7 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize> Base
                 }
             } else {
                 let tsn = payload.tsn();
-                let ssn = payload.stream_seq();
+                let ssn = if flags.unordered() { None } else { Some(payload.stream_seq()) };
 
                 let frags = self.fragments.entry(ssn).or_insert(Vec::new());
 
@@ -545,10 +545,11 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize> Base
                     }
 
                     res = choose_err(res, Out::validate(reassembled.as_slice()));
-                    if flags.unordered() {
-                        self.out.push_back(reassembled);
+                    if let Some(valid_ssn) = ssn {
+                        self.put_unordered(valid_ssn, reassembled);
                     } else {
-                        self.put_unordered(ssn, reassembled);
+                        // flags.unordered() == true
+                        self.out.push_back(reassembled);
                     }
 
                     self.fragments.remove(&ssn);
@@ -559,6 +560,7 @@ impl<Out: LayerObject + FromBytes + BaseLayerMetadata, const WINDOW: usize> Base
         res
     }
 
+    #[inline]
     fn get_pkt_raw(&mut self) -> Option<Vec<u8>> {
         self.out.pop_front()
     }
