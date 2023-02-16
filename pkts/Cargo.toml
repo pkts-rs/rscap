@@ -1,5 +1,5 @@
 [package]
-name = "rscap"
+name = "pkts"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,4 @@ alloc = []
 custom_layer_selection = ["rscap-macros/custom_layer_selection"]
 
 [dependencies]
-libc = { version = "0.2", git = "https://github.com/nathaniel-bennett/libc" }
-pkts = { version = "0.1", path = "pkts" }
-rscap-macros = { path = "../rscap-macros", version = "0.1" }
+rscap-macros = { path = "../../rscap-macros", version = "0.1" }

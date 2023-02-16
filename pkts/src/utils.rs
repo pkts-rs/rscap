@@ -35,6 +35,37 @@ pub(crate) fn get_mut_array<const T: usize>(
 }
 
 #[inline]
+pub(crate) fn split_array<const T: usize>(bytes: &[u8]) -> Option<(&[u8; T], &[u8])> {
+    let (arr, rem) = (bytes.get(..T)?, bytes.get(T..)?);
+
+    // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
+    // SAFETY: an array reference is made up of just a pointer, which can be retrieved from the bytes slice
+    // SAFETY: the lifetime of the resulting array ref will not outlive the slice it was created from
+    unsafe { Some((&*(arr.as_ptr() as *const [_; T]), rem)) }
+}
+
+#[inline]
+pub(crate) fn split_at(bytes: &[u8], idx: usize) -> Option<(&[u8], &[u8])> {
+    match (bytes.get(..idx), bytes.get(idx..)) {
+        (Some(b1), Some(b2)) => Some((b1, b2)),
+        _ => None
+    }
+}
+
+/// Split the slice at the first instance of a particular delimeter, returning the bytes preceeding and following it.
+/// If no instance of the delimeter is found, None is returned.
+#[inline]
+pub(crate) fn split_delim(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
+    for (idx, b) in bytes.iter().enumerate() {
+        if *b == delim {
+            return Some((&bytes[..idx], &bytes[idx + 1..]))
+        }
+    }
+
+    None
+}
+
+#[inline]
 pub(crate) fn padded_length<const T: usize>(unpadded_len: usize) -> usize {
     unpadded_len + ((T - (unpadded_len % T)) % T)
 }

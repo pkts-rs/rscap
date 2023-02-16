@@ -248,7 +248,7 @@ impl<'a> TcpRef<'a> {
     pub fn sport(&self) -> u16 {
         u16::from_be_bytes(
             utils::to_array(self.data, 0)
-                .expect("insufficient bytes in TcpRef to retrieve Source Port field"),
+                .expect("insufficient bytes in TCP layer to retrieve Source Port field"),
         )
     }
 
@@ -256,7 +256,7 @@ impl<'a> TcpRef<'a> {
     pub fn dport(&self) -> u16 {
         u16::from_be_bytes(
             utils::to_array(self.data, 2)
-                .expect("insufficient bytes in TcpRef to retrieve Destination Port field"),
+                .expect("insufficient bytes in TCP layer to retrieve Destination Port field"),
         )
     }
 
@@ -264,7 +264,7 @@ impl<'a> TcpRef<'a> {
     pub fn seq(&self) -> u32 {
         u32::from_be_bytes(
             utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TcpRef to retrieve Sequence Number field"),
+                .expect("insufficient bytes in TCP layer to retrieve Sequence Number field"),
         )
     }
 
@@ -272,7 +272,7 @@ impl<'a> TcpRef<'a> {
     pub fn ack(&self) -> u32 {
         u32::from_be_bytes(
             utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TcpRef to retrieve Acknowledgement Number field"),
+                .expect("insufficient bytes in TCP layer to retrieve Acknowledgement Number field"),
         )
     }
 
@@ -281,7 +281,7 @@ impl<'a> TcpRef<'a> {
         (self
             .data
             .get(12)
-            .expect("insufficient bytes in TcpRef to retrieve Data Offset field")
+            .expect("insufficient bytes in TCP layer to retrieve Data Offset field")
             >> 4) as usize
     }
 
@@ -290,7 +290,7 @@ impl<'a> TcpRef<'a> {
         (self
             .data
             .get(12)
-            .expect("insufficient bytes in TcpRef to retrieve Reserved field")
+            .expect("insufficient bytes in TCP layer to retrieve Reserved field")
             & 0b_0000_1110)
             >> 1
     }
@@ -299,7 +299,7 @@ impl<'a> TcpRef<'a> {
     pub fn flags(&self) -> TcpFlags {
         TcpFlags::from(u16::from_be_bytes(
             utils::to_array(self.data, 12)
-                .expect("insufficient bytes in TcpRef to retrieve TCP Flags"),
+                .expect("insufficient bytes in TCP layer to retrieve TCP Flags"),
         ))
     }
 
@@ -307,7 +307,7 @@ impl<'a> TcpRef<'a> {
     pub fn window(&self) -> u16 {
         u16::from_be_bytes(
             utils::to_array(self.data, 14)
-                .expect("insufficient bytes in TcpRef to retrieve Window Size field"),
+                .expect("insufficient bytes in TCP layer to retrieve Window Size field"),
         )
     }
 
@@ -315,7 +315,7 @@ impl<'a> TcpRef<'a> {
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(
             utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TcpRef to retrieve Checksum field"),
+                .expect("insufficient bytes in TCP layer to retrieve Checksum field"),
         )
     }
 
@@ -323,7 +323,7 @@ impl<'a> TcpRef<'a> {
     pub fn urgent_ptr(&self) -> u16 {
         u16::from_be_bytes(
             utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TcpRef to retrieve Urgent Pointer field"),
+                .expect("insufficient bytes in TCP layer to retrieve Urgent Pointer field"),
         )
     }
 
@@ -333,7 +333,7 @@ impl<'a> TcpRef<'a> {
         TcpOptionsRef::from_bytes_unchecked(
             self.data
                 .get(20..end)
-                .expect("insufficient bytes in TcpRef to retrieve TCP Options"),
+                .expect("insufficient bytes in TCP layer to retrieve TCP Options"),
         )
     }
 }
@@ -349,8 +349,8 @@ impl LayerOffset for TcpRef<'_> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let tcp = TcpRef::from_bytes_unchecked(bytes);
-        if layer_type == RawRef::layer_id_static() && tcp.data_offset() > 5 {
-            Some(tcp.data_offset() * 4)
+        if layer_type == RawRef::layer_id_static() {
+            Some(cmp::max(5, tcp.data_offset()) * 4)
         } else {
             None
         }

@@ -1325,6 +1325,8 @@ impl<'b> LendingIterator for BaseAvpIterRef<'b> {
 
 // TODO: write a macro to generalize work for AVPs
 pub mod avp {
+    use super::{BaseAvp, GenericAvp};
+
     pub struct AcctInterimInterval {
         interval: u32,
     }
@@ -1401,15 +1403,18 @@ pub mod avp {
     }
 
     pub struct DestinationHost {
-        // DiamIdent
+        host_id: String, // Diameter Identity
     }
 
     pub struct DestinationRealm {
-        // DiamIdent
+        realm_id: String, // Diameter Identity
     }
 
-    pub struct DisconnectCause {
-        // Enumerated
+    pub enum DisconnectCause {
+        Rebooting, // = 0
+        Busy, // = 1
+        DoNotWantToTalk, // = 2
+        Unknown(i32),
     }
 
     pub struct ErrorMessage {
@@ -1417,15 +1422,15 @@ pub mod avp {
     }
 
     pub struct ErrorReportingHost {
-        // DiamIdent
+        id: String, // Diameter Identity
     }
 
     pub struct EventTimestamp {
-        // Time
+        time: u32,
     }
 
     pub struct ExperimentalResult {
-        // Grouped
+        avps: Vec<BaseAvp>, // 1x Vendor-Id, 1x Experimental-Result-Code (any order)
     }
 
     pub struct ExperimentalResultCode {
@@ -1433,7 +1438,7 @@ pub mod avp {
     }
 
     pub struct FailedAvp {
-        // Grouped
+        failed_avps: Vec<GenericAvp>,
     }
 
     pub struct FirmwareRevision {
@@ -1441,7 +1446,9 @@ pub mod avp {
     }
 
     pub struct HostIpAddress {
-        // IpAddress
+        // Address type:
+        addr_type: u16,
+        addr_value: Vec<u8>,
     }
 
     pub struct InbandSecurityId {
@@ -1453,11 +1460,11 @@ pub mod avp {
     }
 
     pub struct OriginHost {
-        // DiamIdent
+        id: String, // Diameter Identity
     }
 
     pub struct OriginRealm {
-        // DiamIdent
+        id: String, // Diameter Identity
     }
 
     pub struct OriginStateId {
@@ -1469,11 +1476,11 @@ pub mod avp {
     }
 
     pub struct ProxyHost {
-        // DiamIdent
+        id: String, // Diameter Identity
     }
 
     pub struct ProxyInfo {
-        // Grouped
+        apvs: Vec<BaseAvp>, // { Proxy-Host } { Proxy-State } *[ AVP ]
     }
 
     pub struct ProxyState {
@@ -1481,7 +1488,7 @@ pub mod avp {
     }
 
     pub struct RedirectHost {
-        // DiamURI
+        uri: String, // Diameter URI
     }
 
     pub enum RedirectHostUsage {
@@ -1504,7 +1511,7 @@ pub mod avp {
     }
 
     pub struct RouteRecord {
-        // DiamIdent
+        id: String, // Diameter Identity
     }
 
     pub struct SessionId {
@@ -1574,7 +1581,7 @@ pub mod avp {
     }
 
     pub struct VendorSpecificApplicationId {
-        // Grouped
+        avps: Vec<BaseAvp>, // 1 Vendor-Id required, 1 Auth-Application-Id and 1 Acct-Application-Id both optional
     }
 }
 

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::RawRef;
+use super::{RawRef, Raw};
 use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -17,6 +17,7 @@ use rscap_macros::{Layer, LayerRef, StatelessLayer};
 //
 // Mysql, unfortunately, is not so simple. It's gonna require some state.
 
+
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(MysqlPacketMetadata)]
 #[ref_type(MysqlPacketRef)]
@@ -25,13 +26,47 @@ pub struct MysqlPacket {
     payload: Option<Box<dyn LayerObject>>,
 }
 
+impl MysqlPacket {
+    #[inline]
+    pub fn sequence_id(&self) -> u8 {
+        self.sequence_id
+    }
+
+    #[inline]
+    pub fn set_sequence_id(&mut self, seq_id: u8) {
+        self.sequence_id = seq_id
+    }
+
+    #[inline]
+    pub fn payload_length(&self) -> u32 {
+        let len = u32::try_from(4 + self.payload.as_ref().map_or(0, |p| p.len()))
+            .expect("too many bytes in MysqlClient payload to represent in a 24-bit Length field");
+        assert!(len < 2^24 - 1, "too many bytes in MysqlClient payload to represent in a 24-bit Length field");
+        return len
+    }
+}
+
+impl FromBytesCurrent for MysqlPacket {
+    #[inline]
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
+        self.payload = Some(Box::new(Raw::from_bytes_unchecked(bytes)));
+    }
+
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let mysql = MysqlPacketRef::from_bytes_unchecked(bytes);
+
+        MysqlPacket {
+            sequence_id: mysql.sequence_id(),
+            payload: None,
+        }
+    }
+}
+
 impl LayerLength for MysqlPacket {
     #[inline]
     fn len(&self) -> usize {
-        4 + match &self.payload {
-            Some(p) => p.len(),
-            None => 0,
-        }
+        self.payload_length() as usize
     }
 }
 
@@ -61,60 +96,27 @@ impl LayerObject for MysqlPacket {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
         self.payload = None;
-        ret.expect("remove_payload() called on MysqlPacket layer when layer had no payload")
+        ret.expect("remove_payload() called on MysqlPacket layer when no payload existed")
     }
 }
 
 impl ToBytes for MysqlPacket {
-    fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
-        todo!()
-    }
-}
-
-impl FromBytesCurrent for MysqlPacket {
-    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
-        todo!()
-    }
-
-    fn from_bytes_current_layer_unchecked(_bytes: &[u8]) -> Self {
-        todo!()
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        bytes.push(self.sequence_id);
+        bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
+        match &self.payload {
+            Some(p) => p.to_bytes_extended(bytes),
+            None => ()
+        }
     }
 }
 
 impl CanSetPayload for MysqlPacket {
     #[inline]
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        payload.as_any().downcast_ref::<&MysqlClient>().is_some()
-    }
-}
-
-/*
-impl<'a> From<&MysqlPacketRef<'a>> for MysqlPacket {
-    #[inline]
-    fn from(value: &MysqlPacketRef<'a>) -> Self {
-        let sequence_id = value.data[0];
-        if value.data[1] == 0 && value.data[1] == 0 && value.data[2] == 0 {
-            MysqlPacket {
-                sequence_id,
-                payload: None,
-            }
-        } else {
-            MysqlPacket {
-                sequence_id,
-                payload: Some(Box::new(Raw::from_bytes_unchecked(&value.data[4..]))),
-            }
-        }
-    }
-}
-*/
-
-impl MysqlPacket {
-    pub fn sequence_id(&self) -> u8 {
-        self.sequence_id
-    }
-
-    pub fn set_sequence_id(&mut self, seq_id: u8) {
-        self.sequence_id = seq_id
+        // payload.as_any().downcast_ref::<&MysqlClient>().is_some()
+        todo!()
     }
 }
 
@@ -124,6 +126,26 @@ impl MysqlPacket {
 pub struct MysqlPacketRef<'a> {
     #[data_field]
     data: &'a [u8],
+}
+
+impl<'a> MysqlPacketRef<'a> {
+    #[inline]
+    pub fn payload_length(&self) -> u32 {
+        let mut len_arr = [0u8; 4];
+        len_arr[1..].copy_from_slice(self.data.get(..3).expect("insufficient bytes in MySQL Packet layer to extract Length field"));
+
+        u32::from_be_bytes(len_arr)
+    }
+
+    #[inline]
+    pub fn sequence_id(&self) -> u8 {
+        *self.data.get(3).expect("insufficient bytes in MySQL Packet layer to extract Sequence ID field")
+    }
+
+    #[inline]
+    pub fn payload(&self) -> &'a [u8] {
+        self.data.get(4..).expect("insufficient bytes in MySQL Packet layer to extract Payload field")
+    }
 }
 
 impl<'a> FromBytesRef<'a> for MysqlPacketRef<'a> {
@@ -136,9 +158,12 @@ impl<'a> FromBytesRef<'a> for MysqlPacketRef<'a> {
 impl<'a> LayerOffset for MysqlPacketRef<'a> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
-        if (bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0)
-            && RawRef::layer_id_static() == layer_type
-        {
+        let mysql = MysqlPacketRef::from_bytes_unchecked(bytes);
+        if mysql.payload_length() == 0 {
+            return None
+        }
+
+        if layer_type == RawRef::layer_id_static() {
             Some(4)
         } else {
             None
@@ -153,7 +178,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             return Err(ValidationError {
                 layer: MysqlPacket::name(),
                 err_type: ValidationErrorType::InvalidSize,
-                reason: "insufficient bytes for MySQL packet header (4 bytes required)",
+                reason: "insufficient bytes for MySQL Packet header (4 bytes required)",
             });
         }
 
@@ -170,7 +195,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 err_type: ValidationErrorType::TrailingBytes(curr_layer[4..].len() - payload_len),
-                reason: "more bytes in packet than advertised by the MySQL header length field",
+                reason: "more bytes in packet than advertised by the MySQL Packet header Length field",
             }),
             Ordering::Equal => Ok(()),
         }
@@ -182,22 +207,6 @@ impl<'a> Validate for MysqlPacketRef<'a> {
     }
 }
 
-impl<'a> MysqlPacketRef<'a> {
-    #[inline]
-    pub fn payload_length(&self) -> usize {
-        ((self.data[0] as usize) << 16) + ((self.data[1] as usize) << 8) + self.data[2] as usize
-    }
-
-    #[inline]
-    pub fn sequence_id(&self) -> u8 {
-        self.data[3]
-    }
-
-    #[inline]
-    pub fn payload(&self) -> &'a [u8] {
-        &self.data[4..]
-    }
-}
 
 #[derive(Clone, Debug, Layer)]
 #[metadata_type(MysqlClientMetadata)]
@@ -299,20 +308,6 @@ impl<'a> MysqlClientRef<'a> {
     }
 }
 
-/*
-impl<'a> Validate for MysqlClientRef<'a> {
-    #[inline]
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        panic!("TODO: add `stateful protocol from unchecked bytes` error here as well")
-    }
-
-    #[inline]
-    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        Ok(())
-    }
-}
-*/
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MessageType {}
 
@@ -328,3 +323,7 @@ pub enum MessageTypeRef {
 pub enum MessageTypeMut {
     // <'a>
 }
+
+// A few notes:
+// 1. Encapsulation of `MysqlPacket` type should be explicit--we can't abstract that out without ridiculousness like `sstr`.
+// 2. sequence_id may be an issue.

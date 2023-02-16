@@ -1084,7 +1084,7 @@ pub mod extras {
         */
     }
 
-    pub trait MysqlMetadata: LayerMetadata {}
+//    pub trait MysqlMetadata: LayerMetadata {}
 
     // ==========================================================
     //               Concrete Layer Metadata Types
@@ -1095,6 +1095,8 @@ pub mod extras {
     layer_metadata!(DiameterMetadata);
 
     layer_metadata!(DiamBaseMetadata);
+
+    layer_metadata!(ExampleMetadata);
 
     layer_metadata!(S6aMetadata);
 
@@ -1129,17 +1131,21 @@ pub mod extras {
         }
     }
 
-    impl MysqlMetadata for RawMetadata {}
+//    impl MysqlMetadata for RawMetadata {}
 
     layer_metadata!(MysqlPacketMetadata);
 
     layer_metadata!(MysqlClientMetadata);
 
-    impl MysqlMetadata for MysqlClientMetadata {}
+//    impl MysqlMetadata for MysqlClientMetadata {}
 
     layer_metadata!(MysqlServerMetadata);
 
-    impl MysqlMetadata for MysqlServerMetadata {}
+//    impl MysqlMetadata for MysqlServerMetadata {}
+
+    layer_metadata!(PsqlClientMetadata);
+
+    layer_metadata!(PsqlServerMetadata);
 
     // ===========================================
     //           CUSTOM LAYER SELECTION

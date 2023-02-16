@@ -195,6 +195,56 @@ impl Ipv4 {
     }
 }
 
+impl CanSetPayload for Ipv4 {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn Ipv4PayloadMetadata>()
+            .is_some()
+    }
+}
+
+impl FromBytesCurrent for Ipv4 {
+    #[inline]
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
+        Ipv4 {
+            dscp: ipv4.dscp(),
+            ecn: ipv4.ecn(),
+            id: ipv4.identifier(),
+            flags: ipv4.flags(),
+            frag_offset: ipv4.frag_offset(),
+            ttl: ipv4.ttl(),
+            chksum: ipv4.chksum(),
+            saddr: ipv4.saddr(),
+            daddr: ipv4.daddr(),
+            options: Ipv4Options::from(ipv4.options()),
+            payload: None,
+        }
+    }
+
+    #[inline]
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
+        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
+        if ipv4.payload_raw().is_empty() {
+            self.payload = None;
+        } else {
+            self.payload = match ipv4.protocol() {
+                Ipv4DataProtocol::Tcp => {
+                    Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw())))
+                }
+                Ipv4DataProtocol::Udp => {
+                    Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
+                }
+                /* Add additional protocols here */
+                _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
+            };
+        }
+    }
+}
+
 impl LayerLength for Ipv4 {
     /// The total length (in bytes) of the Ipv4 header and payload.
     fn len(&self) -> usize {
@@ -263,56 +313,6 @@ impl ToBytes for Ipv4 {
         if let Some(payload) = self.payload.as_ref() {
             payload.to_bytes_extended(bytes)
         }
-    }
-}
-
-impl FromBytesCurrent for Ipv4 {
-    #[inline]
-    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
-        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
-        Ipv4 {
-            dscp: ipv4.dscp(),
-            ecn: ipv4.ecn(),
-            id: ipv4.identifier(),
-            flags: ipv4.flags(),
-            frag_offset: ipv4.frag_offset(),
-            ttl: ipv4.ttl(),
-            chksum: ipv4.chksum(),
-            saddr: ipv4.saddr(),
-            daddr: ipv4.daddr(),
-            options: Ipv4Options::from(ipv4.options()),
-            payload: None,
-        }
-    }
-
-    #[inline]
-    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
-        let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
-        if ipv4.payload_raw().is_empty() {
-            self.payload = None;
-        } else {
-            self.payload = match ipv4.protocol() {
-                Ipv4DataProtocol::Tcp => {
-                    Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw())))
-                }
-                Ipv4DataProtocol::Udp => {
-                    Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
-                }
-                /* Add additional protocols here */
-                _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
-            };
-        }
-    }
-}
-
-impl CanSetPayload for Ipv4 {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        payload
-            .layer_metadata()
-            .as_any()
-            .downcast_ref::<&dyn Ipv4PayloadMetadata>()
-            .is_some()
     }
 }
 
