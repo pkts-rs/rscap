@@ -1084,6 +1084,10 @@ pub mod extras {
         */
     }
 
+    pub trait EtherPayloadMetadata: LayerMetadata {
+        fn eth_type(&self) -> u16;
+    }
+
 //    pub trait MysqlMetadata: LayerMetadata {}
 
     // ==========================================================
@@ -1096,11 +1100,19 @@ pub mod extras {
 
     layer_metadata!(DiamBaseMetadata);
 
+    layer_metadata!(EtherMetadata);
+
     layer_metadata!(ExampleMetadata);
 
     layer_metadata!(S6aMetadata);
 
     layer_metadata!(Ipv4Metadata);
+
+    impl EtherPayloadMetadata for Ipv4Metadata {
+        fn eth_type(&self) -> u16 {
+            0x0800
+        }
+    }
 
     layer_metadata!(SctpMetadata);
 

@@ -7,6 +7,7 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::{error::*, LendingIterator};
 
+use super::sctp::SctpRef;
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
@@ -259,12 +260,12 @@ impl LayerLength for Ipv4 {
 impl LayerObject for Ipv4 {
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
-        self.payload.as_ref().map(|p| p.as_ref())
+        self.payload.as_deref()
     }
 
     #[inline]
     fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload.as_mut().map(|p| p.as_mut())
+        self.payload.as_deref_mut()
     }
 
     #[inline]
@@ -448,7 +449,13 @@ impl LayerOffset for Ipv4Ref<'_> {
                     UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
                 }
             }
-            /* Add more Layer types here */
+            Some(Ipv4DataProtocol::Sctp) => {
+                if layer_type == SctpRef::layer_id_static() {
+                    Some(ihl)
+                } else {
+                    SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                }
+            }
             _ => {
                 if layer_type == RawRef::layer_id_static() {
                     Some(ihl)

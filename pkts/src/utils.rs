@@ -12,7 +12,7 @@ pub(crate) fn to_array<const T: usize>(bytes: &[u8], start: usize) -> Option<[u8
 }
 
 #[inline]
-pub(crate) fn get_array<const T: usize>(mut bytes: &[u8], start: usize) -> Option<&[u8; T]> {
+pub fn get_array<const T: usize>(mut bytes: &[u8], start: usize) -> Option<&[u8; T]> {
     bytes = bytes.get(start..start + T)?;
 
     // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
