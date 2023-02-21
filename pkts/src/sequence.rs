@@ -12,6 +12,7 @@ use crate::layers::traits::Validate;
 use crate::{utils, LendingIterator};
 
 type PktFilterFn = dyn Fn(&[u8]) -> bool;
+type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;
 
 
 // There are three characteristics that a packet Sequence may exhibit:
@@ -31,16 +32,16 @@ type PktFilterFn = dyn Fn(&[u8]) -> bool;
 
 pub trait SequenceObject {
     #[inline]
-    fn put_pkt_unchecked(&mut self, pkt: &[u8]) {
+    fn put_unchecked(&mut self, pkt: &[u8]) {
         match self.filter() {
             Some(should_discard_packet) if should_discard_packet(pkt) => (),
-            _ => self.put_unfiltered_pkt_unchecked(pkt),
+            _ => self.put_unfiltered_unchecked(pkt),
         }
     }
 
-    fn put_unfiltered_pkt_unchecked(&mut self, pkt: &[u8]);
+    fn put_unfiltered_unchecked(&mut self, pkt: &[u8]);
 
-    fn get_pkt_raw(&mut self) -> Option<&[u8]>;
+    fn get(&mut self) -> Option<&[u8]>;
 
     fn filter(&self) -> Option<&PktFilterFn>;
 
@@ -51,18 +52,18 @@ pub trait Sequence: SequenceObject {
     type In<'a>: LayerRef<'a> + Validate;
 
     #[inline]
-    fn put_pkt(&mut self, pkt: Self::In<'_>) {
+    fn put(&mut self, pkt: Self::In<'_>) {
         let pkt_ref: &[u8] = pkt.into();
-        self.put_pkt_unchecked(pkt_ref);
+        self.put_unchecked(pkt_ref);
     }
 
     #[inline]
-    fn put_unfiltered_pkt(&mut self, pkt: Self::In<'_>) {
+    fn put_unfiltered(&mut self, pkt: Self::In<'_>) {
         let pkt_ref: &[u8] = pkt.into();
-        self.put_pkt_unchecked(pkt_ref);
+        self.put_unchecked(pkt_ref);
     }
 
-    fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filter: Option<F>);
+    fn set_filter<F: Fn(Self::In<'_>) -> bool + 'static>(&mut self, filter: Option<F>);
 }
 
 pub struct SequenceOutput<'a> {
@@ -75,7 +76,7 @@ impl<'a> SequenceOutput<'a> {
     }
 }
 
-
+#[inline]
 fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
     if let Some((f, rem)) = slice.split_first_mut() {
         if let Some((s, _)) = rem.split_first_mut() {
@@ -86,26 +87,26 @@ fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
     return None
 }
 
-type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;
-
-pub struct LayeredSequence<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> {
+pub struct LayeredSequence<L: for<'a> LayerRef<'a> + Validate, S: for<'a> Sequence<In<'a>=L>> {
     first: S,
     first_streambuf: Option<Vec<u8>>,
     layers: Vec<(Box<dyn SequenceObject>, ValidateFn, Option<Vec<u8>>)>,
+    first_get_done: bool
 }
 
-impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredSequence<L, S> {
+impl<L: for<'a> LayerRef<'a> + Validate, S: for<'a> Sequence<In<'a>=L>> LayeredSequence<L, S> {
     #[inline]
     pub fn new(seq: S, is_stream: bool) -> Self {
         LayeredSequence {
             first: seq,
             first_streambuf: if is_stream { Some(Vec::new()) } else { None },
             layers: Vec::new(),
+            first_get_done: false,
         }
     }
 
     #[inline]
-    pub fn append<T: Sequence + 'static>(mut self, seq: T, is_stream: bool) -> LayeredSequence<L, S> {
+    pub fn append<'a, M: LayerRef<'a> + Validate, T: Sequence<In<'a>=M> + 'static>(mut self, seq: T, is_stream: bool) -> LayeredSequence<L, S> {
         let streambuf = if is_stream {
             Some(Vec::new())
         } else {
@@ -117,27 +118,27 @@ impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredS
     }
 
     #[inline]
-    pub fn append_stream<T: Sequence + 'static>(self, seq: T) -> LayeredSequence<L, S> {
+    pub fn append_stream<M: for<'a> LayerRef<'a> + Validate, T: for<'a> Sequence<In<'a>=M> + 'static>(self, seq: T) -> LayeredSequence<L, S> {
         self.append(seq, true)
     }
 
     #[inline]
-    pub fn append_seq<T: Sequence + 'static>(self, seq: T) -> LayeredSequence<L, S> {
+    pub fn append_seq<M: for<'a> LayerRef<'a> + Validate, T: for<'a> Sequence<In<'a>=M> + 'static>(self, seq: T) -> LayeredSequence<L, S> {
         self.append(seq, false)
     }
 
     #[inline]
-    pub fn put_pkt(&mut self, pkt: L) -> Result<(), ValidationError> {
+    pub fn put(&mut self, pkt: L) -> Result<(), ValidationError> {
         let pkt_ref: &[u8] = pkt.into();
-        self.put_pkt_unchecked(pkt_ref)
+        self.put_unchecked(pkt_ref)
     }
 
     #[inline]
-    pub fn put_pkt_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
+    pub fn put_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
         let mut upper_layer_updated = match self.layers.first_mut() {
             Some((upper, validate, _)) => Self::percolate_up(&mut self.first, upper.as_mut(), &mut self.first_streambuf, validate)?,
             None => {
-                self.first.put_pkt_unchecked(pkt);
+                self.first.put_unchecked(pkt);
                 false
             }
         };
@@ -160,14 +161,14 @@ impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredS
     /// Extract all available packets from a lower layer, passing them on to the upper layer where possible.
     fn percolate_up(lower: &mut dyn SequenceObject, upper: &mut dyn SequenceObject, streambuf: &mut Option<Vec<u8>>, validate: &ValidateFn) -> Result<bool, ValidationError> {
         let mut pkts_moved = false;
-        while let Some(pkt) = lower.get_pkt_raw() {
+        while let Some(pkt) = lower.get() {
             match streambuf {
                 Some(sb) => {
                     sb.extend(pkt);
                 }
                 None => {
                     validate(pkt)?;
-                    upper.put_pkt_unchecked(pkt);
+                    upper.put_unchecked(pkt);
                     pkts_moved = true;
                 }
             }
@@ -180,15 +181,15 @@ impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredS
                         ValidationErrorType::InsufficientBytes => break,
                         ValidationErrorType::TrailingBytes(num_trailing) => {
                             let pkt_size = sb.len() - num_trailing;
-                            upper.put_pkt_unchecked(&sb.as_slice()[..pkt_size]);
+                            upper.put_unchecked(&sb.as_slice()[..pkt_size]);
                             pkts_moved = true;
                             sb.drain(0..pkt_size);
                             // This is the only case that should loop (in case there are more packets in the stream)
                         }
                         _ => return Err(e),
                     }
-                } else { // Ok(())
-                    upper.put_pkt_unchecked(sb.as_slice());
+                } else { // validate() returned Ok(())--the packet is the *exact* length needed
+                    upper.put_unchecked(sb.as_slice());
                     pkts_moved = true;
                     sb.clear();
                     break
@@ -199,24 +200,119 @@ impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredS
         Ok(pkts_moved)
     }
 
-    fn get_pkt_raw(&mut self) -> Option<&[u8]> {
+    pub fn get(&mut self) -> Option<&[u8]> {
         match self.layers.last_mut() {
-            Some((s, _, _)) => s.get_pkt_raw(),
-            None => self.first.get_pkt_raw(),
+            Some((s, _, _)) => s.get(),
+            None => self.first.get(),
+        }
+    }
+}
+
+pub struct Ipv4Sequence {
+    filter: Option<Box<PktFilterFn>>,
+    fragments: Ipv4Fragments,
+    reassembled: VecDeque<Vec<u8>>,
+    first_retrieved: bool,
+}
+
+impl Ipv4Sequence {
+    #[inline]
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Ipv4Sequence {
+            filter: None,
+            fragments: Ipv4Fragments::new(),
+            reassembled: VecDeque::new(),
+            first_retrieved: false,
+        }
+    }
+
+    #[inline]
+    pub fn new_filtered(filter: fn(&[u8]) -> bool) -> Self {
+        Ipv4Sequence {
+            filter: Some(Box::new(filter)),
+            fragments: Ipv4Fragments::new(),
+            reassembled: VecDeque::new(),
+            first_retrieved: false,
+        }
+    }
+}
+
+impl SequenceObject for Ipv4Sequence {
+    #[inline]
+    fn set_filter_raw(&mut self, filt: Option<fn(&[u8]) -> bool>) {
+        self.filter = match filt {
+            Some(f) => Some(Box::new(f)),
+            None => None,
+        }
+    }
+
+    #[inline]
+    fn filter(&self) -> Option<&PktFilterFn> {
+        match &self.filter {
+            Some(f) => Some(f.as_ref()),
+            None => None,
+        }
+    }
+
+    fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {
+        let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt);
+        let ihl = cmp::max(ipv4.ihl() as usize, 5) * 4;
+        let tl = cmp::max(ipv4.total_length() as usize, ihl);
+        let data = pkt.get(ihl..tl).expect("IPv4 Defragment instance encountered packet containing fewer bytes than advertised in its Total Length field");
+
+        let mf = ipv4.flags().more_fragments();
+        let fo = ipv4.frag_offset() as usize;
+
+        if fo == 0 && !mf {
+            self.fragments.clear();
+
+            let payload = pkt[ihl..].to_vec();
+            self.reassembled.push_back(payload);
+            return
+        }
+
+        let data_start = fo * 8;
+        self.fragments.put(data, data_start);
+        if !mf {
+            self.fragments.set_last_frag_seen();
+        }
+
+        if self.fragments.is_filled() {
+            let res = self.fragments.data();
+            self.fragments.clear();
+            self.reassembled.push_back(res);
+        }
+    }
+
+    fn get(&mut self) -> Option<&[u8]> {
+        if self.first_retrieved {
+            self.reassembled.pop_front();
+        } else {
+            self.first_retrieved = true;
+        }
+
+        match self.reassembled.front() {
+            Some(f) => Some(f.as_slice()),
+            None => None
+        }
+    }
+}
+
+// Note that this effectively closes `Ipv4Session` to implementation of `Defragment`
+// by other `Layer` types unless they implement StatelessLayer
+impl Sequence for Ipv4Sequence {
+    type In<'a> = Ipv4Ref<'a>;
+
+    fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filt: Option<F>) {
+        self.filter = match filt {
+            Some(f) => Some(Box::new(move |i| f(Ipv4Ref::from_bytes_unchecked(i)))),
+            None => None,
         }
     }
 }
 
 
-
-
-
-
-
-
-
-
-// TODO: Rename this crate to "sequence.rs"?
 
 pub trait BaseDefragment {
     #[inline]
