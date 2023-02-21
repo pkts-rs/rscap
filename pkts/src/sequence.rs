@@ -8,9 +8,120 @@ use crate::layers::ip::Ipv4Ref;
 use crate::layers::sctp::{DataChunkFlags, SctpRef};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
+use crate::layers::traits::Validate;
 use crate::{utils, LendingIterator};
 
 type PktFilterFn = dyn Fn(&[u8]) -> bool;
+
+
+// There are three characteristics that a packet Sequence may exhibit:
+// 1. Reordering of packets relative to each other
+// 2. Reassembly of fragments of a single packet
+// 3. Conveying message bounds
+
+// A Sequence may adhere to any combination of these characteristics. For example:
+// - `TcpSequence` reorders packets relative to each other in a TCP stream (1), but does 
+//   not reassemble packets (since there is no notion of fragmentation in a TCP packet)
+//   or convey message bounds (since TCP is a stream-based protocol)
+// - `Ipv4Sequence` performs fragmentation reassembly (2), but it does not necessarily
+//   deliver packets in order (1) or convey strict message bounds (3).
+// - `SctpSequence` exhibits all three of these characteristics--it reorders packets in 
+//   a given stream, reassembles individual fragmented packets within that stream and 
+//   upholds Data Chunk boundaries in the data it returns.
+
+pub trait SequenceObject {
+    #[inline]
+    fn put_pkt_unchecked(&mut self, pkt: &[u8]) {
+        match self.filter() {
+            Some(should_discard_packet) if should_discard_packet(pkt) => (),
+            _ => self.put_unfiltered_pkt_unchecked(pkt),
+        }
+    }
+
+    fn put_unfiltered_pkt_unchecked(&mut self, pkt: &[u8]);
+
+    fn get_pkt_raw(&mut self) -> Option<&[u8]>;
+
+    fn filter(&self) -> Option<&PktFilterFn>;
+
+    fn set_filter_raw(&mut self, filter: Option<fn(&[u8]) -> bool>);
+}
+
+pub trait Sequence: SequenceObject {
+    type In<'a>: LayerRef<'a> + Validate;
+
+    #[inline]
+    fn put_pkt(&mut self, pkt: Self::In<'_>) {
+        let pkt_ref: &[u8] = pkt.into();
+        self.put_pkt_unchecked(pkt_ref);
+    }
+
+    #[inline]
+    fn put_unfiltered_pkt(&mut self, pkt: Self::In<'_>) {
+        let pkt_ref: &[u8] = pkt.into();
+        self.put_pkt_unchecked(pkt_ref);
+    }
+
+    fn set_filter<F: 'static + Fn(Self::In<'_>) -> bool>(&mut self, filter: Option<F>);
+}
+
+pub struct SequenceOutput<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> SequenceOutput<'a> {
+    pub fn bytes(&self) -> &[u8] {
+        self.data
+    }
+}
+
+
+type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;
+
+pub struct LayeredSequence<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> {
+    first: S,
+    first_is_stream: bool,
+    layers: Vec<(Box<dyn SequenceObject>, ValidateFn, bool)>,
+}
+
+impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredSequence<L, S> {
+    pub fn new(seq: S, is_stream: bool) -> Self {
+        LayeredSequence {
+            first: seq,
+            first_is_stream: is_stream,
+            layers: Vec::new()
+        }
+    }
+
+    #[inline]
+    pub fn append<T: Sequence + 'static>(self, seq: T, is_stream: bool) -> LayeredSequence<L, S> {
+        let mut layers = self.layers;
+        layers.push((Box::new(seq), T::In::validate, is_stream));
+
+        LayeredSequence {
+            first: self.first,
+            first_is_stream: self.first_is_stream,
+            layers
+        }
+    }
+
+    #[inline]
+    pub fn append_stream<T: Sequence + 'static>(self, seq: T) -> LayeredSequence<L, S> {
+        self.append(seq, true)
+    }
+
+    #[inline]
+    pub fn append_seq<T: Sequence + 'static>(self, seq: T) -> LayeredSequence<L, S> {
+        self.append(seq, false)
+    }
+}
+
+
+
+
+
+
+
 
 // TODO: Rename this crate to "sequence.rs"?
 

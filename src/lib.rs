@@ -2,16 +2,12 @@ pub mod linux;
 
 pub use pkts::*;
 
-pub use pkts::utils;
-
+pub(crate) use pkts::utils;
 
 use std::{mem, ptr, net::SocketAddr, io::Read};
 
-
-
 // 3 types: Sniffer, Spoofer and Socket
 // Sniffer is read-only, Spoofer is write-only, Socket is RW
-
 
 pub struct Interface {
     if_name: [u8; libc::IF_NAMESIZE],

@@ -4,9 +4,6 @@ use crate::private;
 
 // A session takes in raw bytes and outputs the type associated with the given session
 
-
-
-
 trait Session {
     type Out<'a>: LayerRef<'a>;
 
