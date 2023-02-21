@@ -364,7 +364,7 @@ impl Validate for TcpRef<'_> {
             None => {
                 return Err(ValidationError {
                     layer: Tcp::name(),
-                    err_type: ValidationErrorType::InvalidSize,
+                    err_type: ValidationErrorType::InsufficientBytes,
                     reason:
                         "packet too short for TCP frame--missing Data Offset byte in TCP header",
                 })
@@ -375,7 +375,7 @@ impl Validate for TcpRef<'_> {
         if curr_layer.len() < header_len {
             return Err(ValidationError {
                 layer: Tcp::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes for TCP packet header",
             });
         }

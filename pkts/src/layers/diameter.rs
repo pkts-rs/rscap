@@ -327,7 +327,7 @@ impl Validate for DiameterRef<'_> {
                 if cmp::max(20, len) > curr_layer.len() {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "insufficient bytes in Diameter packet for header/Data payload",
                     });
                 }
@@ -336,7 +336,7 @@ impl Validate for DiameterRef<'_> {
                 if len < 20 {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "Diameter packet Length field was too small for header",
                     });
                 }
@@ -377,7 +377,7 @@ impl Validate for DiameterRef<'_> {
             }
             _ => Err(ValidationError {
                 layer: Diameter::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in DiameterRef for Message Length field",
             }),
         }
@@ -739,7 +739,7 @@ impl Validate for DiamBaseRef<'_> {
                 if cmp::max(20, len) > curr_layer.len() {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "insufficient bytes in Diameter packet for header/Data payload",
                     });
                 }
@@ -748,7 +748,7 @@ impl Validate for DiamBaseRef<'_> {
                 if len < 20 {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "Diameter packet Length field was too small for header",
                     });
                 }
@@ -789,7 +789,7 @@ impl Validate for DiamBaseRef<'_> {
             }
             _ => Err(ValidationError {
                 layer: Diameter::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in DiameterRef for Message Length field",
             }),
         }
@@ -1782,7 +1782,7 @@ impl<'a> GenericAvpRef<'a> {
                 if cmp::max(12, len) > bytes.len() {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "insufficient bytes in Diameter AVP for Data payload",
                     });
                 }
@@ -1791,7 +1791,7 @@ impl<'a> GenericAvpRef<'a> {
                 if unpadded_len < 12 {
                     return Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "Diameter AVP Length field was too small for header",
                     });
                 }
@@ -1819,7 +1819,7 @@ impl<'a> GenericAvpRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Diameter::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in Diameter AVP for header",
             }),
         }

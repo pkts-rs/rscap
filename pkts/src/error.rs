@@ -8,7 +8,7 @@ pub struct ValidationError {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorType {
     InvalidPayloadLayer,
-    InvalidSize,
+    InsufficientBytes,
     InvalidValue,
     TrailingBytes(usize),
 }

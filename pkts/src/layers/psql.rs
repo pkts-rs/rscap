@@ -1383,7 +1383,7 @@ impl<'a> CancelRequestRef<'a> {
             (Some(m), Some(c)) if bytes.len() >= 16 => (i32::from_be_bytes(*m), i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Cancel Request packet to extract Message fields",
             })
         };
@@ -1472,7 +1472,7 @@ impl<'a> ClosePortalRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Portal packet to extract message fields",
             })
         };
@@ -1483,7 +1483,7 @@ impl<'a> ClosePortalRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Portal packet for Portal Name field",
             })
         };
@@ -1602,7 +1602,7 @@ impl<'a> ClosePreparedRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Prepared Statement packet to extract message fields",
             })
         };
@@ -1613,7 +1613,7 @@ impl<'a> ClosePreparedRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Prepared Statement packet for Prepared Statement Name field",
             })
         };
@@ -1723,7 +1723,7 @@ impl<'a> CopyDataRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Data packet to extract message fields",
             })
         };
@@ -1732,7 +1732,7 @@ impl<'a> CopyDataRef<'a> {
         if bytes.len() < msg_length {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field",
             })
         }
@@ -1748,7 +1748,7 @@ impl<'a> CopyDataRef<'a> {
         if msg_length < 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Data packet (too short--must be >= 5)",
             })
         }
@@ -1805,7 +1805,7 @@ impl<'a> CopyDoneRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Done packet to extract message header fields",
             })
         };
@@ -1821,7 +1821,7 @@ impl<'a> CopyDoneRef<'a> {
         if msg_length != 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Done packet (must be equal to 5)",
             })
         }
@@ -1889,7 +1889,7 @@ impl<'a> CopyFailRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Fail packet to extract message fields",
             })
         };
@@ -1900,7 +1900,7 @@ impl<'a> CopyFailRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Fail packet for Error Message field",
             })
         };
@@ -2012,7 +2012,7 @@ impl<'a> DescribePortalRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Portal packet to extract message fields",
             })
         };
@@ -2023,7 +2023,7 @@ impl<'a> DescribePortalRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Portal packet for Portal Name field",
             })
         };
@@ -2143,7 +2143,7 @@ impl<'a> DescribePreparedRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Prepared Statement packet to extract message fields",
             })
         };
@@ -2154,7 +2154,7 @@ impl<'a> DescribePreparedRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Prepared Statement packet for Prepared Statement Name field",
             })
         };
@@ -2280,7 +2280,7 @@ impl<'a> ExecuteRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Execute packet to extract message header fields",
             })
         };
@@ -2291,7 +2291,7 @@ impl<'a> ExecuteRef<'a> {
             Some(r) => r,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Execute packet for Portal Name field",
             })
         };
@@ -2300,7 +2300,7 @@ impl<'a> ExecuteRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "missing null terminating byte in PsqlClient Execute packet for Portal Name field"
             })
         };
@@ -2388,7 +2388,7 @@ impl<'a> FlushRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Flush packet to extract message header fields",
             })
         };
@@ -2404,7 +2404,7 @@ impl<'a> FlushRef<'a> {
         if msg_length != 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Flush packet (must be equal to 5)",
             })
         }

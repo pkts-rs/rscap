@@ -177,7 +177,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         if curr_layer.len() < 4 {
             return Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes for MySQL Packet header (4 bytes required)",
             });
         }
@@ -189,7 +189,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         match curr_layer[4..].len().cmp(&payload_len) {
             Ordering::Less => Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes for packet length advertised by MySQL header",
             }),
             Ordering::Greater => Err(ValidationError {

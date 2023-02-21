@@ -474,7 +474,7 @@ impl Validate for Ipv4Ref<'_> {
             match curr_layer.first() {
                 None => return Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InvalidSize,
+                    err_type: ValidationErrorType::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -488,7 +488,7 @@ impl Validate for Ipv4Ref<'_> {
             None => {
                 return Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InvalidSize,
+                    err_type: ValidationErrorType::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing length field bytes in Ipv4 header",
                 })
@@ -499,7 +499,7 @@ impl Validate for Ipv4Ref<'_> {
         if total_length > curr_layer.len() {
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "total packet length reported in Ipv4 header exceeded the available bytes",
             });
         }
@@ -572,7 +572,7 @@ impl Validate for Ipv4Ref<'_> {
                 Some(l) => (l & 0x0F) as usize * 4,
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
-                    err_type: ValidationErrorType::InvalidSize,
+                    err_type: ValidationErrorType::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -583,7 +583,7 @@ impl Validate for Ipv4Ref<'_> {
                 Some(l) => l,
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
-                    err_type: ValidationErrorType::InvalidSize,
+                    err_type: ValidationErrorType::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--insufficient bytes available for header",
                 }),

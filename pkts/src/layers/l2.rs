@@ -210,7 +210,7 @@ impl<'a> Validate for EtherRef<'a> {
         if curr_layer.len() < 14 {
             Err(ValidationError {
                 layer: Ether::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in Ether layer for header fields", 
             })
         } else {

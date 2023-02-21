@@ -217,7 +217,7 @@ impl Validate for UdpRef<'_> {
                 match length.cmp(&curr_layer.len()) {
                     cmp::Ordering::Greater => Err(ValidationError {
                         layer: Udp::name(),
-                        err_type: ValidationErrorType::InvalidSize,
+                        err_type: ValidationErrorType::InsufficientBytes,
                         reason: "insufficient bytes for payload length advertised by UDP header",
                     }),
                     cmp::Ordering::Less => Err(ValidationError {
@@ -231,7 +231,7 @@ impl Validate for UdpRef<'_> {
             }
             None => Err(ValidationError {
                 layer: Udp::name(),
-                err_type: ValidationErrorType::InvalidSize,
+                err_type: ValidationErrorType::InsufficientBytes,
                 reason: "insufficient bytes in UDP header (8 bytes required)",
             }),
         }

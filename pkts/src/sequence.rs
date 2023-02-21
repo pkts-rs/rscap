@@ -76,33 +76,44 @@ impl<'a> SequenceOutput<'a> {
 }
 
 
+fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
+    if let Some((f, rem)) = slice.split_first_mut() {
+        if let Some((s, _)) = rem.split_first_mut() {
+            return Some((f, s))
+        }
+    }
+
+    return None
+}
+
 type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;
 
 pub struct LayeredSequence<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> {
     first: S,
-    first_is_stream: bool,
-    layers: Vec<(Box<dyn SequenceObject>, ValidateFn, bool)>,
+    first_streambuf: Option<Vec<u8>>,
+    layers: Vec<(Box<dyn SequenceObject>, ValidateFn, Option<Vec<u8>>)>,
 }
 
 impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredSequence<L, S> {
+    #[inline]
     pub fn new(seq: S, is_stream: bool) -> Self {
         LayeredSequence {
             first: seq,
-            first_is_stream: is_stream,
-            layers: Vec::new()
+            first_streambuf: if is_stream { Some(Vec::new()) } else { None },
+            layers: Vec::new(),
         }
     }
 
     #[inline]
-    pub fn append<T: Sequence + 'static>(self, seq: T, is_stream: bool) -> LayeredSequence<L, S> {
-        let mut layers = self.layers;
-        layers.push((Box::new(seq), T::In::validate, is_stream));
+    pub fn append<T: Sequence + 'static>(mut self, seq: T, is_stream: bool) -> LayeredSequence<L, S> {
+        let streambuf = if is_stream {
+            Some(Vec::new())
+        } else {
+            None
+        };
 
-        LayeredSequence {
-            first: self.first,
-            first_is_stream: self.first_is_stream,
-            layers
-        }
+        self.layers.push((Box::new(seq), T::In::validate, streambuf));
+        self
     }
 
     #[inline]
@@ -114,7 +125,89 @@ impl<L: for<'a> LayerRef<'a>, S: for<'a> Sequence<In<'a>=L> + Validate> LayeredS
     pub fn append_seq<T: Sequence + 'static>(self, seq: T) -> LayeredSequence<L, S> {
         self.append(seq, false)
     }
+
+    #[inline]
+    pub fn put_pkt(&mut self, pkt: L) -> Result<(), ValidationError> {
+        let pkt_ref: &[u8] = pkt.into();
+        self.put_pkt_unchecked(pkt_ref)
+    }
+
+    #[inline]
+    pub fn put_pkt_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
+        let mut upper_layer_updated = match self.layers.first_mut() {
+            Some((upper, validate, _)) => Self::percolate_up(&mut self.first, upper.as_mut(), &mut self.first_streambuf, validate)?,
+            None => {
+                self.first.put_pkt_unchecked(pkt);
+                false
+            }
+        };
+
+       let mut lower_idx = 0;
+       while let Some(((lower, _, streambuf), (upper, validate, _))) = first_two_mut(&mut self.layers[lower_idx..]) {
+            if !upper_layer_updated {
+                break
+            }
+            // Iteratively 'percolate' the packets up the various layers as defragmentation of lower layers 
+            // makes higher layer packets available
+
+            upper_layer_updated = Self::percolate_up(lower.as_mut(), upper.as_mut(), streambuf, validate)?;
+            lower_idx += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Extract all available packets from a lower layer, passing them on to the upper layer where possible.
+    fn percolate_up(lower: &mut dyn SequenceObject, upper: &mut dyn SequenceObject, streambuf: &mut Option<Vec<u8>>, validate: &ValidateFn) -> Result<bool, ValidationError> {
+        let mut pkts_moved = false;
+        while let Some(pkt) = lower.get_pkt_raw() {
+            match streambuf {
+                Some(sb) => {
+                    sb.extend(pkt);
+                }
+                None => {
+                    validate(pkt)?;
+                    upper.put_pkt_unchecked(pkt);
+                    pkts_moved = true;
+                }
+            }
+        }
+
+        if let Some(sb) = streambuf {
+            loop {
+                if let Err(e) = validate(sb.as_slice()) {
+                    match e.err_type {
+                        ValidationErrorType::InsufficientBytes => break,
+                        ValidationErrorType::TrailingBytes(num_trailing) => {
+                            let pkt_size = sb.len() - num_trailing;
+                            upper.put_pkt_unchecked(&sb.as_slice()[..pkt_size]);
+                            pkts_moved = true;
+                            sb.drain(0..pkt_size);
+                            // This is the only case that should loop (in case there are more packets in the stream)
+                        }
+                        _ => return Err(e),
+                    }
+                } else { // Ok(())
+                    upper.put_pkt_unchecked(sb.as_slice());
+                    pkts_moved = true;
+                    sb.clear();
+                    break
+                }
+            }
+        }
+
+        Ok(pkts_moved)
+    }
+
+    fn get_pkt_raw(&mut self) -> Option<&[u8]> {
+        match self.layers.last_mut() {
+            Some((s, _, _)) => s.get_pkt_raw(),
+            None => self.first.get_pkt_raw(),
+        }
+    }
 }
+
+
 
 
 
@@ -579,8 +672,8 @@ fn choose_err(
     match (e1, e2) {
         (_, Ok(_)) => e1, // includes (Ok(_), Ok(_))
         (Ok(_), _) => e2,
-        (Err(e), _) if e.err_type == ValidationErrorType::InvalidSize => e1,
-        (_, Err(e)) if e.err_type == ValidationErrorType::InvalidSize => e2,
+        (Err(e), _) if e.err_type == ValidationErrorType::InsufficientBytes => e1,
+        (_, Err(e)) if e.err_type == ValidationErrorType::InsufficientBytes => e2,
         (Err(e), _) if e.err_type == ValidationErrorType::InvalidValue => e1,
         (_, Err(e)) if e.err_type == ValidationErrorType::InvalidValue => e2,
         _ => e1, // ValidationErrorType::TrailingBytes(_)

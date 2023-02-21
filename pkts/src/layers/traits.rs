@@ -571,7 +571,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let curr_valid = Self::validate_current_layer(bytes);
         match curr_valid {
-            Err(e) if e.err_type == ValidationErrorType::InvalidSize => return curr_valid,
+            Err(e) if e.err_type == ValidationErrorType::InsufficientBytes => return curr_valid,
             _ => (),
         }
 
@@ -579,7 +579,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
         match (curr_valid, next_valid) {
             // THIS ORDER MATTERS
             // TODO: review this order to ensure correctness
-            (_, Err(e)) if e.err_type == ValidationErrorType::InvalidSize => next_valid,
+            (_, Err(e)) if e.err_type == ValidationErrorType::InsufficientBytes => next_valid,
             (Err(e), _) if e.err_type == ValidationErrorType::InvalidValue => curr_valid,
             (_, Err(e)) if e.err_type == ValidationErrorType::InvalidValue => next_valid,
             (_, Err(e)) => Err(ValidationError {
