@@ -355,7 +355,7 @@ impl Validate for DiameterRef<'_> {
                     match GenericAvpRef::validate(remainder) {
                         Ok(_) => break,
                         Err(e) => {
-                            if let ValidationErrorType::TrailingBytes(l) = e.err_type {
+                            if let ValidationErrorType::ExcessBytes(l) = e.err_type {
                                 remainder = &remainder[remainder.len() - l..];
                             } else {
                                 return Err(e);
@@ -368,7 +368,7 @@ impl Validate for DiameterRef<'_> {
                 if len < curr_layer.len() {
                     Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - len),
                         reason: "extra bytes remain at end of Diameter packet",
                     })
                 } else {
@@ -767,7 +767,7 @@ impl Validate for DiamBaseRef<'_> {
                     match GenericAvpRef::validate(remainder) {
                         Ok(_) => break,
                         Err(e) => {
-                            if let ValidationErrorType::TrailingBytes(l) = e.err_type {
+                            if let ValidationErrorType::ExcessBytes(l) = e.err_type {
                                 remainder = &remainder[remainder.len() - l..];
                             } else {
                                 return Err(e);
@@ -780,7 +780,7 @@ impl Validate for DiamBaseRef<'_> {
                 if len < curr_layer.len() {
                     Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - len),
                         reason: "extra bytes remain at end of Diameter packet",
                     })
                 } else {
@@ -1810,7 +1810,7 @@ impl<'a> GenericAvpRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Diameter::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of Diameter AVP",
                     })
                 } else {

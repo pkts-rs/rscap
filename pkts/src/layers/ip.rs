@@ -556,7 +556,7 @@ impl Validate for Ipv4Ref<'_> {
         if total_length < curr_layer.len() {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),
-                err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - total_length),
+                err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - total_length),
                 reason:
                     "invalid length field in Ipv4 header--extra bytes remaining at end of packet",
             })
@@ -1769,7 +1769,7 @@ impl<'a> Ipv4OptionRef<'a> {
             } else {
                 Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::TrailingBytes(bytes.len() - 1),
+                    err_type: ValidationErrorType::ExcessBytes(bytes.len() - 1),
                     reason: "excess bytes at end of single-byte IPv4 option"
                 })
             },
@@ -1778,7 +1778,7 @@ impl<'a> Ipv4OptionRef<'a> {
                     Some(0) => Ok(()),
                     Some(remaining) => Err(ValidationError {
                         layer: Ipv4::name(),
-                        err_type: ValidationErrorType::TrailingBytes(remaining),
+                        err_type: ValidationErrorType::ExcessBytes(remaining),
                         reason: "excess bytes at end of sized IPv4 option",
                     }),
                     None => Err(ValidationError {

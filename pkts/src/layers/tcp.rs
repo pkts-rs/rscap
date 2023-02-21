@@ -1114,7 +1114,7 @@ impl<'a> TcpOptionRef<'a> {
             } else {
                 Err(ValidationError {
                     layer: Tcp::name(),
-                    err_type: ValidationErrorType::TrailingBytes(bytes.len() - 1),
+                    err_type: ValidationErrorType::ExcessBytes(bytes.len() - 1),
                     reason: "excess bytes at end of single-byte TCP option"
                 })
             },
@@ -1123,7 +1123,7 @@ impl<'a> TcpOptionRef<'a> {
                     Some(0) => Ok(()),
                     Some(remaining) => Err(ValidationError {
                         layer: Tcp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(remaining),
+                        err_type: ValidationErrorType::ExcessBytes(remaining),
                         reason: "excess bytes at end of sized TCP option",
                     }),
                     None => Err(ValidationError {

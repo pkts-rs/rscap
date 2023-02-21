@@ -179,7 +179,7 @@ impl<L: for<'a> LayerRef<'a> + Validate, S: for<'a> Sequence<In<'a>=L>> LayeredS
                 if let Err(e) = validate(sb.as_slice()) {
                     match e.err_type {
                         ValidationErrorType::InsufficientBytes => break,
-                        ValidationErrorType::TrailingBytes(num_trailing) => {
+                        ValidationErrorType::ExcessBytes(num_trailing) => {
                             let pkt_size = sb.len() - num_trailing;
                             upper.put_unchecked(&sb.as_slice()[..pkt_size]);
                             pkts_moved = true;

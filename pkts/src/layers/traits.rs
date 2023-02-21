@@ -672,7 +672,7 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
         match Self::validate(bytes) {
             Ok(_) => Ok(Self::from_bytes_unchecked(bytes)),
             Err(e) => match e.err_type {
-                ValidationErrorType::TrailingBytes(extra) => Ok(
+                ValidationErrorType::ExcessBytes(extra) => Ok(
                     Self::from_bytes_trailing_unchecked(bytes, bytes.len() - extra),
                 ),
                 _ => Err(e),

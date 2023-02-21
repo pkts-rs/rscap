@@ -1407,7 +1407,7 @@ impl<'a> CancelRequestRef<'a> {
         if bytes.len() > 16 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - 16),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 16),
                 reason: "extra bytes remained at end of PsqlClient Cancel Request packet",
             })
         } else {
@@ -1538,7 +1538,7 @@ impl<'a> ClosePortalRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Portal packet",
             })
         } else {
@@ -1668,7 +1668,7 @@ impl<'a> ClosePreparedRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -1756,7 +1756,7 @@ impl<'a> CopyDataRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Copy Data packet",
             })
         } else {
@@ -1829,7 +1829,7 @@ impl<'a> CopyDoneRef<'a> {
         if bytes.len() > 5 {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - 5),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 5),
                 reason: "trailing bytes found at end of PsqlClient Copy Done packet",
             })
         } else {
@@ -1947,7 +1947,7 @@ impl<'a> CopyFailRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Copy Fail packet",
             })
         } else {
@@ -2078,7 +2078,7 @@ impl<'a> DescribePortalRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Describe Portal packet",
             })
         } else {
@@ -2209,7 +2209,7 @@ impl<'a> DescribePreparedRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -2339,7 +2339,7 @@ impl<'a> ExecuteRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - msg_length),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -2412,7 +2412,7 @@ impl<'a> FlushRef<'a> {
         if bytes.len() > 5 {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - 5),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 5),
                 reason: "trailing bytes found at end of PsqlClient Flush packet",
             })
         } else {

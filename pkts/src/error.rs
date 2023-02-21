@@ -10,5 +10,5 @@ pub enum ValidationErrorType {
     InvalidPayloadLayer,
     InsufficientBytes,
     InvalidValue,
-    TrailingBytes(usize),
+    ExcessBytes(usize),
 }

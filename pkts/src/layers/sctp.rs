@@ -551,7 +551,7 @@ impl Validate for SctpRef<'_> {
 
             match chunk_validation {
                 Err(e) => {
-                    if let ValidationErrorType::TrailingBytes(l) = e.err_type {
+                    if let ValidationErrorType::ExcessBytes(l) = e.err_type {
                         remaining = &remaining[remaining.len() - l..];
                     } else {
                         return Err(e);
@@ -1225,7 +1225,7 @@ impl<'a> InitChunkRef<'a> {
                 while !options.is_empty() {
                     match InitOption::validate(options) {
                         Err(e) => {
-                            if let ValidationErrorType::TrailingBytes(extra) = e.err_type {
+                            if let ValidationErrorType::ExcessBytes(extra) = e.err_type {
                                 options = &options[options.len() - extra..];
                             } else {
                                 return Err(ValidationError {
@@ -1242,7 +1242,7 @@ impl<'a> InitChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT chunk",
                     })
                 } else {
@@ -1612,7 +1612,7 @@ impl<'a> InitOptionRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT option",
                     })
                 } else {
@@ -1926,7 +1926,7 @@ impl<'a> InitAckChunkRef<'a> {
                 while !options.is_empty() {
                     match InitAckOption::validate(options) {
                         Err(e) => {
-                            if let ValidationErrorType::TrailingBytes(extra) = e.err_type {
+                            if let ValidationErrorType::ExcessBytes(extra) = e.err_type {
                                 options = &options[options.len() - extra..];
                             } else {
                                 return Err(e);
@@ -1939,7 +1939,7 @@ impl<'a> InitAckChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT ACK chunk",
                     })
                 } else {
@@ -2282,7 +2282,7 @@ impl<'a> InitAckOptionRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT ACK Option",
                     })
                 } else {
@@ -2658,7 +2658,7 @@ impl<'a> SackChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP SACK chunk",
                     })
                 } else {
@@ -2991,7 +2991,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT chunk",
                     })
                 } else {
@@ -3088,7 +3088,7 @@ impl<'a> HeartbeatInfoRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT chunk Heartbeat Info option",
                     })
                 } else {
@@ -3308,7 +3308,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT ACK chunk",
                     })
                 } else {
@@ -3548,7 +3548,7 @@ impl<'a> AbortChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP ABORT chunk",
                     })
                 } else {
@@ -4427,7 +4427,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if bytes.len() > 4 {
                         Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::TrailingBytes(bytes.len() - 4),
+                            err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
                             reason: "extra bytes remain at end of SCTP 4-byte Error Cause",
                         })
                     } else {
@@ -4464,7 +4464,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if bytes.len() > len {
                         Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                            err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                             reason: "extra bytes remain at end of SCTP <unknown> Error Cause",
                         })
                     } else {
@@ -4644,7 +4644,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 8),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
                         reason:
                             "extra bytes remain at end of SCTP Invalid Stream Identifier option",
                     })
@@ -4884,7 +4884,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of Missing Mandatory Parameter option",
                     })
                 } else {
@@ -5102,7 +5102,7 @@ impl<'a> StaleCookieErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 8),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP Stale Cookie option",
                     })
                 } else {
@@ -5324,7 +5324,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unresolvable Address option",
                     })
                 } else {
@@ -5518,7 +5518,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unrecognized Chunk option",
                     })
                 } else {
@@ -5720,7 +5720,7 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unrecognized Parameters option",
                     })
                 } else {
@@ -5949,7 +5949,7 @@ impl<'a> NoUserDataErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 8),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP No User Data option",
                     })
                 } else {
@@ -6169,7 +6169,7 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Restart of Association with New Address option",
                     })
                 } else {
@@ -6372,7 +6372,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP User-Initiated Abort option",
                     })
                 } else {
@@ -6577,7 +6577,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Protocol Violation option",
                     })
                 } else {
@@ -6755,7 +6755,7 @@ impl<'a> GenericParamRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Parameter",
                     })
                 } else {
@@ -6999,7 +6999,7 @@ impl<'a> ShutdownChunkRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 8),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN chunk",
                     })
                 } else {
@@ -7175,7 +7175,7 @@ impl<'a> ShutdownAckChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 4),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN ACK chunk",
                     })
                 } else {
@@ -7395,7 +7395,7 @@ impl<'a> ErrorChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP ERROR chunk",
                     })
                 } else {
@@ -7639,7 +7639,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP COOKIE ECHO hunk",
                     })
                 } else {
@@ -7831,7 +7831,7 @@ impl<'a> CookieAckChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 4),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP COOKIE ACK chunk",
                     })
                 } else {
@@ -8016,7 +8016,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - 4),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN COMPLETE chunk",
                     })
                 } else {
@@ -8238,7 +8238,7 @@ impl<'a> UnknownChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP <unknown> chunk",
                     })
                 } else {
@@ -8539,7 +8539,7 @@ impl<'a> DataChunkRef<'a> {
         if padded_len < bytes.len() {
             Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::TrailingBytes(bytes.len() - len),
+                err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
                 reason: "SCTP DATA chunk had additional trailing bytes at the end of its data",
             })
         } else {

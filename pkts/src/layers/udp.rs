@@ -222,7 +222,7 @@ impl Validate for UdpRef<'_> {
                     }),
                     cmp::Ordering::Less => Err(ValidationError {
                         layer: Udp::name(),
-                        err_type: ValidationErrorType::TrailingBytes(curr_layer.len() - length),
+                        err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - length),
                         reason:
                             "more bytes in packet than advertised by the UDP header length field",
                     }),

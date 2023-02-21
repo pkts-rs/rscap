@@ -194,7 +194,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             }),
             Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::TrailingBytes(curr_layer[4..].len() - payload_len),
+                err_type: ValidationErrorType::ExcessBytes(curr_layer[4..].len() - payload_len),
                 reason: "more bytes in packet than advertised by the MySQL Packet header Length field",
             }),
             Ordering::Equal => Ok(()),
