@@ -8,7 +8,8 @@ pub struct ValidationError {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorType {
     InvalidPayloadLayer,
-    InsufficientBytes,
+    InsufficientBytes, // Packet needs more bytes to be well-formed
+    InvalidSize, // A size field in a packet conflicts with the actual composition of its contents; or two size fields conflict
     InvalidValue,
-    ExcessBytes(usize),
+    ExcessBytes(usize), // Packet had excess bytes at the end of it
 }
