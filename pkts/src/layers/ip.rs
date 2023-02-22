@@ -552,7 +552,7 @@ impl Validate for Ipv4Ref<'_> {
             }
         }
 
-        // Lastly, validate for TrailingBytes
+        // Lastly, validate for ExcessBytes
         if total_length < curr_layer.len() {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),

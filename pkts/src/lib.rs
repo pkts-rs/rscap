@@ -19,14 +19,15 @@ pub trait LendingIterator {
     fn next(&mut self) -> Option<Self::Item<'_>>;
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::layers::ip::Ipv4;
     use crate::layers::tcp::{Tcp, TcpRef};
-    use crate::layers::traits::FromBytes;
-    use crate::layers::traits::FromBytesRef;
-    use crate::layers::traits::LayerObject;
+    use crate::layers::traits::*;
+    use crate::layers::traits::extras::*;
     use crate::parse_layers;
+    use crate::sequence::*;
 
     #[test]
     fn from_the_layers() {
@@ -40,5 +41,16 @@ mod tests {
         let _layers = parse_layers!(bytes, Tcp, Tcp, Ipv4).unwrap();
 
         //let layers = Tcp::from_layers(bytes, [Tcp, Ipv4, Tcp]);
+    }
+
+    #[test]
+    fn multi_layer_sequence() {
+        let ip1 = Ipv4Sequence::new();
+
+        let mut layered_seq = LayeredSequence::new(ip1, false)
+                .add(Ipv4Sequence::new(), true)
+                .add(Ipv4Sequence::new(), false)
+                .add(Ipv4Sequence::new(), true);
+
     }
 }

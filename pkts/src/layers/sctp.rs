@@ -310,13 +310,13 @@ impl LayerObject for Sctp {
         }
     }
 
-    /// Determines whether one or more payload chunks exist in the [`Sctp`] packet.
+    /// Determines whether one or more payload chunks exist in the [`struct@Sctp`] packet.
     #[inline]
     fn has_payload(&self) -> bool {
         !self.payload_chunks.is_empty()
     }
 
-    /// Removes and returns the first payload chunk from the [`Sctp`] packet.
+    /// Removes and returns the first payload chunk from the [`struct@Sctp`] packet.
     #[inline]
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         self.payload_chunks

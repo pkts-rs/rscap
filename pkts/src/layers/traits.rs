@@ -126,6 +126,10 @@ pub trait CanSetPayload: BaseLayer {
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool;
 }
 
+pub trait ToSlice {
+    fn to_slice(&self) -> &[u8];
+}
+
 /// A trait for serializing a [`Layer`] type into its binary representation.
 pub trait ToBytes {
     /// Appends the layer's byte representation to the given byte vector.
@@ -139,6 +143,18 @@ pub trait ToBytes {
         bytes
     }
 }
+
+// TODO: I added this because I could, but do we need it? Is it useless?
+impl<T: ToSlice> ToBytes for T {
+    #[inline]
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        bytes.extend(self.to_slice());
+    }
+}
+
+
+
+
 
 /// An object-safe subtrait of [`Layer`], suitable for internal operations involving
 /// generic layer payloads.
@@ -556,7 +572,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     /// For the most part, this is because the conversion to `Layer` types drops some meta
     /// information contained within the bytes (and corrects others as needed).
     ///
-    /// 3. [`ValidationErrorType::TrailingBytes`] errors are returned when the byte slice contains
+    /// 3. [`ValidationErrorType::ExcessBytes`] errors are returned when the byte slice contains
     /// more bytes in it than is needed to fully construct the layer and its sublayers
     /// (i.e. there are trailing bytes at the end of the packet). Byte slices that return this
     /// error can be safely converted using `from_bytes_unchecked()` without leading to panic
@@ -587,7 +603,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
                 err_type: ValidationErrorType::InvalidValue,
                 reason: e.reason,
             }),
-            (Err(_), _) => curr_valid, // ValidationErrorType::TrailingBytes(_)
+            (Err(_), _) => curr_valid, // ValidationErrorType::ExcessBytes(_)
             _ => Ok(()),
         }
     }
@@ -665,7 +681,7 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
     }
 
     /// Converts a slice of bytes into a [`LayerMut`] type, returning an error if the bytes would
-    /// not form a valid layer. Validation errors of type [`ValidationErrorType::TrailingBytes`]
+    /// not form a valid layer. Validation errors of type [`ValidationErrorType::ExcessBytes`]
     /// are silently ignored.
     #[inline]
     fn from_bytes_trailing(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
@@ -747,7 +763,7 @@ macro_rules! parse_layers {
         if $bytes.len() > 0 {
             Err($crate::error::ValidationError {
                 layer: "parse_layers!()", // TODO: fix this
-                err_type: $crate::error::ValidationErrorType::TrailingBytes($bytes.len()),
+                err_type: $crate::error::ValidationErrorType::ExcessBytes($bytes.len()),
                 reason: "layers could not be successfully parsed from the given buffer--additional bytes remaining after parsing"
             })
         } else {
