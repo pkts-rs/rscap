@@ -1530,10 +1530,10 @@ pub struct Ipv4OptionsIterRef<'a> {
     end_reached: bool,
 }
 
-impl<'b> LendingIterator for Ipv4OptionsIterRef<'b> {
-    type Item<'a> = Ipv4OptionRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for Ipv4OptionsIterRef<'a> {
+    type Item = Ipv4OptionRef<'a>;
 
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.end_reached {
             return None;
         }
@@ -1588,6 +1588,7 @@ impl<'a> Ipv4OptionsMut<'a> {
         }
     }
 
+    /*
     #[inline]
     pub fn iter_mut(&'a mut self) -> Ipv4OptionsIterMut<'a> {
         Ipv4OptionsIterMut {
@@ -1596,6 +1597,7 @@ impl<'a> Ipv4OptionsMut<'a> {
             end_reached: false,
         }
     }
+    */
 
     #[inline]
     pub fn padding(&'a self) -> &'a [u8] {
@@ -1604,24 +1606,27 @@ impl<'a> Ipv4OptionsMut<'a> {
         &iter.bytes[iter.curr_idx..]
     }
 
+    /*
     #[inline]
     pub fn padding_mut(&'a mut self) -> &'a mut [u8] {
         let mut iter = self.iter_mut();
         while iter.next().is_some() {}
         &mut iter.bytes[iter.curr_idx..]
     }
+    */
 }
 
+/*
 pub struct Ipv4OptionsIterMut<'a> {
     curr_idx: usize,
     bytes: &'a mut [u8],
     end_reached: bool,
 }
 
-impl<'b> LendingIterator for Ipv4OptionsIterMut<'b> {
-    type Item<'a> = Ipv4OptionMut<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for Ipv4OptionsIterMut<'a> {
+    type Item = Ipv4OptionMut<'a>;
 
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.end_reached {
             return None;
         }
@@ -1643,6 +1648,7 @@ impl<'b> LendingIterator for Ipv4OptionsIterMut<'b> {
         }
     }
 }
+*/
 
 // EOOL and NOP must have a size of 0
 #[derive(Clone, Debug)]

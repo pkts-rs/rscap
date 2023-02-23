@@ -967,10 +967,10 @@ pub struct TcpOptionsIterRef<'a> {
     end_reached: bool,
 }
 
-impl<'b> LendingIterator for TcpOptionsIterRef<'b> {
-    type Item<'a> = TcpOptionRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for TcpOptionsIterRef<'a> {
+    type Item = TcpOptionRef<'a>;
 
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.end_reached {
             return None;
         }

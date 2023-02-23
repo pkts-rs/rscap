@@ -1,3 +1,41 @@
+//! Some protocols allow for messages to be fragmented into several
+//! packets, and others additionally account for re-ordering of packets
+//! after they have arrived at an endpoint. The [`Sequence`] type can be
+//! used to perform defragmentation and reordering such that messages
+//! are returned in the correct sequence and with the proper message 
+//! boundaries (where applicable).
+//! 
+//! Passing packets through Sequence types ensure that the following 
+//! three properties are fulfilled if they are part of the given [`Layer`]'s
+//! protocol:
+//! 
+//! 1. Packets are rearranged to conform to a particular order (such as
+//! sequence numbers for [`Tcp`])
+//! 2. Packets that are marked as fragmented are reassembled
+//! 3. Message bounds are maintained where appropriate (for example,
+//! [`Sctp`] data chunks are returned on a chunk-by-chunk basis instead
+//! of being combined into one continuous stream like TCP does).
+//! 
+//! Sequences are relatively straightforward, with simple `put()` and `get()`
+//! operations to pass packets into a streamm and retrieve payloads data,
+//! respectively:
+//! 
+//! TODO: example here
+//! 
+//! Sequences can optionally have filters added to automatically discard
+//! packets based on field values:
+//! 
+//! TODO: example here
+//! 
+//! When parsing raw data flows, it is often useful to perform defragmentation
+//! and reordering operations on a chain of multiple layers, such as handling
+//! IPv4 fragmentation _and_ TCP reordering on the same packet. The [`LayeredSequence`]
+//! struct allows for multiple Sequence types to be chained sequentially in this
+//! manner such that each Sequence acts on the payload contents returned from
+//! the Sequence type before it.
+//! 
+//! TODO: example here
+
 use std::collections::{HashMap, VecDeque};
 use core::marker::PhantomData;
 
@@ -13,6 +51,7 @@ use crate::{utils, LendingIterator};
 type PktFilterDynFn = dyn Fn(&[u8]) -> bool;
 type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;
 
+/// Indicates
 pub trait MessageBounds { }
 
 
@@ -31,7 +70,20 @@ pub trait MessageBounds { }
 //   a given stream, reassembles individual fragmented packets within that stream and 
 //   upholds Data Chunk boundaries in the data it returns.
 
+/// An object-safe subset of methods used for Sequence types (see [`Sequence`] for more
+/// details on general use). This trait is primarily used to enable the creation of
+/// [`LayeredSequence`] types.
 pub trait SequenceObject {
+    /// Processes the incoming `pkt` relative to the current sequence's state, performing
+    /// defragmentation and reordering as necessary. The sequence will not check the packet's
+    /// contents before processing it and will assume that it is not malformed or otherwise 
+    /// invalid.
+    /// 
+    /// # Safety
+    /// 
+    /// It is up to the caller of this method to ensure that `pkt` is not malformed. A packet
+    /// that does not conform to the required layer type may lead to a panic condition, or it
+    /// may alter the stream of output packets in an unexpected way.
     #[inline]
     fn put_unchecked(&mut self, pkt: &[u8]) {
         match self.filter() {
@@ -40,35 +92,104 @@ pub trait SequenceObject {
         }
     }
 
+    /// Both processes the incoming `pkt` and returns the next upper-layer packet in a
+    /// zero-copy manner. This method has the potential to be much more efficient than
+    /// calls to [`Sequence::put()`] and [`SequenceObject::get()`], but only under 
+    /// particular circumstances. Zero-copy will only happen if:
+    /// 1. The inserted packet is not fragmented (only applicable if fragmentation occurs
+    /// in the protocol, such as for [`Ipv4Sequence`]).
+    /// 2. The inserted packet is the next required packet in order (only applicable if
+    /// the Sequence enforces ordering on the packets, such as for [`TcpSequence`]).
+    /// 3. There are no outstanding packets that can be fetched from the sequence using 
+    /// [`SequenceObject::get()`].
+    /// 
+    /// If any of the above conditions are _not_ met, the packet will be copied into internal
+    /// buffers and processed like normal, and the method will optionally return a packet that
+    /// has been reassembled/reordered in internal buffers. If all of the conditions _are_ met,
+    /// the returned packet will be a sub-slice of `pkt`, and no bytes will be copied into
+    /// internal buffers.
+    /// 
+    /// # Safety
+    /// 
+    /// This method will not check the incoming packet's contents before processing it. It is
+    /// up to the caller of this method to ensure that `pkt` is not malformed. A packet that 
+    /// does not conform to the required layer type may lead to a panic condition, or it may
+    /// alter the stream of output packets in an unexpected way.
+    fn put_and_get_unchecked<'a>(&mut self, pkt: &'a [u8]) -> Option<&'a [u8]>;
+
+    /// Processes the incoming `pkt` relative to the current sequence's state, performing
+    /// defragmentation and reordering as necessary. The sequence will not check the packet's
+    /// contents before processing it and will assume that it is not malformed or otherwise 
+    /// invalid.
+    /// 
+    /// This method will bypass the Sequence's filter (if any filter is set), such that
+    /// packets that would otherwise be discarded due to the filter are allowed through.
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]);
 
+    /// Retrieves the next packet from the Sequence, or returns None if there are no more packets
+    /// that are ready to be fetched.
+    /// 
+    /// Each invocation of `get()` always returns the next in-order packet--each packet will 
+    /// only be returned once.
     fn get(&mut self) -> Option<&[u8]>;
 
+    /// Retrieves the filter being used by the Sequence type, or None if no filter has been applied.
     fn filter(&self) -> Option<&PktFilterDynFn>;
 
+    /// Sets the filter of the Sequence type, discarding any current filter in place.
+    /// Note that this filter type operates on a raw slice of bytes; to set a filter
+    /// that operates on the input packet type, see [`Sequence::set_filter()`].
     fn set_filter_raw(&mut self, filter: Option<fn(&[u8]) -> bool>);
 }
 
 pub trait Sequence: SequenceObject + Sized {
     type In<'a>: LayerRef<'a> + Validate;
 
+    /// Processes the incoming `pkt` relative to the current sequence's state, performing
+    /// defragmentation and reordering as necessary.
     #[inline]
     fn put(&mut self, pkt: Self::In<'_>) {
-        let pkt_ref: &[u8] = pkt.into();
-        self.put_unchecked(pkt_ref);
+        self.put_unchecked(pkt.into());
     }
 
+    /// Both processes the incoming `pkt` and returns the next upper-layer packet in a
+    /// zero-copy manner. This method has the potential to be much more efficient than
+    /// calls to [`Sequence::put()`] and [`SequenceObject::get()`], but only under 
+    /// particular circumstances. Zero-copy will only happen if:
+    /// 1. The inserted packet is not fragmented (only applicable if fragmentation occurs
+    /// in the protocol, such as for [`Ipv4Sequence`]).
+    /// 2. The inserted packet is the next required packet in order (only applicable if
+    /// the Sequence enforces ordering on the packets, such as for [`TcpSequence`]).
+    /// 3. There are no outstanding packets that can be fetched from the sequence using 
+    /// [`SequenceObject::get()`].
+    /// 
+    /// If any of the above conditions are _not_ met, the packet will be copied into internal
+    /// buffers and processed like normal, and the method will optionally return a packet that
+    /// has been reassembled/reordered in internal buffers. If all of the conditions _are_ met,
+    /// the returned packet will be a sub-slice of `pkt`, and no bytes will be copied into
+    /// internal buffers.
+    fn put_and_get<'a>(&'a mut self, pkt: Self::In<'a>) -> Option<&'a [u8]> {
+        self.put_and_get_unchecked(pkt.into())
+    }
+
+    /// Processes the incoming `pkt` relative to the current sequence's state, performing
+    /// defragmentation and reordering as necessary.
+    /// 
+    /// This method will bypass the Sequence's filter (if any filter is set), such that
+    /// packets that would otherwise be discarded due to the filter are allowed through.
     #[inline]
     fn put_unfiltered(&mut self, pkt: Self::In<'_>) {
-        let pkt_ref: &[u8] = pkt.into();
-        self.put_unchecked(pkt_ref);
+        self.put_unchecked(pkt.into());
     }
 
+    /// Sets the filter of the Sequence type, discarding any current filter in place.
     fn set_filter<F: Fn(Self::In<'_>) -> bool + 'static>(&mut self, filter: Option<F>);
 
-    /// Sets the filter of the given sequence and returns it.
+    /// Sets the filter of the Sequence type, discarding any current filter in place,
+    /// and returns the sequence type as its output.
     /// 
-    /// This variant of `set_filter()` is useful for creating `LayeredSequence` instances:
+    /// This variant of [`Sequence::set_filter()`] is useful for creating
+    /// [`LayeredSequence`] instances:
     /// 
     /// ```rs
     /// let seq = LayeredSequence::new(Ipv4Sequence::new().with_filter(|ip| !(ip.saddr() == 0 || ip.daddr() == 0)), true)
@@ -81,16 +202,9 @@ pub trait Sequence: SequenceObject + Sized {
     }
 }
 
-pub struct SequenceOutput<'a> {
-    data: &'a [u8],
-}
 
-impl<'a> SequenceOutput<'a> {
-    pub fn bytes(&self) -> &[u8] {
-        self.data
-    }
-}
-
+/// A variation of the `first_mut()` slice method that retrieves the first two
+/// mut references, if they exist.
 #[inline]
 fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
     if let Some((f, rem)) = slice.split_first_mut() {
@@ -110,6 +224,7 @@ pub struct LayeredSequence<T: BaseLayer + ToSlice> {
 }
 
 impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
+    /// Creates a new [`LayeredSequence`] and sets `seq` as its first (outermost) layer.
     #[inline]
     pub fn new<'a, S: Sequence<In<'a> = T> + 'static>(seq: S, has_msg_bounds: bool) -> Self {
         LayeredSequence {
@@ -120,7 +235,7 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         }
     }
 
-    /// Add another Sequence that acts on the next sublayer 
+    /// Add another [`Sequence`] that acts on the output of the current sequence(s).
     #[inline]
     pub fn add<'a, L: LayerRef<'a> + Validate, S: Sequence<In<'a>=L> + 'static>(self, seq: S, has_msg_bounds: bool) -> Self {
         let streambuf = if has_msg_bounds {
@@ -146,12 +261,22 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         self.add(seq, false)
     }
 
+    /// Add another packet to the sequence for processing
     #[inline]
     pub fn put(&mut self, pkt: T) -> Result<(), ValidationError> {
         let pkt_ref: &[u8] = pkt.to_slice();
         self.put_unchecked(pkt_ref)
     }
 
+    /// Add another packet to the sequence for processing without validating 
+    /// the correctness of that packet.
+    /// 
+    /// # Safety
+    /// 
+    /// This method will not check the incoming packet's contents before processing it. It is
+    /// up to the caller of this method to ensure that `pkt` is not malformed. A packet that 
+    /// does not conform to the required layer type may lead to a panic condition, or it may
+    /// alter the stream of output packets in an unexpected way.
     #[inline]
     pub fn put_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
         let mut upper_layer_updated = match self.layers.first_mut() {
@@ -177,7 +302,8 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         Ok(())
     }
 
-    /// Extract all available packets from a lower layer, passing them on to the upper layer where possible.
+    /// Extract all available packets from a lower layer, passing them on to the
+    /// next layer when appropriate.
     fn percolate_up(lower: &mut dyn SequenceObject, upper: &mut dyn SequenceObject, streambuf: &mut Option<Vec<u8>>, validate: &ValidateFn) -> Result<bool, ValidationError> {
         let mut pkts_moved = false;
         while let Some(pkt) = lower.get() {
@@ -219,6 +345,8 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         Ok(pkts_moved)
     }
 
+    /// Retrieve an unfragmented and correctly ordered (where applicable) packet
+    /// from the final Sequence of this LayeredSequence.
     pub fn get(&mut self) -> Option<&[u8]> {
         match self.layers.last_mut() {
             Some((s, _, _)) => s.get(),
@@ -227,6 +355,11 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     }
 }
 
+/// A [`Sequence`] type that handles defragmentation of IPv4 packets.
+/// This Sequence guarantees that packets returned from it will be
+/// defragmented and have message bounds preserved, though it does
+/// not mandate any particular ordering of packets (since IPv4 does
+/// not guarantee in-order packet delivery).
 pub struct Ipv4Sequence {
     filter: Option<Box<PktFilterDynFn>>,
     fragments: Ipv4Fragments,
@@ -235,6 +368,7 @@ pub struct Ipv4Sequence {
 }
 
 impl Ipv4Sequence {
+    /// Create a new `Ipv4Sequence` instance.
     #[inline]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -262,6 +396,10 @@ impl SequenceObject for Ipv4Sequence {
             Some(f) => Some(f.as_ref()),
             None => None,
         }
+    }
+
+    fn put_and_get_unchecked<'a>(&mut self, pkt: &'a [u8]) -> Option<&'a [u8]> {
+        todo!()
     }
 
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {
@@ -477,6 +615,10 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
             Some(f) => Some(f.as_ref()),
             None => None,
         }
+    }
+
+    fn put_and_get_unchecked<'a>(&mut self, pkt: &'a [u8]) -> Option<&'a [u8]> {
+        todo!()
     }
 
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {

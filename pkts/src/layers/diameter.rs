@@ -394,11 +394,11 @@ pub struct AvpIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for AvpIterRef<'b> {
-    type Item<'a> = GenericAvpRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for AvpIterRef<'a> {
+    type Item = GenericAvpRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.bytes.is_empty() {
             return None;
         }
@@ -1298,11 +1298,11 @@ pub struct BaseAvpIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for BaseAvpIterRef<'b> {
-    type Item<'a> = BaseAvpRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for BaseAvpIterRef<'a> {
+    type Item = BaseAvpRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.bytes.is_empty() {
             return None;
         }

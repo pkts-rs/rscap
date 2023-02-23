@@ -1321,11 +1321,11 @@ pub struct ParamIter<'a> {
     num_params: i16,
 }
 
-impl<'a> LendingIterator for ParamIter<'a> {
-    type Item<'b> = Option<&'a [u8]> where Self: 'b;
+impl<'a> LendingIterator<'a> for ParamIter<'a> {
+    type Item = Option<&'a [u8]>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.num_params <= 0 {
             return None
         }

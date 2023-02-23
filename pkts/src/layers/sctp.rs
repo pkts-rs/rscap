@@ -601,11 +601,11 @@ pub struct ControlChunksIterRef<'a> {
     done: bool,
 }
 
-impl<'b> LendingIterator for ControlChunksIterRef<'b> {
-    type Item<'a> = ControlChunkRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for ControlChunksIterRef<'a> {
+    type Item = ControlChunkRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.done {
             None
         } else {
@@ -626,11 +626,11 @@ pub struct PayloadChunksIterRef<'a> {
     done: bool,
 }
 
-impl<'b> LendingIterator for PayloadChunksIterRef<'b> {
-    type Item<'a> = DataChunkRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for PayloadChunksIterRef<'a> {
+    type Item = DataChunkRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.done {
             None
         } else {
@@ -674,11 +674,11 @@ pub struct ChunksIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for ChunksIterRef<'b> {
-    type Item<'a> = ChunkRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
+    type Item = ChunkRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         let (chunk_type, unpadded_len) = match (
             self.bytes.first(),
             utils::get_array(self.bytes, 2).map(|&a| u16::from_be_bytes(a)),
@@ -1337,11 +1337,11 @@ pub struct InitOptionsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for InitOptionsIterRef<'b> {
-    type Item<'a> = InitOptionRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for InitOptionsIterRef<'a> {
+    type Item = InitOptionRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         let (opt_type, unpadded_len) = match (
             utils::get_array(self.bytes, 0).map(|&a| u16::from_be_bytes(a)),
             utils::get_array(self.bytes, 2).map(|&a| u16::from_be_bytes(a)),
@@ -2041,10 +2041,10 @@ pub struct InitAckOptionsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for InitAckOptionsIterRef<'b> {
-    type Item<'a> = InitAckOptionRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for InitAckOptionsIterRef<'a> {
+    type Item = InitAckOptionRef<'a>;
 
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         let (opt_type, unpadded_len) = match (
             utils::get_array(self.bytes, 0).map(|&a| u16::from_be_bytes(a)),
             utils::get_array(self.bytes, 2).map(|&a| u16::from_be_bytes(a)),
@@ -3615,11 +3615,11 @@ pub struct ErrorCauseIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for ErrorCauseIterRef<'b> {
-    type Item<'a> = ErrorCauseRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for ErrorCauseIterRef<'a> {
+    type Item = ErrorCauseRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         let (err_type, unpadded_len) = match (
             utils::get_array(self.bytes, 0).map(|&a| u16::from_be_bytes(a)),
             utils::get_array(self.bytes, 2).map(|&a| u16::from_be_bytes(a)),
@@ -5767,11 +5767,11 @@ pub struct ParamsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for ParamsIterRef<'b> {
-    type Item<'a> = GenericParamRef<'a> where Self: 'a;
+impl<'a> LendingIterator<'a> for ParamsIterRef<'a> {
+    type Item = GenericParamRef<'a>;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item<'_>> {
+    fn next(&mut self) -> Option<Self::Item> {
         match utils::to_array(self.bytes, 2) {
             Some(unpadded_len_arr) => {
                 let unpadded_len = cmp::max(4, u16::from_be_bytes(unpadded_len_arr));
