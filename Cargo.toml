@@ -5,12 +5,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["std", "custom_layer_selection"]
+default = ["std"]
 std = ["alloc"]
 alloc = []
-custom_layer_selection = ["rscap-macros/custom_layer_selection"]
 
 [dependencies]
 libc = { version = "0.2", path = "../libc-packet/libc" }
 pkts = { version = "0.1", path = "pkts" }
-rscap-macros = { path = "../rscap-macros", version = "0.1" }

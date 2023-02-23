@@ -4,7 +4,7 @@ use super::{RawRef, Raw};
 use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use rscap_macros::{Layer, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 // SIDE NOTE: postgres will be able to be a stateless protocol
 // This is because all other packets besides StartupMessage and

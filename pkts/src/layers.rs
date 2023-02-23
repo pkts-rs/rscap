@@ -14,7 +14,7 @@ use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 
-use rscap_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
 

@@ -1,7 +1,7 @@
 use crate::error::*;
 use core::fmt;
 use extras::*;
-use rscap_macros::layer_metadata;
+use pkts_macros::layer_metadata;
 
 use crate::layers::ip::Ipv4DataProtocol;
 

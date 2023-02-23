@@ -1,0 +1,17 @@
+[package]
+name = "pkts-macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc_macro = true
+
+[features]
+custom_layer_selection = []
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+syn = { version = "1.0", features = ["derive"] }
+quote = "1.0"

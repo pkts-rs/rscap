@@ -8,7 +8,7 @@ edition = "2021"
 default = ["std", "custom_layer_selection"]
 std = ["alloc"]
 alloc = []
-custom_layer_selection = ["rscap-macros/custom_layer_selection"]
+custom_layer_selection = ["pkts-macros/custom_layer_selection"]
 
 [dependencies]
-rscap-macros = { path = "../../rscap-macros", version = "0.1" }
+pkts-macros = { path = "../pkts-macros", version = "0.1" }
