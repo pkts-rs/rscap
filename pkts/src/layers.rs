@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+
 pub mod diameter;
 pub(crate) mod example;
 pub mod icmp;

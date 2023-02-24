@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+
 //! Some protocols allow for messages to be fragmented into several
 //! packets, and others additionally account for re-ordering of packets
 //! after they have arrived at an endpoint. The [`Sequence`] type can be

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
 

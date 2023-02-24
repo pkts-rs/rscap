@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+
 use pkts_macros::{Layer, LayerRef, LayerMut, StatelessLayer};
 
 use crate::layers::traits::extras::*;
