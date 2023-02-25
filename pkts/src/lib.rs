@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
+//! A library for creating, decoding and modifying packet layers.
+//! 
+
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
 

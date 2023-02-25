@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
+//! # General utility functions
+//! 
+//! This submodule provides general-purpose methods and structs
+//! that aren't necessarily packet-specific. At present time, none
+//! of these functions should be considered stable--they may be
+//! removed or changed at any release.
+
 use core::{array, cmp, default, iter, mem};
 
 /*
