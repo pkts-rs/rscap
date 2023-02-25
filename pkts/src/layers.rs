@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+// Copyright (C) Nathaniel Bennett <contact@rscap.org>
+
+//! Layers are the fundamental abstraction used in this library for data.
+//! 
+//! In general, most communication protocols make use of multiple 
+//! encapsulated layers of data, where each layer performs a distinct purpose
+//! in relaying information from one peer to another. Each layer can be
+//! generalized into a header and payload, where the header contains data
+//! specific to the operation of that layer and the payload contains the 
+//! next layer of data.
+//! 
+//! Layers for all sorts of different data protocols are provided in this 
+//! submodule, as well as traits that make operating on multiple layers more
+//! simple. 
 
 pub mod diameter;
 pub(crate) mod example;
@@ -21,12 +34,27 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
 
+/// A raw [`Layer`] composed of unstructured bytes.
+/// 
+/// This type is primarily used when inner layers cannot be inferred or interpreted
+/// automatically by a given method call, or when payload layer data is literally 
+/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// necessarily indicate the presence of only one `Layer` in its contained
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
+/// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
+/// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
+/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// 
+/// [`Ipv4`]: crate::layers::ip::Ipv4
+/// [`Tcp`]: crate::layers::tcp::Tcp
+/// [`Udp`]: crate::layers::udp::Udp
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(RawMetadata)]
 #[ref_type(RawRef)]
 pub struct Raw {
     data: Vec<u8>,
-    /// Kept for the sake of compatibility, but not normally used (unless a custom_layer_selection overrides it)
+    // Kept for the sake of compatibility, but not normally used (unless a custom_layer_selection overrides it)
     payload: Option<Box<dyn LayerObject>>,
 }
 
@@ -103,23 +131,48 @@ impl CanSetPayload for Raw {
 }
 
 impl Raw {
+    /// A slice of the entire contents of the `Raw` layer.
     #[inline]
     pub fn data(&self) -> &Vec<u8> {
         &self.data
     }
 
+    /// A mutable slice of the entire contents of the `Raw` layer.
     #[inline]
     pub fn data_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data
     }
 }
 
+/// A reference to a raw [`Layer`] composed of unstructured bytes.
+/// 
+/// This type is primarily used when inner layers cannot be inferred or interpreted
+/// automatically by a given method call, or when payload layer data is literally 
+/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// necessarily indicate the presence of only one `Layer` in its contained
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
+/// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
+/// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
+/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// 
+/// [`Ipv4`]: crate::layers::ip::Ipv4
+/// [`Tcp`]: crate::layers::tcp::Tcp
+/// [`Udp`]: crate::layers::udp::Udp
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Raw)]
 #[metadata_type(RawMetadata)]
 pub struct RawRef<'a> {
     #[data_field]
     data: &'a [u8],
+}
+
+impl RawRef<'_> {
+    /// A slice of the entire contents of the `Raw` layer.
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
 }
 
 impl<'a> FromBytesRef<'a> for RawRef<'a> {
@@ -148,13 +201,21 @@ impl Validate for RawRef<'_> {
     }
 }
 
-impl RawRef<'_> {
-    #[inline]
-    pub fn data(&self) -> &[u8] {
-        self.data
-    }
-}
-
+/// A mutable reference to a raw [`Layer`] composed of unstructured bytes.
+/// 
+/// This type is primarily used when inner layers cannot be inferred or interpreted
+/// automatically by a given method call, or when payload layer data is literally 
+/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// necessarily indicate the presence of only one `Layer` in its contained
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
+/// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
+/// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
+/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// 
+/// [`Ipv4`]: crate::layers::ip::Ipv4
+/// [`Tcp`]: crate::layers::tcp::Tcp
+/// [`Udp`]: crate::layers::udp::Udp
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[owned_type(Raw)]
 #[ref_type(RawRef)]
@@ -164,6 +225,20 @@ pub struct RawMut<'a> {
     data: &'a mut [u8],
     #[data_length_field]
     len: usize,
+}
+
+impl RawMut<'_> {
+    /// A slice of the entire contents of the `Raw` layer.
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    /// A mutable slice of the entire contents of the `Raw` layer.
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        &mut self.data[..self.len]
+    }
 }
 
 impl<'a> FromBytesMut<'a> for RawMut<'a> {
@@ -182,17 +257,5 @@ impl<'a> From<&'a RawMut<'a>> for RawRef<'a> {
         RawRef {
             data: &value.data[..value.len],
         }
-    }
-}
-
-impl RawMut<'_> {
-    #[inline]
-    pub fn data(&self) -> &[u8] {
-        &self.data[..self.len]
-    }
-
-    #[inline]
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.data[..self.len]
     }
 }

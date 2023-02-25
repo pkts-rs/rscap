@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+// Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
 //! While stateless protocols are not uncommon (see [`Dns`] or [`Http`]),
 //! many protocols implemented by `rscap` are stateful. These protocols

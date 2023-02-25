@@ -39,4 +39,6 @@ pkt[Tcp].set_dport(12345);
 
 The source code of this project is made available under the [GNU General Public License, version 2][GPLv2].
 
-Requests regarding commercial licensing options can be made to *email address here*.
+Requests regarding other licensing options can be made to *email address here*.
+
+
