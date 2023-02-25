@@ -22,7 +22,7 @@ Rscap is a multi-purpose library for network packet capture/transmission and pac
 The `pkts` submodule focuses solely on (2)--it provides a packet-building API for a wide variety of network protocol layers.
 This library isn't meant to only cover Physical through Transport layers or stateless protocols--thanks to `Sequence` and `Session` types (which defragment/reorder packets and track packet state, respectively), any application-layer protocol can be easily captured and decoded.
 
-The `pkts-macros` submodule provides derive macros that assist in creating new `Layer` types.
+The `pkts-macros` submodule provides derive macros for `pkts` that assist in creating new `Layer` types.
 
 More information on the library can be found in the [`rscap`](https://crates.io/crates/rscap) or [`pkts`](https://crates.io/crates/pkts) crates.
 
