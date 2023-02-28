@@ -439,7 +439,6 @@ impl<'a> SctpRef<'a> {
     pub fn control_chunks(&self) -> ControlChunksIterRef<'a> {
         ControlChunksIterRef {
             chunk_iter: self.chunks(),
-            done: false,
         }
     }
 
@@ -459,7 +458,6 @@ impl<'a> SctpRef<'a> {
     pub fn payload_chunks(&self) -> PayloadChunksIterRef<'a> {
         PayloadChunksIterRef {
             chunk_iter: self.chunks(),
-            done: false,
         }
     }
 
@@ -470,7 +468,7 @@ impl<'a> SctpRef<'a> {
     /// these chunks may not be ordered correctly.
     #[inline]
     pub fn chunks(&self) -> ChunksIterRef<'a> {
-        ChunksIterRef { bytes: self.data }
+        ChunksIterRef { bytes: &self.data[12..] }
     }
 }
 
@@ -601,7 +599,6 @@ impl<'a> From<&'a SctpMut<'a>> for SctpRef<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct ControlChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
-    done: bool,
 }
 
 impl<'a> LendingIterator<'a> for ControlChunksIterRef<'a> {
@@ -609,24 +606,19 @@ impl<'a> LendingIterator<'a> for ControlChunksIterRef<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            None
-        } else {
-            match self.chunk_iter.next() {
-                Some(ChunkRef::Control(c)) => Some(c),
-                _ => {
-                    self.done = true;
-                    None
-                }
+        while let Some(chunk) = self.chunk_iter.next() {
+            match chunk {
+                ChunkRef::Control(c) => return Some(c),
+                _ => ()
             }
         }
+        return None
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct PayloadChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
-    done: bool,
 }
 
 impl<'a> LendingIterator<'a> for PayloadChunksIterRef<'a> {
@@ -634,17 +626,13 @@ impl<'a> LendingIterator<'a> for PayloadChunksIterRef<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            None
-        } else {
-            match self.chunk_iter.next() {
-                Some(ChunkRef::Payload(c)) => Some(c),
-                _ => {
-                    self.done = true;
-                    None
-                }
+        while let Some(chunk) = self.chunk_iter.next() {
+            match chunk {
+                ChunkRef::Payload(c) => return Some(c),
+                _ => ()
             }
         }
+        return None
     }
 }
 
@@ -684,12 +672,13 @@ impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let (chunk_type, unpadded_len) = match (
             self.bytes.first(),
-            utils::get_array(self.bytes, 2).map(|&a| u16::from_be_bytes(a)),
+            utils::get_array::<2>(self.bytes, 2),
         ) {
-            (Some(&t), Some(l)) => (t, l),
+            (Some(&t), Some(&l)) => (t, u16::from_be_bytes(l)),
             _ => return None,
         };
 
+        /*
         let min_len = match chunk_type {
             CHUNK_TYPE_INIT | CHUNK_TYPE_INIT_ACK => 20,
             CHUNK_TYPE_SACK | CHUNK_TYPE_DATA => 16,
@@ -704,6 +693,7 @@ impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
             | CHUNK_TYPE_SHUTDOWN_COMPLETE => 4,
             _ => 4,
         };
+        
 
         if self.bytes.len() < min_len {
             self.bytes = &[]; // Not needed, but this helps further calls to the iterator to short-circuit
@@ -711,6 +701,9 @@ impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
         }
 
         let len = cmp::max(min_len, utils::padded_length::<4>(unpadded_len as usize));
+        */
+
+        let len = utils::padded_length::<4>(unpadded_len as usize);
         match (self.bytes.get(..len), self.bytes.get(len..)) {
             (Some(chunk_bytes), Some(rem)) => {
                 self.bytes = rem;
@@ -725,6 +718,8 @@ impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
                 }
             }
             _ => {
+                panic!("insufficient bytes for ChunkRef in iterator.");
+                /*
                 // Just take whatever remaining bytes we can for the payload
                 let chunk_bytes = self.bytes;
                 self.bytes = &[];
@@ -737,6 +732,7 @@ impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
                         chunk_bytes,
                     )))
                 }
+                */
             }
         }
     }
@@ -8495,7 +8491,7 @@ impl<'a> DataChunkRef<'a> {
                 return Err(ValidationError {
                     layer: Sctp::name(),
                     err_type: ValidationErrorType::InsufficientBytes,
-                    reason: "SCTP DATA chunk must have a minimum of 20 bytes for its header",
+                    reason: "SCTP DATA chunk must have a minimum of 16 bytes for its header",
                 })
             }
             Some(arr) => u16::from_be_bytes(arr) as usize,
@@ -8523,7 +8519,7 @@ impl<'a> DataChunkRef<'a> {
             return Err(ValidationError {
                 layer: Sctp::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "packet length field had invalid value (insufficient length to cover packet header) for SCTP DATA chunk",
+                reason: "packet length field had invalid value (insufficient length to cover packet header, at least one byte of data and padding) for SCTP DATA chunk",
             });
         }
 
@@ -8583,8 +8579,7 @@ impl<'a> DataChunkRef<'a> {
 
     #[inline]
     pub fn chunk_len_padded(&self) -> usize {
-        let chunk_len = self.chunk_len() as usize;
-        chunk_len + ((4 - (chunk_len % 4)) % 4)
+        utils::padded_length::<4>(self.chunk_len() as usize)
     }
 
     #[inline]
@@ -8621,7 +8616,7 @@ impl<'a> DataChunkRef<'a> {
     #[inline]
     pub fn user_data(&self) -> &[u8] {
         self.data
-            .get(20..self.chunk_len() as usize)
+            .get(16..self.chunk_len() as usize)
             .expect("insufficient bytes in SCTP DATA chunk to retrieve User Data field")
     }
 

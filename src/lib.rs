@@ -32,7 +32,7 @@ impl Interface {
         }
 
         let mut if_cstr = [0u8; libc::IF_NAMESIZE];
-        if_cstr.as_mut_slice().copy_from_slice(if_name);
+        if_cstr.as_mut_slice()[..if_name.len()].copy_from_slice(if_name);
 
         match unsafe { libc::if_nametoindex(if_cstr.as_ptr() as *const i8) } {
             0 => Err(SockError { reason: format!("if_nametoindex failed in Interface") }),

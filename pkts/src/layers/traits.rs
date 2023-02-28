@@ -1135,6 +1135,13 @@ pub mod extras {
 
     layer_metadata!(SctpMetadata);
 
+    impl Ipv4PayloadMetadata for SctpMetadata {
+        #[inline]
+        fn ip_data_protocol(&self) -> Ipv4DataProtocol {
+            Ipv4DataProtocol::Sctp
+        }
+    }
+
     layer_metadata!(TcpMetadata);
 
     impl Ipv4PayloadMetadata for TcpMetadata {

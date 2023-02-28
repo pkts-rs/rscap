@@ -2,7 +2,7 @@
 // Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
 use core::fmt::Debug;
-use core::mem;
+use core::{cmp, mem};
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
@@ -10,7 +10,7 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::{error::*, LendingIterator};
 
-use super::sctp::SctpRef;
+use super::sctp::{SctpRef, Sctp};
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
@@ -242,6 +242,9 @@ impl FromBytesCurrent for Ipv4 {
                 Ipv4DataProtocol::Udp => {
                     Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
                 }
+                Ipv4DataProtocol::Sctp => {
+                    Some(Box::new(Sctp::from_bytes_unchecked(ipv4.payload_raw())))
+                }
                 /* Add additional protocols here */
                 _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
             };
@@ -429,34 +432,30 @@ impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
 impl LayerOffset for Ipv4Ref<'_> {
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let ihl = match bytes.first() {
-            Some(l) => (l & 0x0F) as usize * 4,
+            Some(l) => cmp::max((l & 0x0F) as usize, 5) * 4,
             None => return None,
         };
-
-        if ihl == bytes.len() {
-            return None;
-        }
 
         match bytes.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
             Some(Ipv4DataProtocol::Tcp) => {
                 if layer_type == TcpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                    TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
                 }
             }
             Some(Ipv4DataProtocol::Udp) => {
                 if layer_type == UdpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                    UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
                 }
             }
             Some(Ipv4DataProtocol::Sctp) => {
                 if layer_type == SctpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                    SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
                 }
             }
             _ => {
@@ -595,6 +594,7 @@ impl Validate for Ipv4Ref<'_> {
         match curr_layer.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
             Some(Ipv4DataProtocol::Tcp) => TcpRef::validate(next_layer),
             Some(Ipv4DataProtocol::Udp) => UdpRef::validate(next_layer),
+            Some(Ipv4DataProtocol::Sctp) => SctpRef::validate(next_layer),
             /* Add more Layer types here */
             _ => RawRef::validate(next_layer),
         }
@@ -923,7 +923,7 @@ impl From<u8> for Ipv4Flags {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Ipv4DataProtocol {
     /// IPv6 Hop-by-Hop Option (see RFC 8200)
