@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
+//! # [`Session`] types
+//! 
 //! While stateless protocols are not uncommon (see [`Dns`] or [`Http`]),
 //! many protocols implemented by `rscap` are stateful. These protocols
 //! require some form of state machine to be maintained by an endpoint 
@@ -37,7 +39,17 @@
 //! 
 //! TODO: example(s) here
 //! 
-//! 
+//! [`Dns`]: crate::layers::dns::Dns
+//! [`Http`]: crate::layers::http::Http
+//! [`Tcp`]: crate::layers::tcp::Tcp
+//! [`MysqlClient`]: crate::layers::mysql::MysqlClient
+//! [`MysqlServer`]: crate::layers::mysql::MysqlServer
+//! [`StatelessLayer`]: crate::layers::traits::extras::StatelessLayer
+//! [`Validate`]: crate::layers::traits::Validate
+//! [`FromBytes`]: crate::layers::traits::FromBytes
+//! [`FromBytesCurrent`]: crate::layers::traits::extras::FromBytesCurrent
+//! [`FromBytesRef`]: crate::layers::traits::FromBytesRef
+//! [`FromBytesMut`]: crate::layers::traits::FromBytesMut
 //! 
 
 use crate::error::ValidationError;
