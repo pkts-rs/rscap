@@ -323,8 +323,9 @@ impl Validate for DiameterRef<'_> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(curr_layer, 0) {
-            Some(unpadded_len_arr) => {
-                let len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
+            Some(mut unpadded_len_arr) => {
+                unpadded_len_arr[0] = 0;
+                let len = u32::from_be_bytes(unpadded_len_arr) as usize;
 
                 // Validate length field (too big) and header bytes
                 if cmp::max(20, len) > curr_layer.len() {
@@ -1642,7 +1643,7 @@ pub enum S6aCommand {
 pub struct GenericAvp {
     code: u32,
     flags: AvpFlags,
-    vendor_id: u32,
+    vendor_id: Option<u32>,
     data: Vec<u8>,
 }
 
@@ -1701,12 +1702,13 @@ impl GenericAvp {
     }
 
     #[inline]
-    pub fn vendor_id(&self) -> u32 {
+    pub fn vendor_id(&self) -> Option<u32> {
         self.vendor_id
     }
 
     #[inline]
-    pub fn set_vendor_id(&mut self, vendor_id: u32) {
+    pub fn set_vendor_id(&mut self, vendor_id: Option<u32>) {
+        self.flags.set_vendor_specific(self.vendor_id.is_some());
         self.vendor_id = vendor_id;
     }
 
@@ -1731,7 +1733,9 @@ impl ToBytes for GenericAvp {
         // AVP Length
         bytes.extend(&self.unpadded_len().to_be_bytes()[1..]);
         // Vendor ID
-        bytes.extend(self.vendor_id.to_be_bytes());
+        if let Some(id) = self.vendor_id {
+            bytes.extend(id.to_be_bytes());
+        }
         // Data
         bytes.extend(&self.data);
         // Padding
@@ -1778,11 +1782,18 @@ impl<'a> GenericAvpRef<'a> {
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 4) {
             Some(unpadded_len_arr) => {
+                let flags = AvpFlags { flags: unpadded_len_arr[0] };
                 let unpadded_len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
                 let len = utils::padded_length::<4>(unpadded_len);
 
+                let minimum_length = if flags.vendor_specific() {
+                    12
+                } else {
+                    8
+                };
+
                 // Validate length field (too big) and header bytes
-                if cmp::max(12, len) > bytes.len() {
+                if cmp::max(minimum_length, len) > bytes.len() {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         err_type: ValidationErrorType::InsufficientBytes,
@@ -1791,7 +1802,7 @@ impl<'a> GenericAvpRef<'a> {
                 }
 
                 // Validate length field (too small)
-                if unpadded_len < 12 {
+                if unpadded_len < minimum_length {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         err_type: ValidationErrorType::InsufficientBytes,
@@ -1832,7 +1843,7 @@ impl<'a> GenericAvpRef<'a> {
     pub fn code(&self) -> u32 {
         u32::from_be_bytes(
             utils::to_array(self.data, 0)
-                .expect("insufficient bytes in Diameter AvpRef to retrieve AVP Code field"),
+                .expect("insufficient bytes in Diameter AVP to retrieve AVP Code field"),
         )
     }
 
@@ -1842,7 +1853,7 @@ impl<'a> GenericAvpRef<'a> {
             flags: *self
                 .data
                 .get(4)
-                .expect("insufficent bytes in Diameter AvpRef to retrieve AVP Flags field"),
+                .expect("insufficent bytes in Diameter AVP to retrieve AVP Flags field"),
         }
     }
 
@@ -1851,7 +1862,7 @@ impl<'a> GenericAvpRef<'a> {
         0x_00FF_FFFF
             & u32::from_be_bytes(
                 utils::to_array(self.data, 4)
-                    .expect("insufficient bytes in Diameter AvpRef to retrieve AVP Length field"),
+                    .expect("insufficient bytes in Diameter AVP to retrieve AVP Length field"),
             )
     }
 
@@ -1861,21 +1872,31 @@ impl<'a> GenericAvpRef<'a> {
     }
 
     #[inline]
-    pub fn vendor_id(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 8).expect(
-                "insufficient bytes in Diameter AvpRef to retrieve Vendor Identifier field",
-            ),
-        )
+    pub fn vendor_id(&self) -> Option<u32> {
+        if self.flags().vendor_specific() {
+            Some(u32::from_be_bytes(
+                utils::to_array(self.data, 8).expect(
+                    "insufficient bytes in Diameter AVP to retrieve Vendor Identifier field",
+                ),
+            ))
+        } else {
+            None
+        }
     }
 
     #[inline]
     pub fn data(&self) -> &[u8] {
+        let minimum_length = if self.flags().vendor_specific() {
+            12
+        } else {
+            8
+        };
+
         let end = self.unpadded_len() as usize;
-        assert!(end < 12, "error retrieving AVP Data field--length field in Diameter AvpRef was not long enough for AVP header");
+        assert!(end >= minimum_length, "error retrieving AVP Data field--length field in Diameter AVP was not long enough for AVP header");
         self.data
-            .get(12..end)
-            .expect("insufficent bytes in Diameter AvpRef to retrieve Data field")
+            .get(minimum_length..end)
+            .expect("insufficent bytes in Diameter AVP to retrieve Data field")
     }
 }
 
