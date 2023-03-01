@@ -60,6 +60,8 @@ use crate::layers::traits::LayerRef;
 pub trait Session {
     type Out<'a>: LayerRef<'a>;
 
+    /// Creates a packet from the given bytes, checking that they conform to
+    /// a valid packet structure for the current session state.
     fn convert<'b>(bytes: &'b [u8]) -> Result<Self::Out<'b>, ValidationError>;
 
     /// Creates a packet from the given bytes without checking the syntactical
