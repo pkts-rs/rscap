@@ -42,6 +42,7 @@
 use std::collections::{HashMap, VecDeque};
 use core::marker::PhantomData;
 
+use core::iter::Iterator;
 use core::{cmp, mem};
 
 use crate::error::*;
@@ -49,7 +50,7 @@ use crate::layers::ip::Ipv4Ref;
 use crate::layers::sctp::{DataChunkFlags, SctpRef};
 use crate::layers::traits::*;
 use crate::layers::traits::Validate;
-use crate::{utils, LendingIterator};
+use crate::utils;
 
 type PktFilterDynFn = dyn Fn(&[u8]) -> bool;
 type ValidateFn = fn (bytes: &[u8]) -> Result<(), ValidationError>;

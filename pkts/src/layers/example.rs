@@ -5,7 +5,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::{error::*, LendingIterator};
+use crate::error::*;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(ExampleMetadata)]

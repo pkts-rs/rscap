@@ -3,13 +3,14 @@
 
 use std::collections::HashMap;
 
+use core::iter::Iterator;
 use core::{cmp, str};
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::{error::*, LendingIterator, utils};
+use crate::{error::*, utils};
 
 const CLIENT_MSG_BIND: u8 = b'B';
 const CLIENT_MSG_STARTUP: u8 = 0x00;
@@ -1323,7 +1324,7 @@ pub struct ParamIter<'a> {
     num_params: i16,
 }
 
-impl<'a> LendingIterator<'a> for ParamIter<'a> {
+impl<'a> Iterator for ParamIter<'a> {
     type Item = Option<&'a [u8]>;
 
     #[inline]

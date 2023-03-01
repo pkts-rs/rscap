@@ -5,10 +5,10 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
-use crate::LendingIterator;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
+use core::iter::Iterator;
 use core::cmp;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
@@ -970,7 +970,7 @@ pub struct TcpOptionsIterRef<'a> {
     end_reached: bool,
 }
 
-impl<'a> LendingIterator<'a> for TcpOptionsIterRef<'a> {
+impl<'a> Iterator for TcpOptionsIterRef<'a> {
     type Item = TcpOptionRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

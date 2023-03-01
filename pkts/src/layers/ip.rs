@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <contact@rscap.org>
 
+use core::iter::Iterator;
 use core::fmt::Debug;
 use core::{cmp, mem};
 
@@ -8,7 +9,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::{error::*, LendingIterator};
+use crate::error::*;
 
 use super::sctp::{SctpRef, Sctp};
 use super::tcp::{Tcp, TcpRef};
@@ -1533,7 +1534,7 @@ pub struct Ipv4OptionsIterRef<'a> {
     end_reached: bool,
 }
 
-impl<'a> LendingIterator<'a> for Ipv4OptionsIterRef<'a> {
+impl<'a> Iterator for Ipv4OptionsIterRef<'a> {
     type Item = Ipv4OptionRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1626,7 +1627,7 @@ pub struct Ipv4OptionsIterMut<'a> {
     end_reached: bool,
 }
 
-impl<'a> LendingIterator<'a> for Ipv4OptionsIterMut<'a> {
+impl<'a> Iterator for Ipv4OptionsIterMut<'a> {
     type Item = Ipv4OptionMut<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

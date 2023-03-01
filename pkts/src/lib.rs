@@ -17,24 +17,6 @@ mod private {
     pub trait Sealed {}
 }
 
-
-pub trait LendingIterator<'a> {
-    type Item: 'a;
-
-    fn next(&mut self) -> Option<Self::Item>;
-}
-
-/*
-pub trait LendingIterator {
-    type Item<'a>
-    where
-        Self: 'a;
-
-    fn next(&mut self) -> Option<Self::Item<'_>>;
-}
-*/
-
-
 #[cfg(test)]
 mod tests {
     use crate::layers::ip::Ipv4;

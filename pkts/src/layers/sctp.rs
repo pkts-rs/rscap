@@ -5,7 +5,7 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
-use crate::LendingIterator;
+use core::iter::Iterator;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
@@ -601,7 +601,7 @@ pub struct ControlChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
 }
 
-impl<'a> LendingIterator<'a> for ControlChunksIterRef<'a> {
+impl<'a> Iterator for ControlChunksIterRef<'a> {
     type Item = ControlChunkRef<'a>;
 
     #[inline]
@@ -621,7 +621,7 @@ pub struct PayloadChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
 }
 
-impl<'a> LendingIterator<'a> for PayloadChunksIterRef<'a> {
+impl<'a> Iterator for PayloadChunksIterRef<'a> {
     type Item = DataChunkRef<'a>;
 
     #[inline]
@@ -665,7 +665,7 @@ pub struct ChunksIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for ChunksIterRef<'a> {
+impl<'a> Iterator for ChunksIterRef<'a> {
     type Item = ChunkRef<'a>;
 
     #[inline]
@@ -1336,7 +1336,7 @@ pub struct InitOptionsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for InitOptionsIterRef<'a> {
+impl<'a> Iterator for InitOptionsIterRef<'a> {
     type Item = InitOptionRef<'a>;
 
     #[inline]
@@ -2040,7 +2040,7 @@ pub struct InitAckOptionsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for InitAckOptionsIterRef<'a> {
+impl<'a> Iterator for InitAckOptionsIterRef<'a> {
     type Item = InitAckOptionRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -3614,7 +3614,7 @@ pub struct ErrorCauseIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for ErrorCauseIterRef<'a> {
+impl<'a> Iterator for ErrorCauseIterRef<'a> {
     type Item = ErrorCauseRef<'a>;
 
     #[inline]
@@ -5766,7 +5766,7 @@ pub struct ParamsIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for ParamsIterRef<'a> {
+impl<'a> Iterator for ParamsIterRef<'a> {
     type Item = GenericParamRef<'a>;
 
     #[inline]

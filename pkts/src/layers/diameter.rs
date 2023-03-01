@@ -5,8 +5,8 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
-use crate::LendingIterator;
 
+use core::iter::Iterator;
 use core::{cmp, iter};
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
@@ -398,7 +398,7 @@ pub struct AvpIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for AvpIterRef<'a> {
+impl<'a> Iterator for AvpIterRef<'a> {
     type Item = GenericAvpRef<'a>;
 
     #[inline]
@@ -811,7 +811,7 @@ pub struct BaseAvpIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'b> LendingIterator for BaseAvpIterRef<'b> {
+impl<'b> Iterator for BaseAvpIterRef<'b> {
     type Item<'a> = BaseAvpRef<'a> where Self: 'a;
 
     #[inline]
@@ -1302,7 +1302,7 @@ pub struct BaseAvpIterRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> LendingIterator<'a> for BaseAvpIterRef<'a> {
+impl<'a> Iterator for BaseAvpIterRef<'a> {
     type Item = BaseAvpRef<'a>;
 
     #[inline]
