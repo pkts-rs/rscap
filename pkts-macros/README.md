@@ -10,7 +10,7 @@
 [docs.rs]: https://docs.rs/pkts-macros/
 
 
-### **pkts-macros - an [rscap](https://crates.io/crates/rscap) submodule for generating common code for Layers**
+### **pkts-macros - a [pkts](https://crates.io/crates/pkts) submodule for generating common code for Layers**
 
 ---
 
@@ -19,12 +19,12 @@ Rscap is a multi-purpose library for network packet capture/transmission and pac
 1. To provide Rust-native platform tools for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
 2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
 
-The `pkts` submodule focuses solely on (2)--it provides a packet-building API for a wide variety of network protocol layers.
-This library isn't meant to only cover Physical through Transport layers or stateless protocols--thanks to `Sequence` and `Session` types (which defragment/reorder packets and track packet state, respectively), any application-layer protocol can be easily captured and decoded.
+The `pkts` module focuses solely on (2). It provides a packet-building API for a wide variety of network protocol layers.
+This library isn't meant to only cover Datalink through Transport layers or stateless protocols--thanks to `Sequence` and `Session` types (which defragment/reorder packets and track packet state, respectively), any application-layer protocol can be easily captured and decoded.
 
 The `pkts-macros` submodule provides derive macros for `pkts` that assist in creating new `Layer` types.
 
-More information on the library can be found in the [`rscap`](https://crates.io/crates/rscap) or [`pkts`](https://crates.io/crates/pkts) crates.
+More information on the library can be found in the [`rscap`](https://crates.io/crates/rscap) or [`pkts`](https://crates.io/crates/pkts) crates, or at [pkts.org](https://pkts.org/).
 
 ## License
 
