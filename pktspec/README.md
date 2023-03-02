@@ -1,0 +1,46 @@
+# pktspec &emsp; [![Latest Version]][crates.io] [![pktspec: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2] [![Documentation]][docs.rs]
+
+[Latest Version]: https://img.shields.io/crates/v/pktspec.svg
+[crates.io]: https://crates.io/crates/pktspec
+[pktspec: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-orange.svg
+[Rust 1.65]: https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html
+[License Information]: https://img.shields.io/crates/l/pktspec.svg
+[GPLv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+[Documentation]: https://docs.rs/pktspec/badge.svg
+[docs.rs]: https://docs.rs/pktspec/
+
+
+### **pktspec - an [rscap](https://crates.io/crates/rscap) submodule for speculatively inferring packet types**
+
+---
+
+Rscap is a multi-purpose library for network packet capture/transmission and packet building. Its aims are twofold:
+
+1. To provide Rust-native platform tools for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
+2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
+
+The `pkts` submodule focuses solely on (2)--it provides a packet-building API for a wide variety of network protocol layers.
+This library isn't meant to only cover Physical through Transport layers or stateless protocols--thanks to `Sequence` and `Session` types (which defragment/reorder packets and track packet state, respectively), any application-layer protocol can be easily captured and decoded.
+
+The `pktspec` submodule provides additional functionality to the `pkts` library. By default, packet decoding in `pkts` is limited to layers that can be deduced with certainty by the layers above it. As an example, `Ipv4` packets contain a field that describe what transport layer payload it contains, so `pkts` is able to decode payloads up to that layer. However, no application layer protocols are deduced automatically by `pkts`. The `pktspec` library provides this missing functionality, using both
+
+## Features
+
+- **Robust APIs for building/modifying packets:** rscap provides simple operations to combine various layers into a single packet, and to index into a different layers of a packet to retrieve or modify fields. Users of [`scapy`](https://github.com/ecdev/scapy) may find the API surprisingly familiar, especially for layer composition and indexing operations:
+
+```rust
+use layers::{ip::Ipv4, tcp::Tcp};
+
+let pkt = Ip::new() / Tcp::new();
+pkt[Tcp].set_sport(80);
+pkt[Tcp].set_dport(12345);
+```
+
+- **Packet defragmentation/reordering:** In some protocols, packets may be fragmented (such as IPv4) or arrive out-of-order (TCP, SCTP, etc.). Rscap overcomes both of these issues through `Sequence` types that transparently handle defragmentation and reordering. `Sequence` types can even be stacked so that application-layer data can easily be reassembled from captured packets. They even work in `no-std` environments with or without `alloc`.
+- **Stateful packet support:** Many network protocols are stateful, and interpreting packets from such protocols can be difficult (if not impossible) to accomplish unless information about the protocol session is stored. Rscap provides `Session` types that handle these kinds of packets--Sessions ensure that packets are validated based on the current expected state of the protocol. Just like `Sequence`, `Session` types are compatible with `no-std` environments and do not require `alloc`.
+
+## License
+
+The source code of this project is made available under the [GNU General Public License, version 2][GPLv2].
+
+Requests regarding other licensing options can be made to *email address here*.
