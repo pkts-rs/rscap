@@ -1,14 +1,6 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn decode_once(data: &[u8]) {
+    todo!()
 }
