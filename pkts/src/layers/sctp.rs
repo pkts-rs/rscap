@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <contact@rscap.org>
+// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
