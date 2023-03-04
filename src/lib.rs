@@ -14,6 +14,11 @@ use std::{mem, ptr, net::SocketAddr, io::Read};
 // 3 types: Sniffer, Spoofer and Socket
 // Sniffer is read-only, Spoofer is write-only, Socket is RW
 
+#[derive(Debug)]
+pub struct SockError {
+    reason: String,
+}
+
 pub struct Interface {
     if_name: [u8; libc::IF_NAMESIZE],
     /// The index of the interface. Meant to specify "all" when set to None
@@ -123,6 +128,7 @@ struct PacketIndex {
     pub num_pkts: u32,
 }
 
+/*
 // 1 << 22 * 64 = 256MB
 // 1 << 18 * 128 = 32MB
 pub struct L2RingSocket<const BLK_SZ: usize = {1 << 18}, const BLK_CNT: usize = 128> {
@@ -351,10 +357,7 @@ impl<'a> PacketHeaderV3<'a> {
     }
 }
 
-#[derive(Debug)]
-pub struct SockError {
-    reason: String,
-}
+
 
 pub struct PacketMmapSniffer<const PKT_SIZE: usize, const RING_SIZE: usize> {
     fd: i32,
@@ -549,3 +552,5 @@ pub fn interfaces() -> Vec<String> {
 
 // Some interfaces may only support certain packet families (that don't include AF_PACKET):
 // https://stackoverflow.com/questions/19227781/linux-getting-all-network-interface-names
+
+*/
