@@ -1,8 +1,10 @@
-# Rscap &emsp; [![Latest Version]][crates.io] [![rscap: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2] [![Documentation]][docs.rs]
+# Rscap
+
+[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2]
 
 [Latest Version]: https://img.shields.io/crates/v/rscap.svg
 [crates.io]: https://crates.io/crates/rscap
-[rscap: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-orange.svg
+[rscap: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-blue.svg
 [Rust 1.65]: https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html
 [License Information]: https://img.shields.io/crates/l/rscap.svg
 [GPLv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
@@ -39,6 +41,4 @@ pkt[Tcp].set_dport(12345);
 
 The source code of this project is made available under the [GNU General Public License, version 2][GPLv2].
 
-Requests regarding other licensing options can be made to *email address here*.
-
-
+Any further inquiries regarding licensing can be made to me[at]nathanielbennett[dotcom].

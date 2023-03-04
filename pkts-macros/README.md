@@ -1,8 +1,10 @@
-# pkts-macros &emsp; [![Latest Version]][crates.io] [![pkts: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2] [![Documentation]][docs.rs]
+# pkts-macros 
+
+[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![pkts-macros: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2]
 
 [Latest Version]: https://img.shields.io/crates/v/pkts-macros.svg
 [crates.io]: https://crates.io/crates/pkts-macros
-[pkts: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-orange.svg
+[pkts-macros: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-blue.svg
 [Rust 1.65]: https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html
 [License Information]: https://img.shields.io/crates/l/pkts-macros.svg
 [GPLv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
@@ -24,10 +26,10 @@ This library isn't meant to only cover Datalink through Transport layers or stat
 
 The `pkts-macros` submodule provides derive macros for `pkts` that assist in creating new `Layer` types.
 
-More information on the library can be found in the [`rscap`](https://crates.io/crates/rscap) or [`pkts`](https://crates.io/crates/pkts) crates, or at [pkts.org](https://pkts.org/).
+More information about the library can be found in the [`rscap`](https://crates.io/crates/rscap) or [`pkts`](https://crates.io/crates/pkts) crates, or at [pkts.org](https://pkts.org/).
 
 ## License
 
 The source code of this project is made available under the [GNU General Public License, version 2][GPLv2].
 
-Requests regarding other licensing options can be made to *email address here*.
+Any further inquiries regarding licensing can be made to me[at]nathanielbennett[dotcom].

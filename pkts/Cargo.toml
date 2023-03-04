@@ -1,7 +1,7 @@
 [package]
 name = "pkts"
-authors = ["Nathaniel Bennett"]
-description = "packet building and manipulation for network protocol layers"
+authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
+description = "packet crafting for network protocols"
 rust-version = "1.65" # GATs stabilized in this version; required for `Sequence` types
 license = "GPL-2.0-only"
 version = "0.1.0"
@@ -15,4 +15,4 @@ alloc = []
 custom_layer_selection = ["pkts-macros/custom_layer_selection"]
 
 [dependencies]
-pkts-macros = { version = "0.1" }
+pkts-macros = { version = "0.1.0" }
