@@ -310,7 +310,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
                 if self.is_layer::<T>() {
-                    return Some(unsafe { self.cast_layer_unchecked() })
+                    return Some(T::from_bytes_unchecked(self.#data_field))
                 }
         
                 #[cfg(feature = "custom_layer_selection")]
@@ -542,7 +542,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
                 if <Self as AnyLayerMut>::AssociatedRef::layer_id_static() == T::layer_id_static() {
-                    return Some(unsafe { <Self as AnyLayerMut>::AssociatedRef::from(self).cast_layer_unchecked() })
+                    return Some(T::from_bytes_unchecked(self.#data_field))
                 }
         
                 #[cfg(feature = "custom_layer_selection")]

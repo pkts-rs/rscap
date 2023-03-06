@@ -16,52 +16,375 @@ use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
 
-/// The Version number of an Internet Protocol (IP) packet.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum IpVersion {
-    /// Reserved (0x0); Internet Protocol, pre-v4
-    R0 = 0,
-    /// Unassigned (0x1)
-    U1 = 1,
-    /// Unassigned (0x2)
-    U2 = 2,
-    /// Unassigned (0x3)
-    U3 = 3,
-    /// Internet Protocol, Version 4 (see RFC 760)
-    Ipv4 = 4,
-    /// Internet Stream Protocol (ST or ST-II) (see RFC 1819)
-    St = 5,
-    /// Internet Protocol, Version 6 (see RFC 2460)
-    Ipv6 = 6,
-    /// TP/IX The Next Internet (IPv7) (see RVC 1475)
-    Tpix = 7,
-    /// P Internet Protocol (see RFC 1621)
-    Pip = 8,
-    /// TCP and UDP over Bigger Addresses (TUBA) (see RFC 1347)
-    Tuba = 9,
-    /// Unassigned (0xA)
-    U10 = 10,
-    /// Unassigned (0xB)
-    U11 = 11,
-    /// Unassigned (0xC)
-    U12 = 12,
-    /// Unassigned (0xD)
-    U13 = 13,
-    /// Unassigned (0xE)
-    U14 = 14,
-    /// Reserved (0xF); version field sentinel value
-    R15 = 15,
-}
+/// Internet Protocol, Version 4 (see RFC 760)
+pub const IP_VERSION_IPV4: u8 = 4;
+/// Internet Stream Protocol (ST or ST-II) (see RFC 1819)
+pub const IP_VERSION_ST: u8 = 5;
+/// Internet Protocol, Version 6 (see RFC 2460)
+pub const IP_VERSION_IPV6: u8 = 6;
+/// TP/IX The Next Internet (IPv7) (see RVC 1475)
+pub const IP_VERSION_TPIX: u8 = 7;
+/// P Internet Protocol (see RFC 1621)
+pub const IP_VERSION_PIP: u8 = 8;
+/// TCP and UDP over Bigger Addresses (TUBA) (see RFC 1347)
+const IP_VERSION_TUBA: u8 = 9;
 
-impl From<u8> for IpVersion {
-    /// Uses the least significant 4 bytes of `value` to determine the internet protocol version.
-    #[inline]
-    fn from(value: u8) -> Self {
-        // SAFETY: all enum variants from 0x00 to 0x0F are defined
-        unsafe { mem::transmute(value & 0x0F) }
-    }
-}
+/// IPv6 Hop-by-Hop Option (see RFC 8200)
+pub const DATA_PROTO_HOP_OPT: u8 = 0x00;
+/// Internet Control Message Protocol (see RFC 792)
+pub const DATA_PROTO_ICMP: u8 = 0x01;
+/// Internet Group Management Protocol (see RFC 1112)
+pub const DATA_PROTO_IGMP: u8 = 0x02;
+/// Gateway-to-Gateway Protocol (see RFC 823)
+pub const DATA_PROTO_GGP: u8 = 0x03;
+/// IP in IP encapsulation (see [`Ipv4`], [`Ipv6`], RFC 2003)
+pub const DATA_PROTO_IP_IN_IP: u8 = 0x04;
+/// Internet Stream Protocol (see RFC 1190 and RFC 1819)
+pub const DATA_PROTO_ST: u8 = 0x05;
+/// Transmission Control Protocol (see [`Tcp`], RFC 793)
+pub const DATA_PROTO_TCP: u8 = 0x06;
+/// Core-Based Trees (see RFC 2189)
+pub const DATA_PROTO_CBT: u8 = 0x07;
+/// Exterior Gateway Protocol (see RFC 888)
+pub const DATA_PROTO_EGP: u8 = 0x08;
+/// Interior gateway Protocol
+pub const DATA_PROTO_IGP: u8 = 0x09;
+/// BBN RCC Monitoringdata[0] & 0x0F
+pub const DATA_PROTO_BBN_RCC_MON: u8 = 0x0A;
+/// Network Voide Protocol (see RFC 741)
+pub const DATA_PROTO_NVP2: u8 = 0x0B;
+/// Xerox PUP
+pub const DATA_PROTO_PUP: u8 = 0x0C;
+/// ARGUS
+pub const DATA_PROTO_ARGUS: u8 = 0x0D;
+/// EMCON
+pub const DATA_PROTO_EMCON: u8 = 0x0E;
+/// Cross-Net Debugger (see IEN 158)
+pub const DATA_PROTO_XNET: u8 = 0x0F;
+/// CHAOS
+pub const DATA_PROTO_CHAOS: u8 = 0x10;
+/// User Datagram Protocol (see [`Udp`], RFC 741)
+pub const DATA_PROTO_UDP: u8 = 0x11;
+/// Multiplexing (see IEN 90)
+pub const DATA_PROTO_MUX: u8 = 0x12;
+/// DCN Measurement Subsystems
+pub const DATA_PROTO_DCN_MEAS: u8 = 0x13;
+/// Host Monitoring Protocol (see RFC 869)
+pub const DATA_PROTO_HMP: u8 = 0x14;
+/// Packet Radio Measurement
+pub const DATA_PROTO_PRM: u8 = 0x15;
+/// XEROX NS IDP
+pub const DATA_PROTO_XNS_IDP: u8 = 0x16;
+/// Trunk-1
+pub const DATA_PROTO_TRUNK1: u8 = 0x17;
+/// Trunk-2
+pub const DATA_PROTO_TRUNK2: u8 = 0x18;
+/// Leaf-1
+pub const DATA_PROTO_LEAF1: u8 = 0x19;
+/// Leaf-2
+pub const DATA_PROTO_LEAF2: u8 = 0x1A;
+/// Reliable Data Protocol (see RFC 908)
+pub const DATA_PROTO_RDP: u8 = 0x1B;
+/// Internet Reliable Transaction Protocol (see RFC 938)
+pub const DATA_PROTO_IRTP: u8 = 0x1C;
+/// ISO Transport Protocol Class 4 (see RFC 905)
+pub const DATA_PROTO_ISO_TP4: u8 = 0x1D;
+/// Bulk Data Transfer Protocol (see RFC 998)
+pub const DATA_PROTO_NET_BLT: u8 = 0x1E;
+/// MFE Network Services Protocol
+pub const DATA_PROTO_MFE_NSP: u8 = 0x1F;
+/// MERIT Internodal Protocol
+pub const DATA_PROTO_MERIT_INP: u8 = 0x20;
+/// Datagram Congestion Control Protocol (see RFC 4340)
+pub const DATA_PROTO_DCCP: u8 = 0x21;
+/// Third Party Connect Protocol
+pub const DATA_PROTO_TPCP: u8 = 0x22;
+/// Inter-Domain Policy Routing Protocol (see RFC 1479)
+pub const DATA_PROTO_IDPR: u8 = 0x23;
+/// Xpress Transport Protocol
+pub const DATA_PROTO_XTP: u8 = 0x24;
+/// Datagram Delivery Protocol
+pub const DATA_PROTO_DDP: u8 = 0x25;
+/// IDPR Control Message Transport Protocol
+pub const DATA_PROTO_IDPR_CMTP: u8 = 0x26;
+/// TP++ Transport Protocol
+pub const DATA_PROTO_TP_PLUS_PLUS: u8 = 0x27;
+/// IL Transport Protocol
+pub const DATA_PROTO_IL: u8 = 0x28;
+/// IPv6 Encapsulation--6to4 and 6in4 (see RFC 2473)
+pub const DATA_PROTO_IPV6: u8 = 0x29;
+/// Source Demand Routing Protocol (see RFC 1940)
+pub const DATA_PROTO_SDRP: u8 = 0x2A;
+/// Routing Header for IPv6 (see RFC 8200)
+pub const DATA_PROTO_IPV6_ROUTE: u8 = 0x2B;
+/// Fragment Header for IPv6 (see RFC 8200)
+pub const DATA_PROTO_IPV6_FRAG: u8 = 0x2C;
+/// Inter-Domain Routing Protocol
+pub const DATA_PROTO_IDRP: u8 = 0x2D;
+/// Resource Reservation Protocol (see RFC 2205)
+pub const DATA_PROTO_RSVP: u8 = 0x2E;
+/// Generic Routing Encapsulation (see RFC 2784, RFC 2890)
+pub const DATA_PROTO_GRE: u8 = 0x2F;
+/// Dynamic Source Routing Protocol (see RFC 4728)
+pub const DATA_PROTO_DSR: u8 = 0x30;
+/// Burroughs Network Architecture
+pub const DATA_PROTO_BNA: u8 = 0x31;
+/// Encapsulating Security Payload (see RFC 4303)
+pub const DATA_PROTO_ESP: u8 = 0x32;
+/// Authentication Header (see RFC 4302)
+pub const DATA_PROTO_AH: u8 = 0x33;
+/// Integrated Net Layer Security Protocol
+pub const DATA_PROTO_INLSP: u8 = 0x34;
+/// SwIPe (see RFC 5237)
+pub const DATA_PROTO_SWIPE: u8 = 0x35;
+/// NBMA Address Resolution Protocol (see RFC 1735)
+pub const DATA_PROTO_NARP: u8 = 0x36;
+/// IP Mobility (Min Encap) (see RFC 2004)
+pub const DATA_PROTO_MOBILE: u8 = 0x37;
+/// Transport Layer Security Protocol (using Kryptonet key management)
+pub const DATA_PROTO_TLSP: u8 = 0x38;
+/// Simple Key-Management for Internet Protocol (see RFC 2356)
+pub const DATA_PROTO_SKIP: u8 = 0x39;
+/// ICMP for IPv6 (see RFC 4443, RFC 4884)
+pub const DATA_PROTO_IPV6_ICMP: u8 = 0x3A;
+/// No Next Header for IPv6 (see RFC 8200)
+pub const DATA_PROTO_IPV6_NO_NXT: u8 = 0x3B;
+/// Destination Options for IPv6 (see RFC 8200)
+pub const DATA_PROTO_IPV6_OPTS: u8 = 0x3C;
+/// Any host internal protocol
+pub const DATA_PROTO_ANY_HOST_INTERNAL: u8 = 0x3D;
+/// CFTP
+pub const DATA_PROTO_CFTP: u8 = 0x3E;
+/// Any local network
+pub const DATA_PROTO_ANY_LOCAL_NETWORK: u8 = 0x3F;
+/// SATNET and Backroom EXPAK
+pub const DATA_PROTO_SAT_EXPAK: u8 = 0x40;
+/// Kryptolan
+pub const DATA_PROTO_KRYPTO_LAN: u8 = 0x41;
+/// MIT Remote Virtual Disk Protocol
+pub const DATA_PROTO_RVD: u8 = 0x42;
+/// Internet Pluribus Packet Core
+pub const DATA_PROTO_IPPC: u8 = 0x43;
+/// Any distributed file system
+pub const DATA_PROTO_ANY_DISTRIB_FS: u8 = 0x44;
+/// SATNET Monitoring
+pub const DATA_PROTO_SAT_MON: u8 = 0x45;
+/// VISA Protocol
+pub const DATA_PROTO_VISA: u8 = 0x46;
+/// Internet Packet Core Utility
+pub const DATA_PROTO_IPCU: u8 = 0x47;
+/// Computer Protocol Network Executive
+pub const DATA_PROTO_CPNX: u8 = 0x48;
+/// Computer Protocol Heart Beat
+pub const DATA_PROTO_CPHB: u8 = 0x49;
+/// Wang Span Network
+pub const DATA_PROTO_WSN: u8 = 0x4A;
+/// Packet Video Protocol
+pub const DATA_PROTO_PVP: u8 = 0x4B;
+/// Backroom SATNET Monitoring
+pub const DATA_PROTO_BR_SAT_MON: u8 = 0x4C;
+/// SUN ND PROTOCOL-Temporary
+pub const DATA_PROTO_SUN_ND: u8 = 0x4D;
+/// WIDEBAND Monitoring
+pub const DATA_PROTO_WB_MON: u8 = 0x4E;
+/// WIDEBAND EXPAK
+pub const DATA_PROTO_WB_EXPAK: u8 = 0x4F;
+/// International Organization for Standardization Internet Protocol
+pub const DATA_PROTO_ISO_IP: u8 = 0x50;
+/// Versatile Message Transaction Protocol (see RFC 1045)
+pub const DATA_PROTO_VMTP: u8 = 0x51;
+/// Secure Versatile Message Transaction Protocol (see RFC 1045)
+pub const DATA_PROTO_SECURE_VMTP: u8 = 0x52;
+/// VINES
+pub const DATA_PROTO_VINES: u8 = 0x53;
+/// Time-Triggered Protocol
+pub const DATA_PROTO_TTP: u8 = 0x54;
+/// NSFNET-IGP
+pub const DATA_PROTO_NSFNET_IGP: u8 = 0x55;
+/// Dissimilar Gateway Protocol
+pub const DATA_PROTO_DGP: u8 = 0x56;
+/// TCF
+pub const DATA_PROTO_TCF: u8 = 0x57;
+/// EIGRP Informational (see RFC 7868)
+pub const DATA_PROTO_EIGRP: u8 = 0x58;
+/// Open Shortest Path First (see RFC 2328)
+pub const DATA_PROTO_OSPF: u8 = 0x59;
+/// Sprite RPC Protocol
+pub const DATA_PROTO_SPRITE_RPC: u8 = 0x5A;
+/// Locus Address Resolution Protocol
+pub const DATA_PROTO_LARP: u8 = 0x5B;
+/// Multicast Transport Protocol
+pub const DATA_PROTO_MTP: u8 = 0x5C;
+/// AX.25
+pub const DATA_PROTO_AX25: u8 = 0x5D;
+/// KA9Q NOS compatible IP over IP tunneling
+pub const DATA_PROTO_KA9QNOS: u8 = 0x5E;
+/// Mobile Internetworking Control Protocol
+pub const DATA_PROTO_MICP: u8 = 0x5F;
+/// Semaphore Communications Sec. Pro
+pub const DATA_PROTO_SCCSP: u8 = 0x60;
+/// Ethernet-within-IP Encapsulation (see RFC 3378)
+pub const DATA_PROTO_ETHERIP: u8 = 0x61;
+/// Encapsulation Header (see RFC 1241)
+pub const DATA_PROTO_ENCAP: u8 = 0x62;
+/// Any private encryption scheme
+pub const DATA_PROTO_ANY_PRIVATE_ENCRYPTION: u8 = 0x63;
+/// GMTP
+pub const DATA_PROTO_GMTP: u8 = 0x64;
+/// Ipsilon Flow Management Protocol
+pub const DATA_PROTO_IFMP: u8 = 0x65;
+/// PNNI over IP
+pub const DATA_PROTO_PNNI: u8 = 0x66;
+/// Protocol Independent Multicast
+pub const DATA_PROTO_PIM: u8 = 0x67;
+/// IBM's ARIS (Aggregate Route IP Switching) Protocol
+pub const DATA_PROTO_ARIS: u8 = 0x68;
+/// SCPS (Space Communications Protocol Standards) (see SCPS-TP)
+pub const DATA_PROTO_SCPS: u8 = 0x69;
+/// QNX
+pub const DATA_PROTO_QNX: u8 = 0x6A;
+/// Active Networks
+pub const DATA_PROTO_ACTIVE_NETWORKS: u8 = 0x6B;
+/// IP Payload Compression Protocol (see RFC 3173)
+pub const DATA_PROTO_IP_COMP: u8 = 0x6C;
+/// Sitara Networks Protocol
+pub const DATA_PROTO_SNP: u8 = 0x6D;
+/// Compaq Peer Protocol
+pub const DATA_PROTO_COMPAQ_PEER: u8 = 0x6E;
+/// IPX in IP
+pub const DATA_PROTO_IPX_IN_IP: u8 = 0x6F;
+/// Virtual Router Redundancy Protocol, Common Address Redundancy Protocol (not IANA assigned) (see RFC 5798)
+pub const DATA_PROTO_VRRP: u8 = 0x70;
+/// PGM Reliable Transport Protocol (see RFC 3208)
+pub const DATA_PROTO_PGM: u8 = 0x71;
+/// Any 0-hop protocol
+pub const DATA_PROTO_ANY_0_HOP: u8 = 0x72;
+/// Layer Two Tunneling Protocol Version 3 (see RFC 3931)
+pub const DATA_PROTO_L2TP: u8 = 0x73;
+/// D-II Data Exchange (DDX)
+pub const DATA_PROTO_DDX: u8 = 0x74;
+/// Interactive Agent Transfer Protocol
+pub const DATA_PROTO_IATP: u8 = 0x75;
+/// Schedule Transfer Protocol
+pub const DATA_PROTO_STP: u8 = 0x76;
+/// SpectraLink Radio Protocol
+pub const DATA_PROTO_SRP: u8 = 0x77;
+/// Universal Transport Interface Protocol
+pub const DATA_PROTO_UTI: u8 = 0x78;
+/// Simple Message Protocol
+pub const DATA_PROTO_SMP: u8 = 0x79;
+/// Simple Multicast Protocol
+pub const DATA_PROTO_SM: u8 = 0x7A;
+/// Performance Transparency Protocol
+pub const DATA_PROTO_PTP: u8 = 0x7B;
+/// Intermediate System to Intermediate System (IS-IS) Protocol over IPv4 (see RFC 1142, RFC 1195)
+pub const DATA_PROTO_IS_IS_OVER_IPV4: u8 = 0x7C;
+/// Flexible Intra-AS Routing Environment
+pub const DATA_PROTO_FIRE: u8 = 0x7D;
+/// Combat Radio Transport Protocol
+pub const DATA_PROTO_CRTP: u8 = 0x7E;
+/// Combat Radio User Datagram
+pub const DATA_PROTO_CRUDP: u8 = 0x7F;
+/// Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment (see ITU-T Q.2111 1999)
+pub const DATA_PROTO_SSCOPMCE: u8 = 0x80;
+/// IPLT
+pub const DATA_PROTO_IPLT: u8 = 0x81;
+/// Secure Packet Shield
+pub const DATA_PROTO_SPS: u8 = 0x82;
+/// Private IP Encapsulation within IP
+pub const DATA_PROTO_PIPE: u8 = 0x83;
+/// Stream Control Transmission Protocol (see RFC 4960)
+pub const DATA_PROTO_SCTP: u8 = 0x84;
+/// Fibre Channel
+pub const DATA_PROTO_FC: u8 = 0x85;
+/// Reservation Protocol (RSVP) End-to-End Ignore (see RFC 3175)
+pub const DATA_PROTO_RSVP_E2E_IGNORE: u8 = 0x86;
+/// Mobility Extension Header for IPv6 (see RFC 6275)
+pub const DATA_PROTO_MOBILITY_HEADER: u8 = 0x87;
+/// Lightweight User Datagram Protocol (see RFC 3828)
+pub const DATA_PROTO_UDP_LITE: u8 = 0x88;
+/// Multiprotocol Label Switching Encapsulated in IP (see RFC 4023, RFC 5332)
+pub const DATA_PROTO_MPLS_IN_IP: u8 = 0x89;
+/// MANET Protocols (see RFC 5498)
+pub const DATA_PROTO_MANET: u8 = 0x8A;
+/// Host Identity Protocol (see RFC 5201)
+pub const DATA_PROTO_HIP: u8 = 0x8B;
+/// Site Multihoming by IPv6 Intermediation (see RFC 5533)
+pub const DATA_PROTO_SHIM6: u8 = 0x8C;
+/// Wrapped Encapsulating Security Payload (see RFC 5840)
+pub const DATA_PROTO_WESP: u8 = 0x8D;
+/// Robust Header Compression (see RFC 5856)
+pub const DATA_PROTO_ROHC: u8 = 0x8E;
+/// IPv6 Segment Routing (TEMPORARY - registered 2020-01-31, expired 2021-01-31)  
+pub const DATA_PROTO_ETHERNET: u8 = 0x8F;
+/// Use for experimentation and testing
+pub const DATA_PROTO_EXP1: u8 = 0xFD;
+/// Use for experimentation and testing
+pub const DATA_PROTO_EXP2: u8 = 0xFE;
+/// Reserved value
+pub const DATA_PROTO_DATA_PROTO_RESERVED: u8 = 0xFF;
+
+/// End of Option List
+pub const OPT_TYPE_EOOL: u8 = 0x00;
+/// No Operation
+pub const OPT_TYPE_NOP: u8 = 0x01;
+/// Security (defunct option)
+pub const OPT_TYPE_SEC: u8 = 0x02;
+/// Record Route
+pub const OPT_TYPE_RR: u8 = 0x07;
+/// Experimental Measurement
+pub const OPT_TYPE_ZSU: u8 = 0x0A;
+/// MTU Probe
+pub const OPT_TYPE_MTUP: u8 = 0x0B;
+/// MTU Reply
+pub const OPT_TYPE_MTUR: u8 = 0x0C;
+/// ENCODE
+pub const OPT_TYPE_ENCODE: u8 = 0x0F;
+/// Quick-Start
+pub const OPT_TYPE_QS: u8 = 0x19;
+/// RFC 3692 Experiment
+pub const OPT_TYPE_EXP1: u8 = 0x1E;
+// Time Stamp
+pub const OPT_TYPE_TS: u8 = 0x44;
+/// Traceroute
+pub const OPT_TYPE_TR: u8 = 0x52;
+/// RFC 3692 Experiment
+pub const OPT_TYPE_EXP2: u8 = 0x5E;
+/// Security (RIPSO)
+pub const OPT_TYPE_RIPSO: u8 = 0x82;
+/// Loose Source Route
+pub const OPT_TYPE_LSR: u8 = 0x83;
+/// Extended Security (RIPSO)
+pub const OPT_TYPE_ESEC: u8 = 0x85;
+/// Commercial IP Security
+pub const OPT_TYPE_CIPSO: u8 = 0x86;
+/// Stream ID
+pub const OPT_TYPE_SID: u8 = 0x88;
+/// Strict Source Route
+pub const OPT_TYPE_SSR: u8 = 0x89;
+/// Experimental Access Control
+pub const OPT_TYPE_VISA: u8 = 0x8E;
+/// IMI Traffic Descriptor
+pub const OPT_TYPE_IMITD: u8 = 0x90;
+/// Extended Internet Protocol
+pub const OPT_TYPE_EIP: u8 = 0x91;
+/// Address Extension
+pub const OPT_TYPE_ADD_EXT: u8 = 0x93;
+/// Router Alert
+pub const OPT_TYPE_RTR_ALT: u8 = 0x94;
+/// Selective Directed Broadcast
+pub const OPT_TYPE_SDB: u8 = 0x95;
+/// Dynamic Packet State
+pub const OPT_TYPE_DPS: u8 = 0x97;
+/// Upstream Multicast Packet
+pub const OPT_TYPE_UMP: u8 = 0x98;
+/// RFC 3692 Experiment
+pub const OPT_TYPE_EXP3: u8 = 0x9E;
+/// Experimental Flow Control
+pub const OPT_TYPE_FINN: u8 = 0xCD;
+/// RFC 3692 Experiment
+pub const OPT_TYPE_EXP4: u8 = 0xDE;
+
 
 /// An IPv4 (Internet Protocol version 4) packet.
 #[derive(Clone, Debug, Layer, StatelessLayer)]
@@ -155,9 +478,9 @@ impl Ipv4 {
     }
 
     #[inline]
-    pub fn protocol(&self) -> Ipv4DataProtocol {
+    pub fn protocol(&self) -> u8 {
         match self.payload.as_ref() {
-            None => Ipv4DataProtocol::Exp1,
+            None => DATA_PROTO_EXP1,
             Some(p) => {
                 let payload_metadata = p
                     .layer_metadata()
@@ -237,13 +560,13 @@ impl FromBytesCurrent for Ipv4 {
             self.payload = None;
         } else {
             self.payload = match ipv4.protocol() {
-                Ipv4DataProtocol::Tcp => {
+                DATA_PROTO_TCP => {
                     Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw())))
                 }
-                Ipv4DataProtocol::Udp => {
+                DATA_PROTO_UDP => {
                     Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
                 }
-                Ipv4DataProtocol::Sctp => {
+                DATA_PROTO_SCTP => {
                     Some(Box::new(Sctp::from_bytes_unchecked(ipv4.payload_raw())))
                 }
                 /* Add additional protocols here */
@@ -312,7 +635,7 @@ impl ToBytes for Ipv4 {
                         .map(|m| m.ip_data_protocol())
                         .expect("unknown payload protocol found in IPv4 packet")
                 })
-                .unwrap_or(Ipv4DataProtocol::Exp1) as u8,
+                .unwrap_or(DATA_PROTO_EXP1) as u8,
         ); // 0xFD when no payload specified
         bytes.extend(self.chksum.to_be_bytes());
         bytes.extend(self.saddr.to_be_bytes());
@@ -387,12 +710,7 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     #[inline]
-    pub fn protocol(&self) -> Ipv4DataProtocol {
-        self.data[9].into()
-    }
-
-    #[inline]
-    pub fn protocol_raw(&self) -> u8 {
+    pub fn protocol(&self) -> u8 {
         self.data[9]
     }
 
@@ -437,22 +755,22 @@ impl LayerOffset for Ipv4Ref<'_> {
             None => return None,
         };
 
-        match bytes.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
-            Some(Ipv4DataProtocol::Tcp) => {
+        match bytes.get(9).map(|b| *b) {
+            Some(DATA_PROTO_TCP) => {
                 if layer_type == TcpRef::layer_id_static() {
                     Some(ihl)
                 } else {
                     TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
                 }
             }
-            Some(Ipv4DataProtocol::Udp) => {
+            Some(DATA_PROTO_UDP) => {
                 if layer_type == UdpRef::layer_id_static() {
                     Some(ihl)
                 } else {
                     UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
                 }
             }
-            Some(Ipv4DataProtocol::Sctp) => {
+            Some(DATA_PROTO_SCTP) => {
                 if layer_type == SctpRef::layer_id_static() {
                     Some(ihl)
                 } else {
@@ -592,10 +910,10 @@ impl Validate for Ipv4Ref<'_> {
                 }),
             };
 
-        match curr_layer.get(9).map(|&b| Ipv4DataProtocol::from(b)) {
-            Some(Ipv4DataProtocol::Tcp) => TcpRef::validate(next_layer),
-            Some(Ipv4DataProtocol::Udp) => UdpRef::validate(next_layer),
-            Some(Ipv4DataProtocol::Sctp) => SctpRef::validate(next_layer),
+        match curr_layer.get(9).map(|b| *b) {
+            Some(DATA_PROTO_TCP) => TcpRef::validate(next_layer),
+            Some(DATA_PROTO_UDP) => UdpRef::validate(next_layer),
+            Some(DATA_PROTO_SCTP) => SctpRef::validate(next_layer),
             /* Add more Layer types here */
             _ => RawRef::validate(next_layer),
         }
@@ -638,7 +956,7 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     #[inline]
-    pub fn set_version_unchecked(&mut self, version: IpVersion) {
+    pub fn set_version_unchecked(&mut self, version: u8) {
         self.data[0] &= 0x0F;
         self.data[0] |= (version as u8) << 4;
     }
@@ -732,17 +1050,12 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     #[inline]
-    pub fn set_protocol(&mut self, proto: Ipv4DataProtocol) {
-        self.data[9] = proto as u8;
-    }
-
-    #[inline]
-    pub fn protocol_raw(&self) -> u8 {
+    pub fn protocol(&mut self) -> u8 {
         self.data[9]
     }
 
     #[inline]
-    pub fn set_protocol_raw(&mut self, proto: u8) {
+    pub fn set_protocol(&mut self, proto: u8) {
         self.data[9] = proto;
     }
 
@@ -921,423 +1234,6 @@ impl From<u8> for Ipv4Flags {
         Ipv4Flags {
             flags: value & 0b11100000,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum Ipv4DataProtocol {
-    /// IPv6 Hop-by-Hop Option (see RFC 8200)
-    HopOpt = 0x00,
-    /// Internet Control Message Protocol (see RFC 792)
-    Icmp = 0x01,
-    /// Internet Group Management Protocol (see RFC 1112)
-    Igmp = 0x02,
-    /// Gateway-to-Gateway Protocol (see RFC 823)
-    Ggp = 0x03,
-    /// IP in IP encapsulation (see [`Ipv4`], [`Ipv6`], RFC 2003)
-    IpInIp = 0x04,
-    /// Internet Stream Protocol (see RFC 1190 and RFC 1819)
-    St = 0x05,
-    /// Transmission Control Protocol (see [`Tcp`], RFC 793)
-    Tcp = 0x06,
-    /// Core-Based Trees (see RFC 2189)
-    Cbt = 0x07,
-    /// Exterior Gateway Protocol (see RFC 888)
-    Egp = 0x08,
-    /// Interior gateway Protocol
-    Igp = 0x09,
-    /// BBN RCC Monitoringdata[0] & 0x0F
-    BbnRccMon = 0x0A,
-    /// Network Voide Protocol (see RFC 741)
-    Nvp2 = 0x0B,
-    /// Xerox PUP
-    Pup = 0x0C,
-    /// ARGUS
-    Argus = 0x0D,
-    /// EMCON
-    Emcon = 0x0E,
-    /// Cross-Net Debugger (see IEN 158)
-    Xnet = 0x0F,
-    /// CHAOS
-    Chaos = 0x10,
-    /// User Datagram Protocol (see [`Udp`], RFC 741)
-    Udp = 0x11,
-    /// Multiplexing (see IEN 90)
-    Mux = 0x12,
-    /// DCN Measurement Subsystems
-    DcnMeas = 0x13,
-    /// Host Monitoring Protocol (see RFC 869)
-    Hmp = 0x14,
-    /// Packet Radio Measurement
-    Prm = 0x15,
-    /// XEROX NS IDP
-    XnsIdp = 0x16,
-    /// Trunk-1
-    Trunk1 = 0x17,
-    /// Trunk-2
-    Trunk2 = 0x18,
-    /// Leaf-1
-    Leaf1 = 0x19,
-    /// Leaf-2
-    Leaf2 = 0x1A,
-    /// Reliable Data Protocol (see RFC 908)
-    Rdp = 0x1B,
-    /// Internet Reliable Transaction Protocol (see RFC 938)
-    Irtp = 0x1C,
-    /// ISO Transport Protocol Class 4 (see RFC 905)
-    IsoTp4 = 0x1D,
-    /// Bulk Data Transfer Protocol (see RFC 998)
-    NetBlt = 0x1E,
-    /// MFE Network Services Protocol
-    MfeNsp = 0x1F,
-    /// MERIT Internodal Protocol
-    MeritInp = 0x20,
-    /// Datagram Congestion Control Protocol (see RFC 4340)
-    Dccp = 0x21,
-    /// Third Party Connect Protocol
-    Tpcp = 0x22,
-    /// Inter-Domain Policy Routing Protocol (see RFC 1479)
-    Idpr = 0x23,
-    /// Xpress Transport Protocol
-    Xtp = 0x24,
-    /// Datagram Delivery Protocol
-    Ddp = 0x25,
-    /// IDPR Control Message Transport Protocol
-    IdprCmtp = 0x26,
-    /// TP++ Transport Protocol
-    TpPlusPlus = 0x27,
-    /// IL Transport Protocol
-    Il = 0x28,
-    /// IPv6 Encapsulation--6to4 and 6in4 (see RFC 2473)
-    Ipv6 = 0x29,
-    /// Source Demand Routing Protocol (see RFC 1940)
-    Sdrp = 0x2A,
-    /// Routing Header for IPv6 (see RFC 8200)
-    Ipv6Route = 0x2B,
-    /// Fragment Header for IPv6 (see RFC 8200)
-    Ipv6Frag = 0x2C,
-    /// Inter-Domain Routing Protocol
-    Idrp = 0x2D,
-    /// Resource Reservation Protocol (see RFC 2205)
-    Rsvp = 0x2E,
-    /// Generic Routing Encapsulation (see RFC 2784, RFC 2890)
-    Gre = 0x2F,
-    /// Dynamic Source Routing Protocol (see RFC 4728)
-    Dsr = 0x30,
-    /// Burroughs Network Architecture
-    Bna = 0x31,
-    /// Encapsulating Security Payload (see RFC 4303)
-    Esp = 0x32,
-    /// Authentication Header (see RFC 4302)
-    Ah = 0x33,
-    /// Integrated Net Layer Security Protocol
-    Inlsp = 0x34,
-    /// SwIPe (see RFC 5237)
-    Swipe = 0x35,
-    /// NBMA Address Resolution Protocol (see RFC 1735)
-    Narp = 0x36,
-    /// IP Mobility (Min Encap) (see RFC 2004)
-    Mobile = 0x37,
-    /// Transport Layer Security Protocol (using Kryptonet key management)
-    Tlsp = 0x38,
-    /// Simple Key-Management for Internet Protocol (see RFC 2356)
-    Skip = 0x39,
-    /// ICMP for IPv6 (see RFC 4443, RFC 4884)
-    Ipv6Icmp = 0x3A,
-    /// No Next Header for IPv6 (see RFC 8200)
-    Ipv6NoNxt = 0x3B,
-    /// Destination Options for IPv6 (see RFC 8200)
-    Ipv6Opts = 0x3C,
-    /// Any host internal protocol
-    AnyHostInternal = 0x3D,
-    /// CFTP
-    Cftp = 0x3E,
-    /// Any local network
-    AnyLocalNetwork = 0x3F,
-    /// SATNET and Backroom EXPAK
-    SatExpak = 0x40,
-    /// Kryptolan
-    KryptoLan = 0x41,
-    /// MIT Remote Virtual Disk Protocol
-    Rvd = 0x42,
-    /// Internet Pluribus Packet Core
-    Ippc = 0x43,
-    /// Any distributed file system
-    AnyDistributedFileSystem = 0x44,
-    /// SATNET Monitoring
-    SatMon = 0x45,
-    /// VISA Protocol
-    Visa = 0x46,
-    /// Internet Packet Core Utility
-    Ipcu = 0x47,
-    /// Computer Protocol Network Executive
-    Cpnx = 0x48,
-    /// Computer Protocol Heart Beat
-    Cphb = 0x49,
-    /// Wang Span Network
-    Wsn = 0x4A,
-    /// Packet Video Protocol
-    Pvp = 0x4B,
-    /// Backroom SATNET Monitoring
-    BrSatMon = 0x4C,
-    /// SUN ND PROTOCOL-Temporary
-    SunNd = 0x4D,
-    /// WIDEBAND Monitoring
-    WbMon = 0x4E,
-    /// WIDEBAND EXPAK
-    WbExpak = 0x4F,
-    /// International Organization for Standardization Internet Protocol
-    IsoIp = 0x50,
-    /// Versatile Message Transaction Protocol (see RFC 1045)
-    Vmtp = 0x51,
-    /// Secure Versatile Message Transaction Protocol (see RFC 1045)
-    SecureVmtp = 0x52,
-    /// VINES
-    Vines = 0x53,
-    /// Time-Triggered Protocol
-    Ttp = 0x54,
-    /// NSFNET-IGP
-    NsfnetIgp = 0x55,
-    /// Dissimilar Gateway Protocol
-    Dgp = 0x56,
-    /// TCF
-    Tcf = 0x57,
-    /// EIGRP Informational (see RFC 7868)
-    Eigrp = 0x58,
-    /// Open Shortest Path First (see RFC 2328)
-    Ospf = 0x59,
-    /// Sprite RPC Protocol
-    SpriteRpc = 0x5A,
-    /// Locus Address Resolution Protocol
-    Larp = 0x5B,
-    /// Multicast Transport Protocol
-    Mtp = 0x5C,
-    /// AX.25
-    Ax25 = 0x5D,
-    /// KA9Q NOS compatible IP over IP tunneling
-    Ka9qNos = 0x5E,
-    /// Mobile Internetworking Control Protocol
-    Micp = 0x5F,
-    /// Semaphore Communications Sec. Pro
-    SccSp = 0x60,
-    /// Ethernet-within-IP Encapsulation (see RFC 3378)
-    EtherIp = 0x61,
-    /// Encapsulation Header (see RFC 1241)
-    Encap = 0x62,
-    /// Any private encryption scheme
-    AnyPrivateEncryption = 0x63,
-    /// GMTP
-    Gmtp = 0x64,
-    /// Ipsilon Flow Management Protocol
-    Ifmp = 0x65,
-    /// PNNI over IP
-    Pnni = 0x66,
-    /// Protocol Independent Multicast
-    Pim = 0x67,
-    /// IBM's ARIS (Aggregate Route IP Switching) Protocol
-    Aris = 0x68,
-    /// SCPS (Space Communications Protocol Standards) (see SCPS-TP)
-    Scps = 0x69,
-    /// QNX
-    Qnx = 0x6A,
-    /// Active Networks
-    ActiveNetworks = 0x6B,
-    /// IP Payload Compression Protocol (see RFC 3173)
-    IpComp = 0x6C,
-    /// Sitara Networks Protocol
-    Snp = 0x6D,
-    /// Compaq Peer Protocol
-    CompaqPeer = 0x6E,
-    /// IPX in IP
-    IpxInIp = 0x6F,
-    /// Virtual Router Redundancy Protocol, Common Address Redundancy Protocol (not IANA assigned) (see RFC 5798)
-    Vrrp = 0x70,
-    /// PGM Reliable Transport Protocol (see RFC 3208)
-    Pgm = 0x71,
-    /// Any 0-hop protocol
-    Any0Hop = 0x72,
-    /// Layer Two Tunneling Protocol Version 3 (see RFC 3931)
-    L2tp = 0x73,
-    /// D-II Data Exchange (DDX)
-    Ddx = 0x74,
-    /// Interactive Agent Transfer Protocol
-    Iatp = 0x75,
-    /// Schedule Transfer Protocol
-    Stp = 0x76,
-    /// SpectraLink Radio Protocol
-    Srp = 0x77,
-    /// Universal Transport Interface Protocol
-    Uti = 0x78,
-    /// Simple Message Protocol
-    Smp = 0x79,
-    /// Simple Multicast Protocol
-    Sm = 0x7A,
-    /// Performance Transparency Protocol
-    Ptp = 0x7B,
-    /// Intermediate System to Intermediate System (IS-IS) Protocol over IPv4 (see RFC 1142, RFC 1195)
-    IsIsOverIpv4 = 0x7C,
-    /// Flexible Intra-AS Routing Environment
-    Fire = 0x7D,
-    /// Combat Radio Transport Protocol
-    Crtp = 0x7E,
-    /// Combat Radio User Datagram
-    CrUdp = 0x7F,
-    /// Service-Specific Connection-Oriented Protocol in a Multilink and Connectionless Environment (see ITU-T Q.2111 1999)
-    Sscopmce = 0x80,
-    /// IPLT
-    Iplt = 0x81,
-    /// Secure Packet Shield
-    Sps = 0x82,
-    /// Private IP Encapsulation within IP
-    Pipe = 0x83,
-    /// Stream Control Transmission Protocol (see RFC 4960)
-    Sctp = 0x84,
-    /// Fibre Channel
-    Fc = 0x85,
-    /// Reservation Protocol (RSVP) End-to-End Ignore (see RFC 3175)
-    RsvpE2eIgnore = 0x86,
-    /// Mobility Extension Header for IPv6 (see RFC 6275)
-    MobilityHeader = 0x87,
-    /// Lightweight User Datagram Protocol (see RFC 3828)
-    UdpLite = 0x88,
-    /// Multiprotocol Label Switching Encapsulated in IP (see RFC 4023, RFC 5332)
-    MplsInIp = 0x89,
-    /// MANET Protocols (see RFC 5498)
-    Manet = 0x8A,
-    /// Host Identity Protocol (see RFC 5201)
-    Hip = 0x8B,
-    /// Site Multihoming by IPv6 Intermediation (see RFC 5533)
-    Shim6 = 0x8C,
-    /// Wrapped Encapsulating Security Payload (see RFC 5840)
-    Wesp = 0x8D,
-    /// Robust Header Compression (see RFC 5856)
-    Rohc = 0x8E,
-    /// IPv6 Segment Routing (TEMPORARY - registered 2020-01-31, expired 2021-01-31)  
-    Ethernet = 0x8F,
-    // Unassigned ports (0x90-0xFC)
-    // Unassigned(u8) = 0x90,
-    _Unassigned0x90 = 0x90,
-    _Unassigned0x91 = 0x91,
-    _Unassigned0x92 = 0x92,
-    _Unassigned0x93 = 0x93,
-    _Unassigned0x94 = 0x94,
-    _Unassigned0x95 = 0x95,
-    _Unassigned0x96 = 0x96,
-    _Unassigned0x97 = 0x97,
-    _Unassigned0x98 = 0x98,
-    _Unassigned0x99 = 0x99,
-    _Unassigned0x9A = 0x9A,
-    _Unassigned0x9B = 0x9B,
-    _Unassigned0x9C = 0x9C,
-    _Unassigned0x9D = 0x9D,
-    _Unassigned0x9E = 0x9E,
-    _Unassigned0x9F = 0x9F,
-    _Unassigned0xA0 = 0xA0,
-    _Unassigned0xA1 = 0xA1,
-    _Unassigned0xA2 = 0xA2,
-    _Unassigned0xA3 = 0xA3,
-    _Unassigned0xA4 = 0xA4,
-    _Unassigned0xA5 = 0xA5,
-    _Unassigned0xA6 = 0xA6,
-    _Unassigned0xA7 = 0xA7,
-    _Unassigned0xA8 = 0xA8,
-    _Unassigned0xA9 = 0xA9,
-    _Unassigned0xAA = 0xAA,
-    _Unassigned0xAB = 0xAB,
-    _Unassigned0xAC = 0xAC,
-    _Unassigned0xAD = 0xAD,
-    _Unassigned0xAE = 0xAE,
-    _Unassigned0xAF = 0xAF,
-    _Unassigned0xB0 = 0xB0,
-    _Unassigned0xB1 = 0xB1,
-    _Unassigned0xB2 = 0xB2,
-    _Unassigned0xB3 = 0xB3,
-    _Unassigned0xB4 = 0xB4,
-    _Unassigned0xB5 = 0xB5,
-    _Unassigned0xB6 = 0xB6,
-    _Unassigned0xB7 = 0xB7,
-    _Unassigned0xB8 = 0xB8,
-    _Unassigned0xB9 = 0xB9,
-    _Unassigned0xBA = 0xBA,
-    _Unassigned0xBB = 0xBB,
-    _Unassigned0xBC = 0xBC,
-    _Unassigned0xBD = 0xBD,
-    _Unassigned0xBE = 0xBE,
-    _Unassigned0xBF = 0xBF,
-    _Unassigned0xC0 = 0xC0,
-    _Unassigned0xC1 = 0xC1,
-    _Unassigned0xC2 = 0xC2,
-    _Unassigned0xC3 = 0xC3,
-    _Unassigned0xC4 = 0xC4,
-    _Unassigned0xC5 = 0xC5,
-    _Unassigned0xC6 = 0xC6,
-    _Unassigned0xC7 = 0xC7,
-    _Unassigned0xC8 = 0xC8,
-    _Unassigned0xC9 = 0xC9,
-    _Unassigned0xCA = 0xCA,
-    _Unassigned0xCB = 0xCB,
-    _Unassigned0xCC = 0xCC,
-    _Unassigned0xCD = 0xCD,
-    _Unassigned0xCE = 0xCE,
-    _Unassigned0xCF = 0xCF,
-    _Unassigned0xD0 = 0xD0,
-    _Unassigned0xD1 = 0xD1,
-    _Unassigned0xD2 = 0xD2,
-    _Unassigned0xD3 = 0xD3,
-    _Unassigned0xD4 = 0xD4,
-    _Unassigned0xD5 = 0xD5,
-    _Unassigned0xD6 = 0xD6,
-    _Unassigned0xD7 = 0xD7,
-    _Unassigned0xD8 = 0xD8,
-    _Unassigned0xD9 = 0xD9,
-    _Unassigned0xDA = 0xDA,
-    _Unassigned0xDB = 0xDB,
-    _Unassigned0xDC = 0xDC,
-    _Unassigned0xDD = 0xDD,
-    _Unassigned0xDE = 0xDE,
-    _Unassigned0xDF = 0xDF,
-    _Unassigned0xE0 = 0xE0,
-    _Unassigned0xE1 = 0xE1,
-    _Unassigned0xE2 = 0xE2,
-    _Unassigned0xE3 = 0xE3,
-    _Unassigned0xE4 = 0xE4,
-    _Unassigned0xE5 = 0xE5,
-    _Unassigned0xE6 = 0xE6,
-    _Unassigned0xE7 = 0xE7,
-    _Unassigned0xE8 = 0xE8,
-    _Unassigned0xE9 = 0xE9,
-    _Unassigned0xEA = 0xEA,
-    _Unassigned0xEB = 0xEB,
-    _Unassigned0xEC = 0xEC,
-    _Unassigned0xED = 0xED,
-    _Unassigned0xEE = 0xEE,
-    _Unassigned0xEF = 0xEF,
-    _Unassigned0xF0 = 0xF0,
-    _Unassigned0xF1 = 0xF1,
-    _Unassigned0xF2 = 0xF2,
-    _Unassigned0xF3 = 0xF3,
-    _Unassigned0xF4 = 0xF4,
-    _Unassigned0xF5 = 0xF5,
-    _Unassigned0xF6 = 0xF6,
-    _Unassigned0xF7 = 0xF7,
-    _Unassigned0xF8 = 0xF8,
-    _Unassigned0xF9 = 0xF9,
-    _Unassigned0xFA = 0xFA,
-    _Unassigned0xFB = 0xFB,
-    _Unassigned0xFC = 0xFC,
-    /// Use for experimentation and testing
-    Exp1 = 0xFD,
-    /// Use for experimentation and testing
-    Exp2 = 0xFE,
-    /// Reserved value
-    Reserved = 0xFF,
-}
-
-impl From<u8> for Ipv4DataProtocol {
-    #[inline]
-    fn from(value: u8) -> Self {
-        unsafe { mem::transmute(value) }
     }
 }
 
@@ -1713,9 +1609,9 @@ impl Ipv4Option {
     }
 
     #[inline]
-    pub fn option_class(&self) -> Ipv4OptionClass {
+    pub fn option_class(&self) -> u8 {
         // SAFETY: this value can only ever be between 0 and 3 inclusive
-        unsafe { mem::transmute((self.option_type & 0x60) >> 5) }
+        (self.option_type & 0x60) >> 5
     }
 
     #[inline]
@@ -1827,9 +1723,9 @@ impl<'a> Ipv4OptionRef<'a> {
     }
 
     #[inline]
-    pub fn option_class(&self) -> Ipv4OptionClass {
+    pub fn option_class(&self) -> u8 {
         // SAFETY: this value can only ever be between 0 and 3 inclusive
-        unsafe { mem::transmute((self.bytes[0] & 0b_0110_0000) >> 5) }
+        (self.bytes[0] & 0b_0110_0000) >> 5
     }
 
     #[inline]
@@ -1895,9 +1791,9 @@ impl<'a> Ipv4OptionMut<'a> {
     }
 
     #[inline]
-    pub fn option_class(&self) -> Ipv4OptionClass {
+    pub fn option_class(&self) -> u8 {
         // SAFETY: this value can only ever be between 0 and 3 inclusive
-        unsafe { mem::transmute((self.bytes[0] & 0b_0110_0000) >> 5) }
+        (self.bytes[0] & 0b_0110_0000) >> 5
     }
 
     #[inline]
@@ -1909,76 +1805,12 @@ impl<'a> Ipv4OptionMut<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-#[repr(u8)]
-pub enum Ipv4OptionClass {
-    Control = 0,
-    Reserved1 = 1,
-    DebuggingMeasurement = 2,
-    Reserved3 = 3,
-}
 
-#[derive(Clone, Copy)]
-#[repr(u8)]
-pub enum Ipv4OptionType {
-    /// End of Option List
-    Eool = 0x00,
-    /// No Operation
-    Nop = 0x01,
-    /// Security (defunct option)
-    Sec = 0x02,
-    /// Record Route
-    Rr = 0x07,
-    /// Experimental Measurement
-    Zsu = 0x0A,
-    /// MTU Probe
-    Mtup = 0x0B,
-    /// MTU Reply
-    Mtur = 0x0C,
-    /// ENCODE
-    Encode = 0x0F,
-    /// Quick-Start
-    Qs = 0x19,
-    /// RFC 3692 Experiment
-    Exp1 = 0x1E,
-    // Time Stamp
-    Ts = 0x44,
-    /// Traceroute
-    Tr = 0x52,
-    /// RFC 3692 Experiment
-    Exp2 = 0x5E,
-    /// Security (RIPSO)
-    Ripso = 0x82,
-    /// Loose Source Route
-    Lsr = 0x83,
-    /// Extended Security (RIPSO)
-    Esec = 0x85,
-    /// Commercial IP Security
-    Cipso = 0x86,
-    /// Stream ID
-    Sid = 0x88,
-    /// Strict Source Route
-    Ssr = 0x89,
-    /// Experimental Access Control
-    Visa = 0x8E,
-    /// IMI Traffic Descriptor
-    Imitd = 0x90,
-    /// Extended Internet Protocol
-    Eip = 0x91,
-    /// Address Extension
-    AddExt = 0x93,
-    /// Router Alert
-    RtrAlt = 0x94,
-    /// Selective Directed Broadcast
-    Sdb = 0x95,
-    /// Dynamic Packet State
-    Dps = 0x97,
-    /// Upstream Multicast Packet
-    Ump = 0x98,
-    /// RFC 3692 Experiment
-    Exp3 = 0x9E,
-    /// Experimental Flow Control
-    Finn = 0xCD,
-    /// RFC 3692 Experiment
-    Exp4 = 0xDE,
-}
+
+pub const OPT_CLASS_CONTROL: u8 = 0;
+pub const OPT_CLASS_RESERVED1: u8 = 1;
+pub const OPT_CLASS_DEBUGGING_MEASUREMENT: u8 = 2;
+pub const OPT_CLASS_RESERVED3: u8 = 3;
+
+
+

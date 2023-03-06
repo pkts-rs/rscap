@@ -22,36 +22,21 @@ pub(crate) fn to_array<const T: usize>(bytes: &[u8], start: usize) -> Option<[u8
 }
 
 #[inline]
-pub fn get_array<const T: usize>(mut bytes: &[u8], start: usize) -> Option<&[u8; T]> {
-    bytes = bytes.get(start..start + T)?;
-
-    // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
-    // SAFETY: an array reference is made up of just a pointer, which can be retrieved from the bytes slice
-    // SAFETY: the lifetime of the resulting array ref will not outlive the slice it was created from
-    unsafe { Some(&*(bytes.as_ptr() as *const [_; T])) }
+pub fn get_array<const T: usize>(bytes: &[u8], start: usize) -> Option<&[u8; T]> {
+    bytes.get(start..start + T)?.try_into().ok()
 }
 
 #[inline]
 pub(crate) fn get_mut_array<const T: usize>(
-    mut bytes: &mut [u8],
+    bytes: &mut [u8],
     start: usize,
 ) -> Option<&mut [u8; T]> {
-    bytes = bytes.get_mut(start..start + T)?;
-
-    // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
-    // SAFETY: an array reference is made up of just a pointer, which can be retrieved from the bytes slice
-    // SAFETY: the lifetime of the resulting array ref will not outlive the slice it was created from
-    unsafe { Some(&mut *(bytes.as_mut_ptr() as *mut [_; T])) }
+    bytes.get_mut(start..start + T)?.try_into().ok()
 }
 
 #[inline]
 pub(crate) fn split_array<const T: usize>(bytes: &[u8]) -> Option<(&[u8; T], &[u8])> {
-    let (arr, rem) = (bytes.get(..T)?, bytes.get(T..)?);
-
-    // SAFETY: `bytes` is guaranteed from above to be `T` bytes long.
-    // SAFETY: an array reference is made up of just a pointer, which can be retrieved from the bytes slice
-    // SAFETY: the lifetime of the resulting array ref will not outlive the slice it was created from
-    unsafe { Some((&*(arr.as_ptr() as *const [_; T]), rem)) }
+    Some((bytes.get(..T)?.try_into().ok()?, bytes.get(T..)?))
 }
 
 #[inline]

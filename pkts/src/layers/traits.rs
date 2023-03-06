@@ -6,8 +6,6 @@ use core::fmt;
 use extras::*;
 use pkts_macros::layer_metadata;
 
-use crate::layers::ip::Ipv4DataProtocol;
-
 // =============================================================================
 //                       User-Facing Traits (for `Layer`)
 // =============================================================================
@@ -984,25 +982,6 @@ pub mod extras {
             Self::layer_id_static()
         }
 
-        /// Allows for a given `AnyLayer` type to be cast to another instance of itself.
-        /// Note that this function is only meanat to work if `T` is the same type as `self`.
-        #[inline]
-        fn cast_layer<T: AnyLayerRef<'a>>(&self) -> Result<T, &'static str> {
-            if self.is_layer::<T>() {
-                unsafe { Ok(self.cast_layer_unchecked()) }
-            } else {
-                Err("layer was not itself TODO: better msg here")
-            }
-        }
-
-        #[inline]
-        unsafe fn cast_layer_unchecked<T: AnyLayerRef<'a>>(&self) -> T {
-            debug_assert!(self.is_layer::<T>());
-            // SAFETY: caller guarantees that T is the same type as Self
-            // This is accomplished with `layer_id()`
-            mem::transmute_copy(self)
-        }
-
         #[inline]
         fn is_layer<T: AnyLayerRef<'a>>(&self) -> bool {
             self.layer_id() == T::layer_id_static()
@@ -1031,26 +1010,6 @@ pub mod extras {
             Self::layer_id_static()
         }
 
-        /// Allows for a given `AnyLayer` type to be cast to another instance of itself.
-        /// Note that this function is only meant to work if `T` is the same type as `self`.
-        #[inline]
-        fn cast_layer<T: AnyLayerMut<'a>>(&'a mut self) -> Result<T, &'static str> {
-            if self.is_layer::<T>() {
-                unsafe { Ok(self.cast_layer_unchecked()) }
-            } else {
-                Err("TODO: add error code here (layer was not itself)")
-            }
-        }
-
-        #[inline]
-        unsafe fn cast_layer_unchecked<T: AnyLayerMut<'a>>(&'a mut self) -> T {
-            debug_assert!(self.is_layer::<T>());
-            // SAFETY: caller guarantees that T is the same type as Self
-            // This is accomplished with `layer_id()`
-            mem::transmute_copy(&self)
-        }
-
-        #[inline]
         fn is_layer<T: AnyLayerMut<'a>>(&self) -> bool {
             self.layer_id() == T::layer_id_static()
         }
@@ -1095,7 +1054,7 @@ pub mod extras {
     }
 
     pub trait Ipv4PayloadMetadata: LayerMetadata {
-        fn ip_data_protocol(&self) -> Ipv4DataProtocol;
+        fn ip_data_protocol(&self) -> u8;
 
         /*
         /// If you're implementing this trait and you don't know what this is, just set it to `None`.
@@ -1137,8 +1096,8 @@ pub mod extras {
 
     impl Ipv4PayloadMetadata for SctpMetadata {
         #[inline]
-        fn ip_data_protocol(&self) -> Ipv4DataProtocol {
-            Ipv4DataProtocol::Sctp
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_SCTP
         }
     }
 
@@ -1146,8 +1105,8 @@ pub mod extras {
 
     impl Ipv4PayloadMetadata for TcpMetadata {
         #[inline]
-        fn ip_data_protocol(&self) -> Ipv4DataProtocol {
-            Ipv4DataProtocol::Tcp
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_TCP
         }
     }
 
@@ -1155,8 +1114,8 @@ pub mod extras {
 
     impl Ipv4PayloadMetadata for UdpMetadata {
         #[inline]
-        fn ip_data_protocol(&self) -> Ipv4DataProtocol {
-            Ipv4DataProtocol::Udp
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_UDP
         }
     }
 
@@ -1164,8 +1123,8 @@ pub mod extras {
 
     impl Ipv4PayloadMetadata for RawMetadata {
         #[inline]
-        fn ip_data_protocol(&self) -> Ipv4DataProtocol {
-            Ipv4DataProtocol::Exp1
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_EXP1
         }
     }
 
