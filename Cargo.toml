@@ -1,19 +1,7 @@
-[package]
-name = "rscap"
-authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
-description = "Rust packet capture and manipulation utilities"
-rust-version = "1.65" # GATs stabilized in this version; required for `pkts`
-version = "0.1.0"
-license = "GPL-2.0-only"
-edition = "2021"
-repository = "https://github.com/pkts-rs/rscap"
-
-[features]
-default = ["std"]
-std = ["alloc"]
-alloc = []
-
-[dependencies]
-libc = { version = "0.2" }
-#libc = { version = "0.2", path = "../libc-packet/libc" }
-pkts = { version = "0.1", path = "pkts" }
+[workspace]
+members = [
+    "rscap",
+    "pkts",
+    "pkts-macros",
+    "pktspec",
+]
