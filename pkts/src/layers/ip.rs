@@ -9,7 +9,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::error::*;
+use crate::{error::*, utils};
 
 use super::sctp::{SctpRef, Sctp};
 use super::tcp::{Tcp, TcpRef};
@@ -385,6 +385,10 @@ pub const OPT_TYPE_FINN: u8 = 0xCD;
 /// RFC 3692 Experiment
 pub const OPT_TYPE_EXP4: u8 = 0xDE;
 
+pub const OPT_CLASS_CONTROL: u8 = 0;
+pub const OPT_CLASS_RESERVED1: u8 = 1;
+pub const OPT_CLASS_DEBUGGING_MEASUREMENT: u8 = 2;
+pub const OPT_CLASS_RESERVED3: u8 = 3;
 
 /// An IPv4 (Internet Protocol version 4) packet.
 #[derive(Clone, Debug, Layer, StatelessLayer)]
@@ -399,8 +403,8 @@ pub struct Ipv4 {
     frag_offset: u16,
     ttl: u8,
     chksum: u16,
-    saddr: u32,
-    daddr: u32,
+    src: u32,
+    dst: u32,
     options: Ipv4Options,
     payload: Option<Box<dyn LayerObject>>,
 }
@@ -503,23 +507,23 @@ impl Ipv4 {
     }
 
     #[inline]
-    pub fn saddr(&self) -> u32 {
-        self.saddr
+    pub fn src(&self) -> u32 {
+        self.src
     }
 
     #[inline]
-    pub fn set_saddr(&mut self, saddr: u32) {
-        self.saddr = saddr;
+    pub fn set_src(&mut self, src: u32) {
+        self.src = src;
     }
 
     #[inline]
-    pub fn daddr(&self) -> u32 {
-        self.daddr
+    pub fn dst(&self) -> u32 {
+        self.dst
     }
 
     #[inline]
-    pub fn set_daddr(&mut self, daddr: u32) {
-        self.daddr = daddr;
+    pub fn set_dst(&mut self, dst: u32) {
+        self.dst = dst;
     }
 }
 
@@ -546,8 +550,8 @@ impl FromBytesCurrent for Ipv4 {
             frag_offset: ipv4.frag_offset(),
             ttl: ipv4.ttl(),
             chksum: ipv4.chksum(),
-            saddr: ipv4.saddr(),
-            daddr: ipv4.daddr(),
+            src: ipv4.src(),
+            dst: ipv4.dst(),
             options: Ipv4Options::from(ipv4.options()),
             payload: None,
         }
@@ -638,8 +642,8 @@ impl ToBytes for Ipv4 {
                 .unwrap_or(DATA_PROTO_EXP1) as u8,
         ); // 0xFD when no payload specified
         bytes.extend(self.chksum.to_be_bytes());
-        bytes.extend(self.saddr.to_be_bytes());
-        bytes.extend(self.daddr.to_be_bytes());
+        bytes.extend(self.src.to_be_bytes());
+        bytes.extend(self.dst.to_be_bytes());
         self.options.to_bytes_extended(bytes);
         if let Some(payload) = self.payload.as_ref() {
             payload.to_bytes_extended(bytes)
@@ -720,12 +724,12 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     #[inline]
-    pub fn saddr(&self) -> u32 {
+    pub fn src(&self) -> u32 {
         u32::from_be_bytes(self.data[12..16].try_into().unwrap())
     }
 
     #[inline]
-    pub fn daddr(&self) -> u32 {
+    pub fn dst(&self) -> u32 {
         u32::from_be_bytes(self.data[16..20].try_into().unwrap())
     }
 
@@ -1071,29 +1075,29 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     #[inline]
-    pub fn saddr(&self) -> u32 {
+    pub fn src(&self) -> u32 {
         u32::from_be_bytes(self.data[12..16].try_into().unwrap())
     }
 
     #[inline]
-    pub fn set_saddr(&mut self, saddr: u32) {
-        self.data[12] = (saddr >> 24) as u8;
-        self.data[13] = ((saddr >> 16) & 0x000000FF) as u8;
-        self.data[14] = ((saddr >> 8) & 0x000000FF) as u8;
-        self.data[15] = (saddr & 0x000000FF) as u8;
+    pub fn set_src(&mut self, src: u32) {
+        self.data[12] = (src >> 24) as u8;
+        self.data[13] = ((src >> 16) & 0x000000FF) as u8;
+        self.data[14] = ((src >> 8) & 0x000000FF) as u8;
+        self.data[15] = (src & 0x000000FF) as u8;
     }
 
     #[inline]
-    pub fn daddr(&self) -> u32 {
+    pub fn dst(&self) -> u32 {
         u32::from_be_bytes(self.data[16..20].try_into().unwrap())
     }
 
     #[inline]
-    pub fn set_daddr(&mut self, daddr: u32) {
-        self.data[16] = (daddr >> 24) as u8;
-        self.data[17] = ((daddr >> 16) & 0x000000FF) as u8;
-        self.data[18] = ((daddr >> 8) & 0x000000FF) as u8;
-        self.data[19] = (daddr & 0x000000FF) as u8;
+    pub fn set_dst(&mut self, dst: u32) {
+        self.data[16] = (dst >> 24) as u8;
+        self.data[17] = ((dst >> 16) & 0x000000FF) as u8;
+        self.data[18] = ((dst >> 8) & 0x000000FF) as u8;
+        self.data[19] = (dst & 0x000000FF) as u8;
     }
 
     #[inline]
@@ -1102,11 +1106,13 @@ impl<'a> Ipv4Mut<'a> {
         Ipv4OptionsRef::from_bytes_unchecked(&self.data[20..options_end])
     }
 
+    /*
     #[inline]
     pub fn options_mut(&'a mut self) -> Ipv4OptionsMut<'a> {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
         Ipv4OptionsMut::from_bytes_unchecked(&mut self.data[20..options_end])
     }
+    */
 
     /*
     pub fn set_options(&mut self, options: Ipv4OptionRef<'_>) {
@@ -1550,6 +1556,18 @@ impl<'a> Iterator for Ipv4OptionsIterMut<'a> {
 }
 */
 
+/*
+pub struct Ipv4OptionsBuilder<'a, const N: usize> {
+    options: [(u8, &'a [u8]); N],
+}
+
+impl<'a, const N: usize> Ipv4OptionsBuilder<'a, N> {
+    pub fn build<'b>(ipv4: &mut Ipv4Mut<'b>) -> Result<(), ()> {
+        
+    }
+}
+*/
+
 // EOOL and NOP must have a size of 0
 #[derive(Clone, Debug)]
 pub struct Ipv4Option {
@@ -1804,13 +1822,3 @@ impl<'a> Ipv4OptionMut<'a> {
         }
     }
 }
-
-
-
-pub const OPT_CLASS_CONTROL: u8 = 0;
-pub const OPT_CLASS_RESERVED1: u8 = 1;
-pub const OPT_CLASS_DEBUGGING_MEASUREMENT: u8 = 2;
-pub const OPT_CLASS_RESERVED3: u8 = 3;
-
-
-

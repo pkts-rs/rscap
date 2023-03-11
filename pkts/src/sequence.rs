@@ -196,7 +196,7 @@ pub trait Sequence: SequenceObject + Sized {
     /// [`LayeredSequence`] instances:
     /// 
     /// ```rs
-    /// let seq = LayeredSequence::new(Ipv4Sequence::new().with_filter(|ip| !(ip.saddr() == 0 || ip.daddr() == 0)), true)
+    /// let seq = LayeredSequence::new(Ipv4Sequence::new().with_filter(|ip| !(ip.src() == 0 || ip.dst() == 0)), true)
     ///         .add_bounded(StcpSequence::new().with_filter(|sctp| sctp.sport() == 4321 && sctp.verify_tag() == 1111));
     /// ```
     #[inline]
