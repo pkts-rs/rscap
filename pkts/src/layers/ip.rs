@@ -3,13 +3,13 @@
 
 use core::iter::Iterator;
 use core::fmt::Debug;
-use core::{cmp, mem};
+use core::cmp;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::{error::*, utils};
+use crate::error::*;
 
 use super::sctp::{SctpRef, Sctp};
 use super::tcp::{Tcp, TcpRef};
@@ -391,6 +391,31 @@ pub const OPT_CLASS_DEBUGGING_MEASUREMENT: u8 = 2;
 pub const OPT_CLASS_RESERVED3: u8 = 3;
 
 /// An IPv4 (Internet Protocol version 4) packet.
+/// 
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |Version|  IHL  |    DSCP   |ECN|         Packet Length         |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |          Fragment ID          |Flags|   Fragmentation Offset  |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |  Time To Live |    Protocol   |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |                         Source Address                        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 |                      Destination Address                      |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 20 Z                       0 or more Options                       Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ?? Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(Ipv4Metadata)]
 #[ref_type(Ipv4Ref)]
@@ -410,26 +435,54 @@ pub struct Ipv4 {
 }
 
 impl Ipv4 {
+    /// The Internet Header Length (IHL) of the packet.
+    /// 
+    /// This field indicates the number of bytes in the header of the IPv4 packet as a multiple of 4.
+    /// So, an IHL of 8 would indicate that the first 32 bytes of the packet are the IPv4 header.
+    /// The IHL must be a minimum of 20 bytes (i.e. a value of 5) to cover the necessary mandatory IPv4
+    /// fields, and cannot exceed 60 bytes (i.e. a value of 15).
+    /// 
+    /// As an implementation-specific detail, the IHL is automatically calculated and cannot be manually
+    /// set in an `Ipv4` object. This is because the IHL determines the number of bytes in the options field,
+    /// and changing the IHL without changing the options would break the packet's structural composition.
+    /// With this in mind, if it is still desirable to modify the IHL of a packet, see [`Ipv4Mut`]
+    /// (specifically the `set_ihl_unchecked()` method).
     #[inline]
     pub fn ihl(&self) -> u8 {
-        self.options.byte_len() as u8 // TODO: use expect() here
+        let len = self.options.byte_len();
+        assert!(len < (10 * 4), "Ipv4 packet had too many bytes in options to represent in the Internet Header Length (IHL) field");
+        5 + (len / 4) as u8
     }
 
+    /// The Differentiated Services Code Point (DSCP) of the packet.
+    /// 
+    /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn dscp(&self) -> DiffServ {
         self.dscp
     }
 
+    /// Sets the Differentiated Services Code Point (DSCP) of the packet.
+    /// 
+    /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn set_dscp(&mut self, dscp: DiffServ) {
         self.dscp = dscp;
     }
 
+    /// The Explicit Congestion Notification (ECN) field of the packet.
+    /// 
+    /// More information on this field can be found in the [`Ecn`] documentation,
+    /// or in RFC 3168.
     #[inline]
     pub fn ecn(&self) -> Ecn {
         self.ecn
     }
 
+    /// Sets the Explicit Congestion Notification (ECN) field of the packet.
+    /// 
+    /// More information on this field can be found in the [`Ecn`] documentation,
+    /// or in RFC 3168.
     #[inline]
     pub fn set_ecn(&mut self, ecn: Ecn) {
         self.ecn = ecn;
@@ -623,7 +676,7 @@ impl LayerObject for Ipv4 {
 
 impl ToBytes for Ipv4 {
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        bytes.push(0x40 | (5 + (self.options.byte_len() / 4) as u8));
+        bytes.push(0x40 | self.ihl());
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
         bytes.extend(u16::try_from(self.len()).unwrap_or(0xFFFF).to_be_bytes()); // WARNING: packets with contents greater than 65535 bytes will have their length field truncated
         bytes.extend(self.id.to_be_bytes());
@@ -651,6 +704,32 @@ impl ToBytes for Ipv4 {
     }
 }
 
+/// An IPv4 (Internet Protocol version 4) packet.
+/// 
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |Version|  IHL  |    DSCP   |ECN|         Packet Length         |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |          Fragment ID          |Flags|   Fragmentation Offset  |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |  Time To Live |    Protocol   |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |                         Source Address                        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 |                      Destination Address                      |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 20 Z                       0 or more Options                       Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ?? Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Copy, Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Ipv4)]
 #[metadata_type(Ipv4Metadata)]
@@ -924,6 +1003,32 @@ impl Validate for Ipv4Ref<'_> {
     }
 }
 
+/// An IPv4 (Internet Protocol version 4) packet.
+/// 
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |Version|  IHL  |    DSCP   |ECN|         Packet Length         |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |          Fragment ID          |Flags|   Fragmentation Offset  |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |  Time To Live |    Protocol   |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |                         Source Address                        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 |                      Destination Address                      |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 20 Z                       0 or more Options                       Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ?? Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[owned_type(Ipv4)]
 #[ref_type(Ipv4Ref)]
@@ -983,8 +1088,7 @@ impl<'a> Ipv4Mut<'a> {
 
     #[inline]
     pub fn set_dscp(&mut self, dscp: DiffServ) {
-        self.data[1] &= 0b0000_0011;
-        self.data[1] |= dscp.dscp & 0b1111_1100;
+        self.data[1] = dscp.value;
     }
 
     #[inline]
@@ -1144,18 +1248,18 @@ impl<'a> Ipv4Mut<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiffServ {
-    dscp: u8,
+    value: u8,
 }
 
 impl From<u8> for DiffServ {
     fn from(value: u8) -> Self {
-        DiffServ { dscp: value >> 2 }
+        DiffServ { value: value >> 2 }
     }
 }
 
 impl DiffServ {
     pub fn dscp(&self) -> u8 {
-        self.dscp
+        self.value
     }
 }
 
@@ -1822,3 +1926,5 @@ impl<'a> Ipv4OptionMut<'a> {
         }
     }
 }
+
+
