@@ -2,7 +2,7 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! # General utility functions
-//! 
+//!
 //! This submodule provides general-purpose methods and structs
 //! that aren't necessarily packet-specific. At present time, none
 //! of these functions should be considered stable--they may be
@@ -59,7 +59,7 @@ pub(crate) fn split_array<const T: usize>(bytes: &[u8]) -> Option<(&[u8; T], &[u
 pub(crate) fn split_at(bytes: &[u8], idx: usize) -> Option<(&[u8], &[u8])> {
     match (bytes.get(..idx), bytes.get(idx..)) {
         (Some(b1), Some(b2)) => Some((b1, b2)),
-        _ => None
+        _ => None,
     }
 }
 
@@ -69,7 +69,7 @@ pub(crate) fn split_at(bytes: &[u8], idx: usize) -> Option<(&[u8], &[u8])> {
 pub(crate) fn split_delim(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
     for (idx, b) in bytes.iter().enumerate() {
         if *b == delim {
-            return Some((&bytes[..idx], &bytes[idx + 1..]))
+            return Some((&bytes[..idx], &bytes[idx + 1..]));
         }
     }
 

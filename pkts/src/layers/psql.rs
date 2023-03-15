@@ -78,7 +78,7 @@ const SERVER_AUTH_SASL_FINAL: i32 = 12;
 // be in the packet, except for the startup packet--it just has the length field.
 // HOWEVER, psql limits startup messages to 10,000 bytes:
 // https://github.com/postgres/postgres/blob/master/src/include/libpq/pqcomm.h
-// this means that the first byte of a startup message must always be 0x00, SO we 
+// this means that the first byte of a startup message must always be 0x00, SO we
 // can safely pretend that 0x00 is the identifying byte for a startup message.
 // Thus, PsqlClient can be a StatelessLayer.
 
@@ -110,7 +110,7 @@ impl CanSetPayload for PsqlClient {
 
 impl FromBytesCurrent for PsqlClient {
     #[inline]
-    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) { }
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         todo!()
@@ -281,7 +281,7 @@ impl ClientMessage {
             ClientMessage::CopyDone => {
                 bytes.push(CLIENT_MSG_COPY_DONE);
                 bytes.extend(5i32.to_be_bytes());
-            },
+            }
             ClientMessage::CopyFail(_) => todo!(),
             ClientMessage::DescribePortal(_) => todo!(),
             ClientMessage::DescribePrepared(_) => todo!(),
@@ -289,27 +289,27 @@ impl ClientMessage {
             ClientMessage::Flush => {
                 bytes.push(CLIENT_MSG_FLUSH);
                 bytes.extend(5i32.to_be_bytes());
-            },
+            }
             ClientMessage::FunctionCall(_) => todo!(),
             ClientMessage::GssEncRequest => {
                 bytes.extend(8i32.to_be_bytes());
                 bytes.extend(CLIENT_STARTUP_GSS_ENC_REQ.to_be_bytes());
-            },
+            }
             ClientMessage::Parse(_) => todo!(),
             ClientMessage::Query(_) => todo!(),
             ClientMessage::SslRequest => {
                 bytes.extend(8i32.to_be_bytes());
                 bytes.extend(CLIENT_STARTUP_SSL_REQ.to_be_bytes());
-            },
+            }
             ClientMessage::StartupMessage(_) => todo!(),
             ClientMessage::Sync => {
                 bytes.push(CLIENT_MSG_SYNC);
                 bytes.extend(5i32.to_be_bytes());
-            },
+            }
             ClientMessage::Terminate => {
                 bytes.push(CLIENT_MSG_TERMINATE);
                 bytes.extend(5i32.to_be_bytes());
-            },
+            }
         }
     }
 }
@@ -439,7 +439,6 @@ impl ClosePortal {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct ClosePrepared {
     stmt_name: String,
@@ -537,7 +536,7 @@ impl CopyFail {
     }
 
     #[inline]
-    pub fn set_err_message(&mut self, err_msg: String)  {
+    pub fn set_err_message(&mut self, err_msg: String) {
         self.err_msg = err_msg;
     }
 
@@ -547,7 +546,7 @@ impl CopyFail {
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.err_msg.as_bytes());
         bytes.push(0x00); // null-terminating byte
-    }   
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -634,7 +633,7 @@ impl DescribePrepared {
 
 #[derive(Clone, Debug)]
 pub struct Execute {
-    portal_name: String, // empty string means unnamed portal
+    portal_name: String,   // empty string means unnamed portal
     max_rows: Option<i32>, // None corresponds to 0
 }
 
@@ -779,7 +778,7 @@ impl Query {
 
 #[derive(Clone, Debug)]
 pub struct StartupMessage {
-//    minor_version: u16,
+    //    minor_version: u16,
     params: Vec<(String, String)>,
 }
 
@@ -791,7 +790,12 @@ impl StartupMessage {
 
     #[inline]
     pub fn len(&self) -> usize {
-        8 + self.params.iter().map(|(k,v)| k.len() + v.len() + 2).sum::<usize>() + 1 // constant '2' for null bytes; constant '1' for ending null byte
+        8 + self
+            .params
+            .iter()
+            .map(|(k, v)| k.len() + v.len() + 2)
+            .sum::<usize>()
+            + 1 // constant '2' for null bytes; constant '1' for ending null byte
     }
 
     #[inline]
@@ -835,11 +839,11 @@ impl StartupMessage {
 
 #[derive(Clone, Debug)]
 pub struct Bind {
-    dst_portal: String, // empty indicates unnamed portal
-    src_prepared: String, // empty indicates the unnamed prepared statement
-    params_fmt: Vec<FormatCode>, // 0 indicates text; 1 indicates binary.
+    dst_portal: String,           // empty indicates unnamed portal
+    src_prepared: String,         // empty indicates the unnamed prepared statement
+    params_fmt: Vec<FormatCode>,  // 0 indicates text; 1 indicates binary.
     params: Vec<Option<Vec<u8>>>, // None means null parameter value
-    results_fmt: Vec<FormatCode>
+    results_fmt: Vec<FormatCode>,
 }
 
 impl Bind {
@@ -850,12 +854,20 @@ impl Bind {
 
     #[inline]
     pub fn len(&self) -> usize {
-        5
-        + self.dst_portal.len() + 1
-        + self.src_prepared.len() + 1
-        + 2 + 2 * self.params_fmt.len()
-        + 2 + self.params.iter().map(|v| 4 + v.as_ref().map_or(0, |p| p.len())).sum::<usize>()
-        + 2 + 2 * self.results_fmt.len()
+        5 + self.dst_portal.len()
+            + 1
+            + self.src_prepared.len()
+            + 1
+            + 2
+            + 2 * self.params_fmt.len()
+            + 2
+            + self
+                .params
+                .iter()
+                .map(|v| 4 + v.as_ref().map_or(0, |p| p.len()))
+                .sum::<usize>()
+            + 2
+            + 2 * self.results_fmt.len()
     }
 
     #[inline]
@@ -947,11 +959,16 @@ impl FunctionCall {
 
     #[inline]
     pub fn len(&self) -> usize {
-        5
-        + 4
-        + 2 + 2 * self.args_fmt.len()
-        + 2 + self.args.iter().map(|v| 4 + v.as_ref().map_or(0, |a| a.len())).sum::<usize>()
-        + 2
+        5 + 4
+            + 2
+            + 2 * self.args_fmt.len()
+            + 2
+            + self
+                .args
+                .iter()
+                .map(|v| 4 + v.as_ref().map_or(0, |a| a.len()))
+                .sum::<usize>()
+            + 2
     }
 
     #[inline]
@@ -1013,19 +1030,22 @@ impl FunctionCall {
 
 #[derive(Clone, Copy, Debug)]
 pub enum FormatCode {
-    Text, // = 0
-    Binary, // = 1
+    Text,         // = 0
+    Binary,       // = 1
     Unknown(i16), // x < 0 || x > 1
 }
 
 impl FormatCode {
     #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        bytes.extend(match self {
-            FormatCode::Text => 0,
-            FormatCode::Binary => 1,
-            FormatCode::Unknown(b) => *b,
-        }.to_be_bytes());
+        bytes.extend(
+            match self {
+                FormatCode::Text => 0,
+                FormatCode::Binary => 1,
+                FormatCode::Unknown(b) => *b,
+            }
+            .to_be_bytes(),
+        );
     }
 }
 
@@ -1048,9 +1068,7 @@ pub struct PsqlClientRef<'a> {
     data: &'a [u8],
 }
 
-impl<'a> PsqlClientRef<'a> {
-
-}
+impl<'a> PsqlClientRef<'a> {}
 
 impl<'a> FromBytesRef<'a> for PsqlClientRef<'a> {
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
@@ -1145,14 +1163,16 @@ pub struct AuthDataResponseRef<'a> {
 }
 
 impl<'a> AuthDataResponseRef<'a> {
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
         *self.data.get(0).expect("insufficient bytes in PsqlClient Auth Response packet to extract Message Identifier field")
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Auth Response packet to extract Length field"))
+        i32::from_be_bytes(*utils::get_array(self.data, 1).expect(
+            "insufficient bytes in PsqlClient Auth Response packet to extract Length field",
+        ))
     }
 
     #[inline]
@@ -1169,22 +1189,27 @@ impl<'a> AuthDataResponseRef<'a> {
 #[derive(Clone, Debug)]
 pub struct BindRef<'a> {
     data: &'a [u8],
-//    dst_portal: String, // empty indicates unnamed portal
-//    src_prepared: String, // empty indicates the unnamed prepared statement
-//    param_fmt: Vec<FormatCode>, // 0 indicates text; 1 indicates binary.
-//    param_values: Vec<Option<Vec<u8>>>, // None means null parameter value
-//    result_fmt: Vec<FormatCode>
+    //    dst_portal: String, // empty indicates unnamed portal
+    //    src_prepared: String, // empty indicates the unnamed prepared statement
+    //    param_fmt: Vec<FormatCode>, // 0 indicates text; 1 indicates binary.
+    //    param_values: Vec<Option<Vec<u8>>>, // None means null parameter value
+    //    result_fmt: Vec<FormatCode>
 }
 
 impl<'a> BindRef<'a> {
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Bind packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Bind packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Bind packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1)
+                .expect("insufficient bytes in PsqlClient Bind packet to extract Length field"),
+        )
     }
 
     #[inline]
@@ -1194,19 +1219,29 @@ impl<'a> BindRef<'a> {
 
     #[inline]
     pub fn dst_portal(&self) -> &str {
-        let mut iter = self.data.get(5..).expect("insufficient bytes in PsqlClient Bind packet to extract Destination Portal field").split(|b| *b == 0);
+        let mut iter = self
+            .data
+            .get(5..)
+            .expect(
+                "insufficient bytes in PsqlClient Bind packet to extract Destination Portal field",
+            )
+            .split(|b| *b == 0);
         let res = iter.next().unwrap();
         if iter.next().is_none() {
             panic!("PsqlClient Bind packet missing null terminating byte for its Destination Portal field");
         }
-        str::from_utf8(res).expect("PsqlClient Bind packet had an invalid UTF-8 sequence in its Destination Portal field")
+        str::from_utf8(res).expect(
+            "PsqlClient Bind packet had an invalid UTF-8 sequence in its Destination Portal field",
+        )
     }
 
     #[inline]
     pub fn src_stmt(&self) -> &str {
         let mut iter = self.data.get(5..).expect("insufficient bytes in PsqlClient Bind packet to extract Source Prepared Statement field").split(|b| *b == 0);
         iter.next(); // get Destination Portal out of the way
-        let res = iter.next().expect("PsqlClient Bind packet missing Source Prepared Statement field");
+        let res = iter
+            .next()
+            .expect("PsqlClient Bind packet missing Source Prepared Statement field");
         if iter.next().is_none() {
             panic!("PsqlClient Bind packet missing null terminating byte for its Source Prepared Statement field");
         }
@@ -1215,11 +1250,15 @@ impl<'a> BindRef<'a> {
 
     #[inline]
     pub fn params_fmt(&self) -> FormatCodeIter {
-        let mut rem = self.data.get(5..).expect("insufficient bytes in PsqlClient Bind packet to extract Parameter Format fields");
+        let mut rem = self.data.get(5..).expect(
+            "insufficient bytes in PsqlClient Bind packet to extract Parameter Format fields",
+        );
         let mut remaining_strings = 2;
         while remaining_strings > 0 {
             let c;
-            (c, rem) = rem.split_first().expect("insufficient bytes in PsqlClient Bind packet to extract Parameter Format fields");
+            (c, rem) = rem.split_first().expect(
+                "insufficient bytes in PsqlClient Bind packet to extract Parameter Format fields",
+            );
             if *c == 0 {
                 remaining_strings -= 1;
             }
@@ -1231,17 +1270,22 @@ impl<'a> BindRef<'a> {
 
         FormatCodeIter {
             data: rem,
-            num_codes: fmt_code_cnt,   
+            num_codes: fmt_code_cnt,
         }
     }
 
     #[inline]
     pub fn params(&self) -> ParamIter {
         let fmt_codes = self.params_fmt();
-        let mut rem = fmt_codes.data.get(cmp::max(0, fmt_codes.num_codes) as usize * 2..).expect("insufficient bytes in PsqlClient Bind packet to extract Parameter fields");
+        let mut rem = fmt_codes
+            .data
+            .get(cmp::max(0, fmt_codes.num_codes) as usize * 2..)
+            .expect("insufficient bytes in PsqlClient Bind packet to extract Parameter fields");
 
         let param_cnt_arr;
-        (param_cnt_arr, rem) = utils::split_array(rem).expect("insufficient bytes in PsqlClient Bind packet to extract Parameter fields count");
+        (param_cnt_arr, rem) = utils::split_array(rem).expect(
+            "insufficient bytes in PsqlClient Bind packet to extract Parameter fields count",
+        );
         let param_cnt = i16::from_be_bytes(*param_cnt_arr);
 
         ParamIter {
@@ -1249,16 +1293,18 @@ impl<'a> BindRef<'a> {
             num_params: param_cnt,
         }
     }
-    
+
     #[inline]
     pub fn results_fmt(&self) -> FormatCodeIter {
         let mut params = self.params();
-        while let Some(_) = params.next() { }
+        while let Some(_) = params.next() {}
 
         let mut rem = params.data;
 
         let fmt_cnt_arr;
-        (fmt_cnt_arr, rem) = utils::split_array(rem).expect("insufficient bytes in PsqlClient Bind packet to extract Result Format fields length");
+        (fmt_cnt_arr, rem) = utils::split_array(rem).expect(
+            "insufficient bytes in PsqlClient Bind packet to extract Result Format fields length",
+        );
         let fmt_code_cnt = i16::from_be_bytes(*fmt_cnt_arr);
 
         FormatCodeIter {
@@ -1279,11 +1325,12 @@ impl<'a> Iterator for FormatCodeIter<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.num_codes <= 0 {
-            return None
+            return None;
         }
 
         let fmt_code_arr;
-        (fmt_code_arr, self.data) = utils::split_array(self.data).expect("insufficient bytes in FormatCodeIter to retrieve next Format Code field");
+        (fmt_code_arr, self.data) = utils::split_array(self.data)
+            .expect("insufficient bytes in FormatCodeIter to retrieve next Format Code field");
 
         self.num_codes -= 1;
         Some(i16::from_be_bytes(*fmt_code_arr).into())
@@ -1301,19 +1348,22 @@ impl<'a> Iterator for ParamIter<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.num_params <= 0 {
-            return None
+            return None;
         }
 
         let param_len_arr;
-        (param_len_arr, self.data) = utils::split_array(self.data).expect("insufficient bytes in ParamIter to extract next Parameter length field");
+        (param_len_arr, self.data) = utils::split_array(self.data)
+            .expect("insufficient bytes in ParamIter to extract next Parameter length field");
 
         self.num_params -= 1;
         let param_len = i32::from_be_bytes(*param_len_arr);
-        if param_len < 0 { // When -1, treat as None
-            return Some(None)
+        if param_len < 0 {
+            // When -1, treat as None
+            return Some(None);
         } else {
             let param;
-            (param, self.data) = utils::split_at(self.data, param_len as usize).expect("insufficient bytes in ParamIter to extract next Parameter field");
+            (param, self.data) = utils::split_at(self.data, param_len as usize)
+                .expect("insufficient bytes in ParamIter to extract next Parameter field");
             Some(Some(param))
         }
     }
@@ -1322,14 +1372,16 @@ impl<'a> Iterator for ParamIter<'a> {
 #[derive(Clone, Debug)]
 pub struct CancelRequestRef<'a> {
     data: &'a [u8],
-//    proc_id: i32,
-//    key: i32,
+    //    proc_id: i32,
+    //    key: i32,
 }
 
 impl<'a> CancelRequestRef<'a> {
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 0).expect("insufficient bytes in PsqlClient Cancel Request packet to extract Length field"))
+        i32::from_be_bytes(*utils::get_array(self.data, 0).expect(
+            "insufficient bytes in PsqlClient Cancel Request packet to extract Length field",
+        ))
     }
 
     #[inline]
@@ -1344,12 +1396,16 @@ impl<'a> CancelRequestRef<'a> {
 
     #[inline]
     pub fn process_id(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 8).expect("insufficient bytes in PsqlClient Cancel Request packet to extract Process ID field"))
+        i32::from_be_bytes(*utils::get_array(self.data, 8).expect(
+            "insufficient bytes in PsqlClient Cancel Request packet to extract Process ID field",
+        ))
     }
 
     #[inline]
     pub fn key(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 12).expect("insufficient bytes in PsqlClient Cancel Request packet to extract Secret Key field"))
+        i32::from_be_bytes(*utils::get_array(self.data, 12).expect(
+            "insufficient bytes in PsqlClient Cancel Request packet to extract Secret Key field",
+        ))
     }
 
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
@@ -1367,7 +1423,7 @@ impl<'a> CancelRequestRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "Length field in PsqlClient Cancel Request packet did not match expected (must be equal to 16)",
-            })
+            });
         }
 
         if cancel_req_code != CLIENT_STARTUP_CANCEL_REQ {
@@ -1375,7 +1431,7 @@ impl<'a> CancelRequestRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "Cancel Request Code field in PsqlClient Cancel Request packet did not match expected (must be equal to 0x12345678)",
-            })
+            });
         }
 
         if bytes.len() > 16 {
@@ -1383,7 +1439,7 @@ impl<'a> CancelRequestRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::ExcessBytes(bytes.len() - 16),
                 reason: "extra bytes remained at end of PsqlClient Cancel Request packet",
-            })
+            });
         } else {
             Ok(())
         }
@@ -1393,7 +1449,7 @@ impl<'a> CancelRequestRef<'a> {
 #[derive(Clone, Debug)]
 pub struct ClosePortalRef<'a> {
     data: &'a [u8],
-//    portal_name: String,
+    //    portal_name: String,
 }
 
 impl<'a> ClosePortalRef<'a> {
@@ -1405,19 +1461,21 @@ impl<'a> ClosePortalRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        ClosePortalRef {
-            data: bytes,
-        }
+        ClosePortalRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
         *self.data.get(0).expect("insufficient bytes in PsqlClient Close Portal packet to extract Message Identifier field")
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Close Portal packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1).expect(
+                "insufficient bytes in PsqlClient Close Portal packet to extract Length field",
+            ),
+        )
     }
 
     #[inline]
@@ -1427,55 +1485,79 @@ impl<'a> ClosePortalRef<'a> {
 
     #[inline]
     pub fn close_type(&self) -> u8 {
-        *self.data.get(5).expect("insufficient bytes in PsqlClient Close Portal packet to extract Close Type field")
+        *self.data.get(5).expect(
+            "insufficient bytes in PsqlClient Close Portal packet to extract Close Type field",
+        )
     }
 
     #[inline]
     pub fn name(&self) -> &str {
-        let mut iter = self.data.get(6..).expect("insufficient bytes in PsqlClient Close Portal packet to extract Portal Name field").split(|b| *b == 0);
+        let mut iter = self
+            .data
+            .get(6..)
+            .expect(
+                "insufficient bytes in PsqlClient Close Portal packet to extract Portal Name field",
+            )
+            .split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
         if iter.next().is_none() {
             panic!("PsqlClient Close Portal packet missing null terminating byte for Portal Name field");
         }
-        str::from_utf8(res).expect("PsqlClient Close Portal packet had an invalid UTF-8 sequence in Portal Name field")
+        str::from_utf8(res).expect(
+            "PsqlClient Close Portal packet had an invalid UTF-8 sequence in Portal Name field",
+        )
     }
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length, close_type) = match (bytes.get(0), utils::get_array(bytes, 1), bytes.get(6)) {
+        let (msg_type, msg_length, close_type) = match (
+            bytes.get(0),
+            utils::get_array(bytes, 1),
+            bytes.get(6),
+        ) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Close Portal packet to extract message fields",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Close Portal packet to extract message fields",
+            }),
         };
 
         let msg_length = cmp::max(0, msg_length) as usize;
 
-        let (null_term, portal_name_bytes) = match bytes.get(6..cmp::max(7, msg_length)).and_then(|b| b.split_last()) { // 1 for msg_type + 4 for msg_len + 1 for close_type + 1 for minimum size of string (null terminator)
+        let (null_term, portal_name_bytes) = match bytes
+            .get(6..cmp::max(7, msg_length))
+            .and_then(|b| b.split_last())
+        {
+            // 1 for msg_type + 4 for msg_len + 1 for close_type + 1 for minimum size of string (null terminator)
             Some(t) => t,
-            None => return Err(ValidationError {
-                layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Close Portal packet for Portal Name field",
-            })
+            None => {
+                return Err(ValidationError {
+                    layer: PsqlClient::name(),
+                    err_type: ValidationErrorType::InsufficientBytes,
+                    reason:
+                        "insufficient bytes in PsqlClient Close Portal packet for Portal Name field",
+                })
+            }
         };
 
         if msg_type != CLIENT_MSG_CLOSE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "wrong Message Type field in PsqlClient Close Portal packet (expected 0x43)",
-            })
+                reason:
+                    "wrong Message Type field in PsqlClient Close Portal packet (expected 0x43)",
+            });
         }
 
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "invalid Length field in PsqlClient Close Portal packet (must be at least 7)",
-            })
+                reason:
+                    "invalid Length field in PsqlClient Close Portal packet (must be at least 7)",
+            });
         }
 
         if close_type != b'P' {
@@ -1483,7 +1565,7 @@ impl<'a> ClosePortalRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Close Type field in PsqlClient Close Portal packet (expected 0x50)",
-            })
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -1506,7 +1588,7 @@ impl<'a> ClosePortalRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Portal packet Portal Name field",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -1535,12 +1617,10 @@ impl<'a> ClosePreparedRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        ClosePreparedRef {
-            data: bytes,
-        }
+        ClosePreparedRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
         *self.data.get(0).expect("insufficient bytes in PsqlClient Close Prepared Statement packet to extract Message Identifier field")
     }
@@ -1565,7 +1645,9 @@ impl<'a> ClosePreparedRef<'a> {
         let mut iter = self.data.get(6..).expect("insufficient bytes in PsqlClient Close Prepared Statement packet to extract Prepared Statement Name field").split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
         if iter.next().is_none() {
-            panic!("PsqlClient packet missing null terminating byte for Prepared Statement Name field");
+            panic!(
+                "PsqlClient packet missing null terminating byte for Prepared Statement Name field"
+            );
         }
         str::from_utf8(res).expect("PsqlClient Close Prepared Statement packet had an invalid UTF-8 sequence in Prepared Statement Name field")
     }
@@ -1597,7 +1679,7 @@ impl<'a> ClosePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Close Prepared Statement packet (expected 0x43)",
-            })
+            });
         }
 
         if msg_length < 7 {
@@ -1605,7 +1687,7 @@ impl<'a> ClosePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "invalid Length field in PsqlClient Close Prepared Statement packet (must be at least 7)",
-            })
+            });
         }
 
         if close_type != b'S' {
@@ -1613,7 +1695,7 @@ impl<'a> ClosePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Close Type field in PsqlClient Close Prepared Statement packet (expected 0x53)",
-            })
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -1636,7 +1718,7 @@ impl<'a> ClosePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Prepared Statement packet Prepared Statement Name field",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -1654,7 +1736,7 @@ impl<'a> ClosePreparedRef<'a> {
 #[derive(Clone, Debug)]
 pub struct CopyDataRef<'a> {
     data: &'a [u8],
-//    data_stream: Vec<u8>,
+    //    data_stream: Vec<u8>,
 }
 
 impl<'a> CopyDataRef<'a> {
@@ -1666,19 +1748,23 @@ impl<'a> CopyDataRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        CopyDataRef {
-            data: bytes,
-        }
+        CopyDataRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Copy Data packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Copy Data packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Copy Data packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1).expect(
+                "insufficient bytes in PsqlClient Copy Data packet to extract Length field",
+            ),
+        )
     }
 
     #[inline]
@@ -1688,7 +1774,9 @@ impl<'a> CopyDataRef<'a> {
 
     #[inline]
     pub fn data_stream(&self) -> &[u8] {
-        self.data.get(5..).expect("insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field")
+        self.data.get(5..).expect(
+            "insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field",
+        )
     }
 
     #[inline]
@@ -1698,8 +1786,9 @@ impl<'a> CopyDataRef<'a> {
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Copy Data packet to extract message fields",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Copy Data packet to extract message fields",
+            }),
         };
 
         let msg_length = cmp::max(5, msg_length) as usize;
@@ -1707,8 +1796,9 @@ impl<'a> CopyDataRef<'a> {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field",
+            });
         }
 
         if msg_type != CLIENT_MSG_COPY_DATA {
@@ -1716,7 +1806,7 @@ impl<'a> CopyDataRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Data packet (expected 0x43)",
-            })
+            });
         }
 
         if msg_length < 5 {
@@ -1724,7 +1814,7 @@ impl<'a> CopyDataRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Data packet (too short--must be >= 5)",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -1753,19 +1843,23 @@ impl<'a> CopyDoneRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        CopyDoneRef {
-            data: bytes,
-        }
+        CopyDoneRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Copy Done packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Copy Done packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Copy Done packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1).expect(
+                "insufficient bytes in PsqlClient Copy Done packet to extract Length field",
+            ),
+        )
     }
 
     #[inline]
@@ -1789,7 +1883,7 @@ impl<'a> CopyDoneRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Done packet (expected 0x63)",
-            })
+            });
         }
 
         if msg_length != 5 {
@@ -1797,7 +1891,7 @@ impl<'a> CopyDoneRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Done packet (must be equal to 5)",
-            })
+            });
         }
 
         if bytes.len() > 5 {
@@ -1815,7 +1909,7 @@ impl<'a> CopyDoneRef<'a> {
 #[derive(Clone, Debug)]
 pub struct CopyFailRef<'a> {
     data: &'a [u8],
-//    err_msg: String,
+    //    err_msg: String,
 }
 
 impl<'a> CopyFailRef<'a> {
@@ -1827,19 +1921,23 @@ impl<'a> CopyFailRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        CopyFailRef {
-            data: bytes,
-        }
+        CopyFailRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Copy Fail packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Copy Fail packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Copy Fail packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1).expect(
+                "insufficient bytes in PsqlClient Copy Fail packet to extract Length field",
+            ),
+        )
     }
 
     #[inline]
@@ -1852,9 +1950,13 @@ impl<'a> CopyFailRef<'a> {
         let mut iter = self.data.get(5..).expect("insufficient bytes in PsqlClient Copy Fail packet to extract Prepared Error Message field").split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
         if iter.next().is_none() {
-            panic!("PsqlClient Copy Fail packet missing null terminating byte for Error Message field");
+            panic!(
+                "PsqlClient Copy Fail packet missing null terminating byte for Error Message field"
+            );
         }
-        str::from_utf8(res).expect("PsqlClient Copy Fail packet had an invalid UTF-8 sequence in Error Message field")
+        str::from_utf8(res).expect(
+            "PsqlClient Copy Fail packet had an invalid UTF-8 sequence in Error Message field",
+        )
     }
 
     #[inline]
@@ -1864,27 +1966,34 @@ impl<'a> CopyFailRef<'a> {
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Copy Fail packet to extract message fields",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Copy Fail packet to extract message fields",
+            }),
         };
 
         let msg_length = cmp::max(0, msg_length) as usize;
 
-        let (null_term, portal_name_bytes) = match bytes.get(5..cmp::max(6, msg_length)).and_then(|b| b.split_last()) { // 1 for msg_type + 4 for msg_len + 1 for minimum size of string (null terminator)
-            Some(t) => t,
-            None => return Err(ValidationError {
-                layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Copy Fail packet for Error Message field",
-            })
-        };
+        let (null_term, portal_name_bytes) =
+            match bytes
+                .get(5..cmp::max(6, msg_length))
+                .and_then(|b| b.split_last())
+            {
+                // 1 for msg_type + 4 for msg_len + 1 for minimum size of string (null terminator)
+                Some(t) => t,
+                None => return Err(ValidationError {
+                    layer: PsqlClient::name(),
+                    err_type: ValidationErrorType::InsufficientBytes,
+                    reason:
+                        "insufficient bytes in PsqlClient Copy Fail packet for Error Message field",
+                }),
+            };
 
         if msg_type != CLIENT_MSG_COPY_FAIL {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Fail packet (expected 0x66)",
-            })
+            });
         }
 
         if msg_length < 6 {
@@ -1892,7 +2001,7 @@ impl<'a> CopyFailRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "invalid Length field in PsqlClient Copy Fail packet (must be at least 6)",
-            })
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -1915,7 +2024,7 @@ impl<'a> CopyFailRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Copy Fail packet Prepared Statement Name field",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -1933,7 +2042,7 @@ impl<'a> CopyFailRef<'a> {
 #[derive(Clone, Debug)]
 pub struct DescribePortalRef<'a> {
     data: &'a [u8],
-//    portal_name: String,
+    //    portal_name: String,
 }
 
 impl<'a> DescribePortalRef<'a> {
@@ -1945,19 +2054,19 @@ impl<'a> DescribePortalRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        DescribePortalRef {
-            data: bytes,
-        }
+        DescribePortalRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
         *self.data.get(0).expect("insufficient bytes in PsqlClient Describe Portal packet to extract Message Identifier field")
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Describe Portal packet to extract Length field"))
+        i32::from_be_bytes(*utils::get_array(self.data, 1).expect(
+            "insufficient bytes in PsqlClient Describe Portal packet to extract Length field",
+        ))
     }
 
     #[inline]
@@ -1972,12 +2081,20 @@ impl<'a> DescribePortalRef<'a> {
 
     #[inline]
     pub fn name(&self) -> &str {
-        let mut iter = self.data.get(6..).expect("insufficient bytes in PsqlClient Close Portal packet to extract Portal Name field").split(|b| *b == 0);
+        let mut iter = self
+            .data
+            .get(6..)
+            .expect(
+                "insufficient bytes in PsqlClient Close Portal packet to extract Portal Name field",
+            )
+            .split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
         if iter.next().is_none() {
             panic!("PsqlClient Describe Portal packet missing null terminating byte for Portal Name field");
         }
-        str::from_utf8(res).expect("PsqlClient Describe Portal packet had an invalid UTF-8 sequence in Portal Name field")
+        str::from_utf8(res).expect(
+            "PsqlClient Describe Portal packet had an invalid UTF-8 sequence in Portal Name field",
+        )
     }
 
     #[inline]
@@ -1993,37 +2110,45 @@ impl<'a> DescribePortalRef<'a> {
 
         let msg_length = cmp::max(0, msg_length) as usize;
 
-        let (null_term, portal_name_bytes) = match bytes.get(6..cmp::max(7, msg_length)).and_then(|b| b.split_last()) { // 1 for msg_type + 4 for msg_len + 1 for close_type + 1 for minimum size of string (null terminator)
+        let (null_term, portal_name_bytes) = match bytes
+            .get(6..cmp::max(7, msg_length))
+            .and_then(|b| b.split_last())
+        {
+            // 1 for msg_type + 4 for msg_len + 1 for close_type + 1 for minimum size of string (null terminator)
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Describe Portal packet for Portal Name field",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Describe Portal packet for Portal Name field",
+            }),
         };
 
         if msg_type != CLIENT_MSG_DESCRIBE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "wrong Message Type field in PsqlClient Describe Portal packet (expected 0x44)",
-            })
+                reason:
+                    "wrong Message Type field in PsqlClient Describe Portal packet (expected 0x44)",
+            });
         }
 
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "invalid Length field in PsqlClient Describe Portal packet (must be at least 7)",
-            })
+                reason:
+                    "invalid Length field in PsqlClient Describe Portal packet (must be at least 7)",
+            });
         }
 
         if describe_type != b'P' {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
-                reason: "wrong Describe Type field in PsqlClient Describe Portal packet (expected 0x50)",
-            })
+                reason:
+                    "wrong Describe Type field in PsqlClient Describe Portal packet (expected 0x50)",
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -2046,7 +2171,7 @@ impl<'a> DescribePortalRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Describe Portal packet Portal Name field",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -2064,7 +2189,7 @@ impl<'a> DescribePortalRef<'a> {
 #[derive(Clone, Debug)]
 pub struct DescribePreparedRef<'a> {
     data: &'a [u8],
-//    prepared_name: String,
+    //    prepared_name: String,
 }
 
 impl<'a> DescribePreparedRef<'a> {
@@ -2076,12 +2201,10 @@ impl<'a> DescribePreparedRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        DescribePreparedRef {
-            data: bytes,
-        }
+        DescribePreparedRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
         *self.data.get(0).expect("insufficient bytes in PsqlClient Describe Prepared Statement packet to extract Message Identifier field")
     }
@@ -2138,7 +2261,7 @@ impl<'a> DescribePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Describe Prepared Statement packet (expected 0x44)",
-            })
+            });
         }
 
         if msg_length < 7 {
@@ -2146,7 +2269,7 @@ impl<'a> DescribePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "invalid Length field in PsqlClient Describe Prepared Statement packet (must be at least 7)",
-            })
+            });
         }
 
         if describe_type != b'S' {
@@ -2154,7 +2277,7 @@ impl<'a> DescribePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Describe Type field in PsqlClient Describe Prepared Statement packet (expected 0x53)",
-            })
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -2177,7 +2300,7 @@ impl<'a> DescribePreparedRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Prepared Statement packet Prepared Statement Name field",
-            })
+            });
         }
 
         if bytes.len() > msg_length {
@@ -2195,8 +2318,8 @@ impl<'a> DescribePreparedRef<'a> {
 #[derive(Clone, Debug)]
 pub struct ExecuteRef<'a> {
     data: &'a [u8],
-//    portal_name: String, // empty string means unnamed portal
-//    max_rows: Option<i32>, // None corresponds to 0 (no maximum)
+    //    portal_name: String, // empty string means unnamed portal
+    //    max_rows: Option<i32>, // None corresponds to 0 (no maximum)
 }
 
 impl<'a> ExecuteRef<'a> {
@@ -2208,19 +2331,22 @@ impl<'a> ExecuteRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        ExecuteRef {
-            data: bytes,
-        }
+        ExecuteRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Execute packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Execute packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Execute packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1)
+                .expect("insufficient bytes in PsqlClient Execute packet to extract Length field"),
+        )
     }
 
     #[inline]
@@ -2230,18 +2356,30 @@ impl<'a> ExecuteRef<'a> {
 
     #[inline]
     pub fn portal_name(&self) -> &str {
-        let payload = self.data.get(5..).expect("insufficient bytes in PsqlClient Execute packet to extract Portal Name field");
+        let payload = self
+            .data
+            .get(5..)
+            .expect("insufficient bytes in PsqlClient Execute packet to extract Portal Name field");
 
-        let (s, _) = utils::split_delim(payload, 0x00).expect("PsqlClient Execute packet missing null terminating byte for Portal Name field");
-        str::from_utf8(s).expect("PsqlClient Execute packet had an invalid UTF-8 sequence in Portal Name field")
+        let (s, _) = utils::split_delim(payload, 0x00).expect(
+            "PsqlClient Execute packet missing null terminating byte for Portal Name field",
+        );
+        str::from_utf8(s)
+            .expect("PsqlClient Execute packet had an invalid UTF-8 sequence in Portal Name field")
     }
 
     #[inline]
     pub fn max_rows(&self) -> Option<i32> {
-        let payload = self.data.get(5..).expect("insufficient bytes in PsqlClient Execute packet to extract Max Rows field");
+        let payload = self
+            .data
+            .get(5..)
+            .expect("insufficient bytes in PsqlClient Execute packet to extract Max Rows field");
 
-        let (_, rem) = utils::split_delim(payload, 0x00).expect("PsqlClient Execute packet missing null terminating byte prior to Max Rows field");
-        let max_rows_arr = utils::get_array(rem, 0).expect("insufficient bytes in PsqlClient Execute packet to extrack Max Rows field");
+        let (_, rem) = utils::split_delim(payload, 0x00).expect(
+            "PsqlClient Execute packet missing null terminating byte prior to Max Rows field",
+        );
+        let max_rows_arr = utils::get_array(rem, 0)
+            .expect("insufficient bytes in PsqlClient Execute packet to extrack Max Rows field");
         match i32::from_be_bytes(*max_rows_arr) {
             0 => None,
             i => Some(i),
@@ -2263,11 +2401,13 @@ impl<'a> ExecuteRef<'a> {
 
         let rem = match bytes.get(msg_length..) {
             Some(r) => r,
-            None => return Err(ValidationError {
-                layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Execute packet for Portal Name field",
-            })
+            None => {
+                return Err(ValidationError {
+                    layer: PsqlClient::name(),
+                    err_type: ValidationErrorType::InsufficientBytes,
+                    reason: "insufficient bytes in PsqlClient Execute packet for Portal Name field",
+                })
+            }
         };
 
         let (portal_name_bytes, max_rows_bytes) = match utils::split_delim(rem, 0x00) {
@@ -2284,7 +2424,7 @@ impl<'a> ExecuteRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Describe Prepared Statement packet (expected 0x44)",
-            })
+            });
         }
 
         if msg_length < 7 {
@@ -2292,7 +2432,7 @@ impl<'a> ExecuteRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "invalid Length field in PsqlClient Describe Prepared Statement packet (must be at least 7)",
-            })
+            });
         }
 
         match str::from_utf8(portal_name_bytes) {
@@ -2336,19 +2476,22 @@ impl<'a> FlushRef<'a> {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        FlushRef {
-            data: bytes,
-        }
+        FlushRef { data: bytes }
     }
 
-   #[inline]
+    #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Flush packet to extract Message Identifier field")
+        *self.data.get(0).expect(
+            "insufficient bytes in PsqlClient Flush packet to extract Message Identifier field",
+        )
     }
 
     #[inline]
     pub fn msg_length(&self) -> i32 {
-        i32::from_be_bytes(*utils::get_array(self.data, 1).expect("insufficient bytes in PsqlClient Flush packet to extract Length field"))
+        i32::from_be_bytes(
+            *utils::get_array(self.data, 1)
+                .expect("insufficient bytes in PsqlClient Flush packet to extract Length field"),
+        )
     }
 
     #[inline]
@@ -2363,8 +2506,9 @@ impl<'a> FlushRef<'a> {
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in PsqlClient Flush packet to extract message header fields",
-            })
+                reason:
+                    "insufficient bytes in PsqlClient Flush packet to extract message header fields",
+            }),
         };
 
         if msg_type != CLIENT_MSG_FLUSH {
@@ -2372,15 +2516,16 @@ impl<'a> FlushRef<'a> {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Flush packet (expected 0x48)",
-            })
+            });
         }
 
         if msg_length != 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "invalid Message Length field in PsqlClient Flush packet (must be equal to 5)",
-            })
+                reason:
+                    "invalid Message Length field in PsqlClient Flush packet (must be equal to 5)",
+            });
         }
 
         if bytes.len() > 5 {
@@ -2398,10 +2543,10 @@ impl<'a> FlushRef<'a> {
 #[derive(Clone, Debug)]
 pub struct FunctionCallRef<'a> {
     data: &'a [u8],
-//    object_id: i32,
-//    arg_fmt: Vec<FormatCode>,
-//    arg_values: Vec<Option<Vec<u8>>>,
-//    result_fmt: FormatCode,
+    //    object_id: i32,
+    //    arg_fmt: Vec<FormatCode>,
+    //    arg_values: Vec<Option<Vec<u8>>>,
+    //    result_fmt: FormatCode,
 }
 
 #[derive(Clone, Debug)]
@@ -2412,15 +2557,15 @@ pub struct GssEncRequestRef<'a> {
 #[derive(Clone, Debug)]
 pub struct ParseRef<'a> {
     data: &'a [u8],
-//    dst_stmt: String,
-//    query: String,
-//    type_ids: Vec<Option<i32>>,
+    //    dst_stmt: String,
+    //    query: String,
+    //    type_ids: Vec<Option<i32>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct QueryRef<'a> {
     data: &'a [u8],
-//    query: String,
+    //    query: String,
 }
 
 #[derive(Clone, Debug)]
@@ -2431,7 +2576,7 @@ pub struct SslRequestRef<'a> {
 #[derive(Clone, Debug)]
 pub struct StartupMessageRef<'a> {
     data: &'a [u8],
-//    params: Vec<(String, String)>,
+    //    params: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -2595,8 +2740,8 @@ pub enum ServerMessage {
 
 #[derive(Clone, Debug)]
 pub enum TransactionStatus {
-    Idle, // = 'I'
-    Transaction, // = 'T'
+    Idle,              // = 'I'
+    Transaction,       // = 'T'
     FailedTransaction, // = 'E'
 }
 
@@ -2619,9 +2764,7 @@ pub struct PsqlServerRef<'a> {
     data: &'a [u8],
 }
 
-impl<'a> PsqlServerRef<'a> {
-
-}
+impl<'a> PsqlServerRef<'a> {}
 
 impl<'a> FromBytesRef<'a> for PsqlServerRef<'a> {
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {

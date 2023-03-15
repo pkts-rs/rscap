@@ -135,7 +135,7 @@ pub trait ToSlice {
 pub trait ToBytes {
     /// Appends the layer's byte representation to the given byte vector and
     /// calculates the checksum of the given layer if needed.
-    /// 
+    ///
     /// NOTE: this API is unstable, and should not be relied upon. It may be
     /// modified or removed at any point.
     #[doc(hidden)]
@@ -689,9 +689,10 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
         match Self::validate(bytes) {
             Ok(_) => Ok(Self::from_bytes_unchecked(bytes)),
             Err(e) => match e.err_type {
-                ValidationErrorType::ExcessBytes(extra) => Ok(
-                    Self::from_bytes_trailing_unchecked(bytes, bytes.len() - extra),
-                ),
+                ValidationErrorType::ExcessBytes(extra) => Ok(Self::from_bytes_trailing_unchecked(
+                    bytes,
+                    bytes.len() - extra,
+                )),
                 _ => Err(e),
             },
         }
@@ -1072,7 +1073,7 @@ pub mod extras {
         fn eth_type(&self) -> u16;
     }
 
-//    pub trait MysqlMetadata: LayerMetadata {}
+    //    pub trait MysqlMetadata: LayerMetadata {}
 
     // ==========================================================
     //               Concrete Layer Metadata Types
@@ -1170,17 +1171,17 @@ pub mod extras {
         }
     }
 
-//    impl MysqlMetadata for RawMetadata {}
+    //    impl MysqlMetadata for RawMetadata {}
 
     layer_metadata!(MysqlPacketMetadata);
 
     layer_metadata!(MysqlClientMetadata);
 
-//    impl MysqlMetadata for MysqlClientMetadata {}
+    //    impl MysqlMetadata for MysqlClientMetadata {}
 
     layer_metadata!(MysqlServerMetadata);
 
-//    impl MysqlMetadata for MysqlServerMetadata {}
+    //    impl MysqlMetadata for MysqlServerMetadata {}
 
     layer_metadata!(PsqlClientMetadata);
 

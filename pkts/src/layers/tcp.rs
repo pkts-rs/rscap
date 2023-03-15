@@ -8,12 +8,12 @@ use crate::utils;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
-use core::iter::Iterator;
 use core::cmp;
+use core::iter::Iterator;
 
-use super::ip::DATA_PROTO_TCP;
 use super::ip::Ipv4Ref;
 use super::ip::Ipv6Ref;
+use super::ip::DATA_PROTO_TCP;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpMetadata)]
@@ -207,12 +207,13 @@ impl ToBytes for Tcp {
             None => (),
             Some(p) => p.to_bytes_chksummed(bytes, Some((TcpRef::layer_id_static(), start))),
         }
-        
+
         if self.chksum.is_none() {
             if let Some((id, prev_idx)) = prev {
                 let new_chksum = if id == Ipv4Ref::layer_id_static() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
-                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
+                    let addr_chksum =
+                        utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
                     data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
                     data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_TCP as u16);
                     let upper_layer_len = (bytes.len() - start) as u16;
@@ -221,20 +222,24 @@ impl ToBytes for Tcp {
                     data_chksum
                 } else if id == Ipv6Ref::layer_id_static() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
-                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
+                    let addr_chksum =
+                        utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
                     data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
                     let upper_layer_len = (bytes.len() - start) as u32;
-                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
-                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
+                    data_chksum =
+                        utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
+                    data_chksum =
+                        utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
                     // Omit adding 0, it does nothing anyways
                     data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_TCP as u16);
 
                     data_chksum
                 } else {
-                    return // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
+                    return; // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
                 };
 
-                let chksum_field: &mut [u8; 2] = &mut bytes[start + 16..start + 18].try_into().unwrap();
+                let chksum_field: &mut [u8; 2] =
+                    &mut bytes[start + 16..start + 18].try_into().unwrap();
                 *chksum_field = new_chksum.to_be_bytes();
             }
             // else don't bother calculating the checksum

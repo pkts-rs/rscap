@@ -3,7 +3,7 @@
 
 use std::cmp::Ordering;
 
-use super::{RawRef, Raw};
+use super::{Raw, RawRef};
 use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -19,7 +19,6 @@ use pkts_macros::{Layer, LayerRef, StatelessLayer};
 // first byte of a given packet!
 //
 // Mysql, unfortunately, is not so simple. It's gonna require some state.
-
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(MysqlPacketMetadata)]
@@ -44,8 +43,11 @@ impl MysqlPacket {
     pub fn payload_length(&self) -> u32 {
         let len = u32::try_from(4 + self.payload.as_ref().map_or(0, |p| p.len()))
             .expect("too many bytes in MysqlClient payload to represent in a 24-bit Length field");
-        assert!(len < 2^24 - 1, "too many bytes in MysqlClient payload to represent in a 24-bit Length field");
-        return len
+        assert!(
+            len < 2 ^ 24 - 1,
+            "too many bytes in MysqlClient payload to represent in a 24-bit Length field"
+        );
+        return len;
     }
 }
 
@@ -110,8 +112,10 @@ impl ToBytes for MysqlPacket {
         bytes.push(self.sequence_id);
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
         match &self.payload {
-            Some(p) => p.to_bytes_chksummed(bytes, Some((MysqlPacketRef::layer_id_static(), start))),
-            None => ()
+            Some(p) => {
+                p.to_bytes_chksummed(bytes, Some((MysqlPacketRef::layer_id_static(), start)))
+            }
+            None => (),
         }
     }
 }
@@ -136,19 +140,28 @@ impl<'a> MysqlPacketRef<'a> {
     #[inline]
     pub fn payload_length(&self) -> u32 {
         let mut len_arr = [0u8; 4];
-        len_arr[1..].copy_from_slice(self.data.get(..3).expect("insufficient bytes in MySQL Packet layer to extract Length field"));
+        len_arr[1..].copy_from_slice(
+            self.data
+                .get(..3)
+                .expect("insufficient bytes in MySQL Packet layer to extract Length field"),
+        );
 
         u32::from_be_bytes(len_arr)
     }
 
     #[inline]
     pub fn sequence_id(&self) -> u8 {
-        *self.data.get(3).expect("insufficient bytes in MySQL Packet layer to extract Sequence ID field")
+        *self
+            .data
+            .get(3)
+            .expect("insufficient bytes in MySQL Packet layer to extract Sequence ID field")
     }
 
     #[inline]
     pub fn payload(&self) -> &'a [u8] {
-        self.data.get(4..).expect("insufficient bytes in MySQL Packet layer to extract Payload field")
+        self.data
+            .get(4..)
+            .expect("insufficient bytes in MySQL Packet layer to extract Payload field")
     }
 }
 
@@ -164,7 +177,7 @@ impl<'a> LayerOffset for MysqlPacketRef<'a> {
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let mysql = MysqlPacketRef::from_bytes_unchecked(bytes);
         if mysql.payload_length() == 0 {
-            return None
+            return None;
         }
 
         if layer_type == RawRef::layer_id_static() {
@@ -199,7 +212,8 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 err_type: ValidationErrorType::ExcessBytes(curr_layer[4..].len() - payload_len),
-                reason: "more bytes in packet than advertised by the MySQL Packet header Length field",
+                reason:
+                    "more bytes in packet than advertised by the MySQL Packet header Length field",
             }),
             Ordering::Equal => Ok(()),
         }
@@ -210,7 +224,6 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         Ok(()) // Payload always defaults to `Raw`
     }
 }
-
 
 #[derive(Clone, Debug, Layer)]
 #[metadata_type(MysqlClientMetadata)]

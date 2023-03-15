@@ -1,24 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
+use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::error::*;
-
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(ExampleMetadata)]
 #[ref_type(ExampleRef)]
-pub struct Example {
+pub struct Example {}
 
-}
-
-impl Example {
-
-}
+impl Example {}
 
 impl CanSetPayload for Example {
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
@@ -78,9 +72,7 @@ pub struct ExampleRef<'a> {
     data: &'a [u8],
 }
 
-impl<'a> ExampleRef<'a> {
-
-}
+impl<'a> ExampleRef<'a> {}
 
 impl<'a> FromBytesRef<'a> for ExampleRef<'a> {
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
@@ -110,7 +102,7 @@ impl<'a> Validate for ExampleRef<'a> {
 //
 // 1. `LayerMut` - allows easy in-place modifications, but only for fields that are fixed-size.
 //
-// 2. `LayerBuilder` - a typed builder that allows passing in a 
+// 2. `LayerBuilder` - a typed builder that allows passing in a
 
 
 // `LayerBuilder<'a, 'b, State>`
@@ -234,7 +226,7 @@ impl<'b> State<'b> for TcpHeaderState {
 
 
 struct TcpBuilder<'b, S: State<'b>> {
-    
+
 //    layer: Ipv4Mut<'a>,
     state: S,
     _marker: PhantomData<&'b ()>,

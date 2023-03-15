@@ -9,7 +9,7 @@ pub use pkts::*;
 
 pub(crate) use pkts::utils;
 
-use std::{mem, ptr, net::SocketAddr, io::Read};
+use std::{io::Read, mem, net::SocketAddr, ptr};
 
 // 3 types: Sniffer, Spoofer and Socket
 // Sniffer is read-only, Spoofer is write-only, Socket is RW
@@ -33,21 +33,24 @@ impl Interface {
 
     pub fn new_raw(if_name: &[u8]) -> Result<Self, SockError> {
         if if_name.len() >= 16 && !(if_name.len() == 16 && if_name.contains(&0x00)) {
-            return Err(SockError { reason: format!("invalid interface name in Interface") }) // Interface name too long
+            return Err(SockError {
+                reason: format!("invalid interface name in Interface"),
+            }); // Interface name too long
         }
 
         let mut if_cstr = [0u8; libc::IF_NAMESIZE];
         if_cstr.as_mut_slice()[..if_name.len()].copy_from_slice(if_name);
 
         match unsafe { libc::if_nametoindex(if_cstr.as_ptr() as *const i8) } {
-            0 => Err(SockError { reason: format!("if_nametoindex failed in Interface") }),
+            0 => Err(SockError {
+                reason: format!("if_nametoindex failed in Interface"),
+            }),
             i => Ok(Interface {
                 if_name: if_cstr,
                 if_index: i,
-            })
+            }),
         }
     }
-
 
     #[inline]
     pub fn index(&self) -> u32 {
@@ -58,11 +61,11 @@ impl Interface {
     pub fn name(&self) -> &[u8] {
         for (idx, b) in self.if_name.iter().enumerate().rev() {
             if *b != 0 {
-                return &self.if_name[..idx + 1]
+                return &self.if_name[..idx + 1];
             }
         }
 
-        return &[]
+        return &[];
     }
 }
 
@@ -80,7 +83,11 @@ impl L2Socket {
         };
 
         let fd = match unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_RAW, protocol) } {
-            -1 => return Err(SockError { reason: format!("socket creation failed") }),
+            -1 => {
+                return Err(SockError {
+                    reason: format!("socket creation failed"),
+                })
+            }
             fd => fd,
         };
 
@@ -95,10 +102,18 @@ impl L2Socket {
                 sll_addr: [0; 8],
             };
 
-            let res = unsafe { libc::bind(fd, ptr::addr_of!(bind_iface) as *const libc::sockaddr, core::mem::size_of::<libc::sockaddr_ll>() as u32) };
+            let res = unsafe {
+                libc::bind(
+                    fd,
+                    ptr::addr_of!(bind_iface) as *const libc::sockaddr,
+                    core::mem::size_of::<libc::sockaddr_ll>() as u32,
+                )
+            };
             if res == -1 {
                 unsafe { libc::close(fd) };
-                return Err(SockError { reason: format!("bind failed") })
+                return Err(SockError {
+                    reason: format!("bind failed"),
+                });
             }
 
             // BUG: the byte representation of `Interface` is converted to its corresponding index, and that index is then used here.
@@ -107,18 +122,22 @@ impl L2Socket {
             // There is no solution to this issue in Linux; at best, we can mitigate the possibility of it happening by checking the name of
             // the interface immediately after the `bind` call:
             let mut buf = [0u8; libc::IF_NAMESIZE];
-            if unsafe { libc::if_indextoname(interface.index(), buf.as_mut_ptr() as *mut i8) } == core::ptr::null_mut() {
+            if unsafe { libc::if_indextoname(interface.index(), buf.as_mut_ptr() as *mut i8) }
+                == core::ptr::null_mut()
+            {
                 unsafe { libc::close(fd) };
-                return Err(SockError { reason: format!("if_indextoname failed") })
+                return Err(SockError {
+                    reason: format!("if_indextoname failed"),
+                });
             } else if buf != interface.if_name {
                 unsafe { libc::close(fd) };
-                return Err(SockError { reason: format!("interface changed between time of creation and time of bind") })
+                return Err(SockError {
+                    reason: format!("interface changed between time of creation and time of bind"),
+                });
             }
         }
 
-        Ok(L2Socket {
-            fd,
-        })
+        Ok(L2Socket { fd })
     }
 }
 
@@ -153,7 +172,7 @@ impl<const BLK_SZ: usize, const BLK_CNT: usize> L2RingSocket<BLK_SZ, BLK_CNT> {
         if res == -1 {
             return Err(SockError { reason: format!("failed to setsockopt PACKET_VERSION") })
         }
-        
+
         let t_req = libc::tpacket_req3 {
             tp_block_size: BLK_SZ as libc::c_uint,
             tp_block_nr: BLK_CNT as libc::c_uint,
@@ -319,7 +338,7 @@ pub struct PacketHeaderV3<'a> {
 
 impl<'a> PacketHeaderV3<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
-        PacketHeaderV3 { 
+        PacketHeaderV3 {
             data: bytes,
         }
     }
@@ -404,7 +423,7 @@ impl<const PKT_SIZE: usize, const RING_SIZE: usize> PacketMmapSniffer<PKT_SIZE, 
         };
 
         /*let hdr = libc::ethhdr {
-            
+
         }*/
 
         let res = unsafe { setsockopt(fd, libc::SOL_PACKET, libc::PACKET_RX_RING, t_req) };
@@ -424,7 +443,7 @@ impl<const PKT_SIZE: usize, const RING_SIZE: usize> PacketMmapSniffer<PKT_SIZE, 
 
         let recv = core::array::from_fn(move |i| unsafe { mapped_mem.add(i * tp_block_size as usize) as *mut [u8; PKT_SIZE] });
 
-        
+
 
         Ok(PacketMmapSniffer {
             fd,
@@ -503,7 +522,7 @@ pub fn interfaces() -> Vec<String> {
                 ifcu_buf: ifreq_buf.as_mut_ptr() as *mut i8,
             }
         };
-        
+
 
         match libc::ioctl(sock, libc::SIOCGIFCONF, &ifconf) {
             0 => (),
@@ -540,7 +559,7 @@ pub fn interfaces() -> Vec<String> {
 // Use getifaddrs:
 // https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/getifaddrs.3.html
 // (evidence it returns IPv6 addrs)
-// https://developer.apple.com/forums/thread/660434 
+// https://developer.apple.com/forums/thread/660434
 
 // FreeBSD:
 // Likewise does some interesting ABI mangling behavior that should be watched out for:
@@ -548,7 +567,7 @@ pub fn interfaces() -> Vec<String> {
 
 // Note that libpcap only uses either getifaddrs (if available) or SIOCGIFCONF (if getifaddrs isn't available):
 // https://github.com/the-tcpdump-group/libpcap/blob/fbcc461fbc2bd3b98de401cc04e6a4a10614e99f/fad-glifc.c
-// https://github.com/the-tcpdump-group/libpcap/blob/fbcc461fbc2bd3b98de401cc04e6a4a10614e99f/fad-getad.c 
+// https://github.com/the-tcpdump-group/libpcap/blob/fbcc461fbc2bd3b98de401cc04e6a4a10614e99f/fad-getad.c
 
 // Some interfaces may only support certain packet families (that don't include AF_PACKET):
 // https://stackoverflow.com/questions/19227781/linux-getting-all-network-interface-names

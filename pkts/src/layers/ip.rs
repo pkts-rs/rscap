@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-use core::iter::Iterator;
-use core::fmt::Debug;
 use core::cmp;
+use core::fmt::Debug;
+use core::iter::Iterator;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
@@ -11,7 +11,7 @@ use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::{error::*, utils};
 
-use super::sctp::{SctpRef, Sctp};
+use super::sctp::{Sctp, SctpRef};
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
@@ -391,7 +391,7 @@ pub const OPT_CLASS_DEBUGGING_MEASUREMENT: u8 = 2;
 pub const OPT_CLASS_RESERVED3: u8 = 3;
 
 /// An IPv4 (Internet Protocol version 4) packet.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -436,12 +436,12 @@ pub struct Ipv4 {
 
 impl Ipv4 {
     /// The Internet Header Length (IHL) of the packet.
-    /// 
+    ///
     /// This field indicates the number of bytes in the header of the IPv4 packet as a multiple of 4.
     /// So, an IHL of 8 would indicate that the first 32 bytes of the packet are the IPv4 header.
     /// The IHL must be a minimum of 20 bytes (i.e. a value of 5) to cover the necessary mandatory IPv4
     /// fields, and cannot exceed 60 bytes (i.e. a value of 15).
-    /// 
+    ///
     /// As an implementation-specific detail, the IHL is automatically calculated and cannot be manually
     /// set in an [`Ipv4`] object. This is because the IHL determines the number of bytes in the options field,
     /// and changing the IHL without changing the options would break the packet's structural composition.
@@ -455,7 +455,7 @@ impl Ipv4 {
     }
 
     /// The Differentiated Services Code Point (DSCP) of the packet.
-    /// 
+    ///
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn dscp(&self) -> DiffServ {
@@ -463,7 +463,7 @@ impl Ipv4 {
     }
 
     /// Sets the Differentiated Services Code Point (DSCP) of the packet.
-    /// 
+    ///
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn set_dscp(&mut self, dscp: DiffServ) {
@@ -471,7 +471,7 @@ impl Ipv4 {
     }
 
     /// The Explicit Congestion Notification (ECN) field of the packet.
-    /// 
+    ///
     /// More information on this field can be found in the [`Ecn`] documentation.
     /// or in RFC 3168.
     #[inline]
@@ -480,7 +480,7 @@ impl Ipv4 {
     }
 
     /// Sets the Explicit Congestion Notification (ECN) field of the packet.
-    /// 
+    ///
     /// More information on this field can be found in the [`Ecn`] documentation.
     /// or in RFC 3168.
     #[inline]
@@ -491,7 +491,7 @@ impl Ipv4 {
     /// The combined length (in bytes) of the packet's header and payload.
     ///
     /// This method will return the same integer value as [`Ipv4::len()`] if the
-    /// total packet size is less than or equal to 65535 bytes (i.e. the size 
+    /// total packet size is less than or equal to 65535 bytes (i.e. the size
     /// will fit in an unsigned 16-bit field). If the total packet size is greater
     /// than 65535 bytes, it will return `None`.
     #[inline]
@@ -501,14 +501,14 @@ impl Ipv4 {
 
     /// The Identifier field of the IPv4 packet, used for the purpose of reassembling
     /// fragmented packets.
-    /// 
+    ///
     /// This field has occasionally been used in contexts other than fragmentation,
     /// such as datagram deduplication. However, RFC 6864 now explicitly disallows
     /// such use:
-    /// 
+    ///
     /// "The IPv4 ID field MUST NOT be used for purposes other than
     ///  fragmentation and reassembly."
-    /// 
+    ///
     /// This RFC also mandates that the ID field has no meaning for atomic (unfragmented)
     /// packets, so it may be set to any value when the MF (More Fragments) flag is not set
     /// _and_ the Fragment Offset field is 0.
@@ -518,7 +518,7 @@ impl Ipv4 {
     }
 
     /// Sets the Identifier field of the IPv4 packet.
-    /// 
+    ///
     /// For more information on the Identifier field, see the
     /// [`Ipv4::identifier()`] method.
     #[inline]
@@ -527,7 +527,7 @@ impl Ipv4 {
     }
 
     /// The flags of the IPv4 packet.
-    /// 
+    ///
     /// See [`Ipv4Flags`] for more details on specific IPv4 flags and their uses.
     #[inline]
     pub fn flags(&self) -> Ipv4Flags {
@@ -543,14 +543,14 @@ impl Ipv4 {
     }
 
     /// The fragmentation offset of the packet.
-    /// 
-    /// If this value is not zero, it denotes that the packet's payload is a 
+    ///
+    /// If this value is not zero, it denotes that the packet's payload is a
     /// portion of a larger IPv4 payload that has been fragmented into several
     /// distinct packets. The offset indicates where this packet's payload fits
     /// relative to other fragments during reassembly.
-    /// 
+    ///
     /// IPv4 fragments are specified in 8-byte size increments, so the fragmentation
-    /// offset should be multiplied by 8 to obtain the actual byte offset of the 
+    /// offset should be multiplied by 8 to obtain the actual byte offset of the
     /// packet's contents.
     #[inline]
     pub fn frag_offset(&self) -> u16 {
@@ -558,7 +558,7 @@ impl Ipv4 {
     }
 
     /// Sets the fragmentation offset of the packet.
-    /// 
+    ///
     /// For more information on the Fragment Offset field, see the
     /// [Ipv4::frag_offset()`] method.
     #[inline]
@@ -568,14 +568,14 @@ impl Ipv4 {
     }
 
     /// The Time-To-Live (TTL) field of the packet.
-    /// 
+    ///
     /// This field is most commonly used to denote the number of routing hops a
     /// packet should travel before being dropped. When a router receives an IPv4
     /// packet, it checks the TTL field of the packet. If the TTL is 0, the router
     /// drops the packet and optionally sends an ICMP "Time Exceeded" packet back
     /// to the address that sent the packet; otherwise, it decrements the value of
     /// the TTL by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the TTL field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its
     /// functionality to identify routing paths across a network.
@@ -585,7 +585,7 @@ impl Ipv4 {
     }
 
     /// Sets the Time-To-Live (TTL) field of the packet.
-    /// 
+    ///
     /// For more information on the TTL field, see the [`Ipv4::ttl()`] method.
     #[inline]
     pub fn set_ttl(&mut self, ttl: u8) {
@@ -593,7 +593,7 @@ impl Ipv4 {
     }
 
     /// A single byte value that identifies the protocol of the packet's payload.
-    /// 
+    ///
     /// This field is automatically determined based on the payload of the packet
     /// and cannot be manually set. If such functionality is desired, use
     /// [`Ipv4Mut::set_protocol()`].
@@ -701,15 +701,9 @@ impl FromBytesCurrent for Ipv4 {
             self.payload = None;
         } else {
             self.payload = match ipv4.protocol() {
-                DATA_PROTO_TCP => {
-                    Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw())))
-                }
-                DATA_PROTO_UDP => {
-                    Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw())))
-                }
-                DATA_PROTO_SCTP => {
-                    Some(Box::new(Sctp::from_bytes_unchecked(ipv4.payload_raw())))
-                }
+                DATA_PROTO_TCP => Some(Box::new(Tcp::from_bytes_unchecked(ipv4.payload_raw()))),
+                DATA_PROTO_UDP => Some(Box::new(Udp::from_bytes_unchecked(ipv4.payload_raw()))),
+                DATA_PROTO_SCTP => Some(Box::new(Sctp::from_bytes_unchecked(ipv4.payload_raw()))),
                 /* Add additional protocols here */
                 _ => Some(Box::new(Raw::from_bytes_unchecked(ipv4.payload_raw()))),
             };
@@ -795,7 +789,7 @@ impl ToBytes for Ipv4 {
 }
 
 /// An IPv4 (Internet Protocol version 4) packet.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -839,7 +833,7 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     /// The Internet Header Length (IHL) of the packet.
-    /// 
+    ///
     /// The number of bytes present in the IPv4 header (and, by extension, the
     /// number of bytes of IPv4 Options) is determined by multiplying this value
     /// by 4. The IHL must be a minimum value of 5, as the first 20 bytes of the
@@ -853,7 +847,7 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     /// The Differentiated Services Code Point (DSCP) of the packet.
-    /// 
+    ///
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn dscp(&self) -> DiffServ {
@@ -861,7 +855,7 @@ impl<'a> Ipv4Ref<'a> {
     }
 
     /// The Explicit Congestion Notification (ECN) field of the packet.
-    /// 
+    ///
     /// More information on this field can be found in the [`Ecn`] documentation.
     #[inline]
     pub fn ecn(&self) -> Ecn {
@@ -873,108 +867,162 @@ impl<'a> Ipv4Ref<'a> {
     /// The combined length (in bytes) of the packet's header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(self.data[2..4].try_into().expect("insufficient bytes in IPv4 packet to retrieve Packet Length field"))
+        u16::from_be_bytes(
+            self.data[2..4]
+                .try_into()
+                .expect("insufficient bytes in IPv4 packet to retrieve Packet Length field"),
+        )
     }
 
     /// The Identifier field of the IPv4 packet, used for the purpose of reassembling
     /// fragmented packets.
-    /// 
+    ///
     /// This field has occasionally been used in contexts other than fragmentation,
     /// such as datagram deduplication. However, RFC 6864 now explicitly disallows
     /// such use:
-    /// 
+    ///
     /// "The IPv4 ID field MUST NOT be used for purposes other than
     ///  fragmentation and reassembly."
-    /// 
+    ///
     /// This RFC also mandates that the ID field has no meaning for atomic (unfragmented)
     /// packets, so it may be set to any value when the MF (More Fragments) flag is not set
     /// _and_ the Fragment Offset field is 0.
     #[inline]
     pub fn identifier(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in IPv4 packet to retrieve Identifier field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(4..6)
+                .expect("insufficient bytes in IPv4 packet to retrieve Identifier field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The flags of the IPv4 packet.
-    /// 
+    ///
     /// See [`Ipv4Flags`] for more details on specific IPv4 flags and their uses.
     #[inline]
     pub fn flags(&self) -> Ipv4Flags {
-        Ipv4Flags::from(*self.data.get(6).expect("insufficient bytes in IPv4 packet to retrieve Flags field"))
+        Ipv4Flags::from(
+            *self
+                .data
+                .get(6)
+                .expect("insufficient bytes in IPv4 packet to retrieve Flags field"),
+        )
     }
 
     /// The fragmentation offset of the packet.
-    /// 
-    /// If this value is not zero, it denotes that the packet's payload is a 
+    ///
+    /// If this value is not zero, it denotes that the packet's payload is a
     /// portion of a larger IPv4 payload that has been fragmented into several
     /// distinct packets. The offset indicates where this packet's payload fits
     /// relative to other fragments during reassembly.
-    /// 
+    ///
     /// IPv4 fragments are specified in 8-byte size increments, so the fragmentation
-    /// offset should be multiplied by 8 to obtain the actual byte offset of the 
+    /// offset should be multiplied by 8 to obtain the actual byte offset of the
     /// packet's contents.
     #[inline]
     pub fn frag_offset(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(6..8).expect("insufficient bytes in IPv4 packet to retrieve Fragmentation Offset field").try_into().unwrap()) & 0b0001111111111111
+        u16::from_be_bytes(
+            self.data
+                .get(6..8)
+                .expect("insufficient bytes in IPv4 packet to retrieve Fragmentation Offset field")
+                .try_into()
+                .unwrap(),
+        ) & 0b0001111111111111
     }
 
     /// The Time-To-Live (TTL) field of the packet.
-    /// 
+    ///
     /// This field is most commonly used to denote the number of routing hops a
     /// packet should travel before being dropped. When a router receives an IPv4
     /// packet, it checks the TTL field of the packet. If the TTL is 0, the router
     /// drops the packet and optionally sends an ICMP "Time Exceeded" packet back
     /// to the address that sent the packet; otherwise, it decrements the value of
     /// the TTL by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the TTL field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its
     /// functionality to identify routing paths across a network.
     #[inline]
     pub fn ttl(&self) -> u8 {
-        *self.data.get(8).expect("insufficient bytes in IPv4 packet to retrieve Time To Live field")
+        *self
+            .data
+            .get(8)
+            .expect("insufficient bytes in IPv4 packet to retrieve Time To Live field")
     }
 
     /// A single byte value that identifies the protocol of the packet's payload.
-    /// 
+    ///
     /// This field is automatically determined based on the payload of the packet
     /// and cannot be manually set. If such functionality is desired, use
     /// [`Ipv4Mut::set_protocol()`].
     #[inline]
     pub fn protocol(&self) -> u8 {
-        *self.data.get(9).expect("insufficient bytes in IPv4 packet to retrieve Protocol field")
+        *self
+            .data
+            .get(9)
+            .expect("insufficient bytes in IPv4 packet to retrieve Protocol field")
     }
 
     /// The checksum of the packet, calculated across the entirity of the
     /// packet's header and payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(10..12).expect("insufficient bytes in IPv4 packet to retrieve Checksum field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(10..12)
+                .expect("insufficient bytes in IPv4 packet to retrieve Checksum field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The source IP address of the packet.
     #[inline]
     pub fn src(&self) -> u32 {
-        u32::from_be_bytes(self.data.get(12..16).expect("insufficient bytes in IPv4 packet to retrieve Source IP Address field").try_into().unwrap())
+        u32::from_be_bytes(
+            self.data
+                .get(12..16)
+                .expect("insufficient bytes in IPv4 packet to retrieve Source IP Address field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The destination IP address of the packet.
     #[inline]
     pub fn dst(&self) -> u32 {
-        u32::from_be_bytes(self.data.get(16..20).expect("insufficient bytes in IPv4 packet to retrieve Destination IP Address field").try_into().unwrap())
+        u32::from_be_bytes(
+            self.data
+                .get(16..20)
+                .expect(
+                    "insufficient bytes in IPv4 packet to retrieve Destination IP Address field",
+                )
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The Ipv4 Options fields of the packet.
     #[inline]
     pub fn options(&self) -> Ipv4OptionsRef<'a> {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
-        Ipv4OptionsRef::from_bytes_unchecked(self.data.get(20..options_end).expect("insufficient bytes in IPv4 packet to retrieve Ipv4 Options fields"))
+        Ipv4OptionsRef::from_bytes_unchecked(
+            self.data
+                .get(20..options_end)
+                .expect("insufficient bytes in IPv4 packet to retrieve Ipv4 Options fields"),
+        )
     }
 
     /// The payload of the packet.
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
-        &self.data.get(options_end..).expect("insufficient bytes in IPv4 packet to retrieve payload")
+        &self
+            .data
+            .get(options_end..)
+            .expect("insufficient bytes in IPv4 packet to retrieve payload")
     }
 }
 
@@ -997,21 +1045,24 @@ impl LayerOffset for Ipv4Ref<'_> {
                 if layer_type == TcpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
+                    TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                        .map(|val| ihl + val)
                 }
             }
             Some(DATA_PROTO_UDP) => {
                 if layer_type == UdpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
+                    UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                        .map(|val| ihl + val)
                 }
             }
             Some(DATA_PROTO_SCTP) => {
                 if layer_type == SctpRef::layer_id_static() {
                     Some(ihl)
                 } else {
-                    SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type).map(|val| ihl + val)
+                    SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
+                        .map(|val| ihl + val)
                 }
             }
             _ => {
@@ -1158,7 +1209,7 @@ impl Validate for Ipv4Ref<'_> {
 }
 
 /// An IPv4 (Internet Protocol version 4) packet.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -1207,12 +1258,15 @@ impl<'a> Ipv4Mut<'a> {
     /// Sets the Internet Protocol version field of the packet (should be equal to 4).
     #[inline]
     pub fn set_version_unchecked(&mut self, version: u8) {
-        let version_byte = self.data.get_mut(0).expect("insufficient bytes in IPv4 packet to set IP Version field");
+        let version_byte = self
+            .data
+            .get_mut(0)
+            .expect("insufficient bytes in IPv4 packet to set IP Version field");
         *version_byte = (*version_byte & 0x0F) | (version << 4);
     }
 
     /// The Internet Header Length (IHL) of the packet.
-    /// 
+    ///
     /// The number of bytes present in the IPv4 header (and, by extension, the
     /// number of bytes of IPv4 Options) is determined by multiplying this value
     /// by 4. The IHL must be a minimum value of 5, as the first 20 bytes of the
@@ -1228,12 +1282,15 @@ impl<'a> Ipv4Mut<'a> {
     /// Sets the Internet Header Length (IHL) of the packet.
     #[inline]
     pub fn set_ihl_unchecked(&mut self, ihl: u8) {
-        let ihl_field = self.data.get_mut(0).expect("insufficient bytes in IPv4 packet to set Internet Header Length (IHL) field");
+        let ihl_field = self
+            .data
+            .get_mut(0)
+            .expect("insufficient bytes in IPv4 packet to set Internet Header Length (IHL) field");
         *ihl_field = (*ihl_field & 0xF0) | (ihl & 0x0F);
     }
 
     /// The Differentiated Services Code Point (DSCP) of the packet.
-    /// 
+    ///
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn dscp(&self) -> DiffServ {
@@ -1245,12 +1302,15 @@ impl<'a> Ipv4Mut<'a> {
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn set_dscp(&mut self, dscp: DiffServ) {
-        let dscp_field = self.data.get_mut(1).expect("insufficient bytes in IPv4 packet to set DSCP field");
+        let dscp_field = self
+            .data
+            .get_mut(1)
+            .expect("insufficient bytes in IPv4 packet to set DSCP field");
         *dscp_field = (*dscp_field & 0b_0000_0011) | (dscp.value << 2);
     }
 
     /// The Explicit Congestion Notification (ECN) field of the packet.
-    /// 
+    ///
     /// More information on this field can be found in the [`Ecn`] documentation.
     #[inline]
     pub fn ecn(&self) -> Ecn {
@@ -1260,43 +1320,64 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     /// Sets the Explicit Congestion Notification (ECN) field of the packet.
-    /// 
+    ///
     /// More information on this field can be found in the [`Ecn`] documentation.
     #[inline]
     pub fn set_ecn(&mut self, ecn: Ecn) {
-        let ecn_field = self.data.get_mut(1).expect("insufficient bytes in IPv4 packet to set ECN field");
+        let ecn_field = self
+            .data
+            .get_mut(1)
+            .expect("insufficient bytes in IPv4 packet to set ECN field");
         *ecn_field = (*ecn_field & 0b_1111_1100) | (ecn as u8 & 0b_0000_0011);
     }
 
     /// The combined length (in bytes) of the packet's header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(self.data[2..4].try_into().expect("insufficient bytes in IPv4 packet to retrieve Packet Length field"))
+        u16::from_be_bytes(
+            self.data[2..4]
+                .try_into()
+                .expect("insufficient bytes in IPv4 packet to retrieve Packet Length field"),
+        )
     }
 
     /// Sets the combined length (in bytes) of the packet's header and payload.
     #[inline]
     pub fn set_packet_length(&mut self, len: u16) {
-        *self.data.get_mut(2).expect("insufficient bytes in IPv4 packet to set Packet Length field") = (len >> 8) as u8;
-        *self.data.get_mut(3).expect("insufficient bytes in IPv4 packet to set Packet Length field") = (len & 0xFF) as u8;
+        *self
+            .data
+            .get_mut(2)
+            .expect("insufficient bytes in IPv4 packet to set Packet Length field") =
+            (len >> 8) as u8;
+        *self
+            .data
+            .get_mut(3)
+            .expect("insufficient bytes in IPv4 packet to set Packet Length field") =
+            (len & 0xFF) as u8;
     }
 
     /// The Identifier field of the IPv4 packet, used for the purpose of reassembling
     /// fragmented packets.
-    /// 
+    ///
     /// This field has occasionally been used in contexts other than fragmentation,
     /// such as datagram deduplication. However, RFC 6864 now explicitly disallows
     /// such use:
-    /// 
+    ///
     /// "The IPv4 ID field MUST NOT be used for purposes other than
     ///  fragmentation and reassembly."
-    /// 
+    ///
     /// This RFC also mandates that the ID field has no meaning for atomic (unfragmented)
     /// packets, so it may be set to any value when the MF (More Fragments) flag is not set
     /// _and_ the Fragment Offset field is 0.
     #[inline]
     pub fn identifier(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in IPv4 packet to retrieve Identifier field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(4..6)
+                .expect("insufficient bytes in IPv4 packet to retrieve Identifier field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     #[inline]
@@ -1306,11 +1387,16 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     /// The flags of the IPv4 packet.
-    /// 
+    ///
     /// See [`Ipv4Flags`] for more details on specific IPv4 flags and their uses.
     #[inline]
     pub fn flags(&self) -> Ipv4Flags {
-        Ipv4Flags::from(*self.data.get(6).expect("insufficient bytes in IPv4 packet to retrieve Flags field"))
+        Ipv4Flags::from(
+            *self
+                .data
+                .get(6)
+                .expect("insufficient bytes in IPv4 packet to retrieve Flags field"),
+        )
     }
 
     #[inline]
@@ -1320,18 +1406,24 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     /// The fragmentation offset of the packet.
-    /// 
-    /// If this value is not zero, it denotes that the packet's payload is a 
+    ///
+    /// If this value is not zero, it denotes that the packet's payload is a
     /// portion of a larger IPv4 payload that has been fragmented into several
     /// distinct packets. The offset indicates where this packet's payload fits
     /// relative to other fragments during reassembly.
-    /// 
+    ///
     /// IPv4 fragments are specified in 8-byte size increments, so the fragmentation
-    /// offset should be multiplied by 8 to obtain the actual byte offset of the 
+    /// offset should be multiplied by 8 to obtain the actual byte offset of the
     /// packet's contents.
     #[inline]
     pub fn frag_offset(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(6..8).expect("insufficient bytes in IPv4 packet to retrieve Fragmentation Offset field").try_into().unwrap()) & 0b0001111111111111
+        u16::from_be_bytes(
+            self.data
+                .get(6..8)
+                .expect("insufficient bytes in IPv4 packet to retrieve Fragmentation Offset field")
+                .try_into()
+                .unwrap(),
+        ) & 0b0001111111111111
     }
 
     #[inline]
@@ -1342,20 +1434,23 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     /// The Time-To-Live (TTL) field of the packet.
-    /// 
+    ///
     /// This field is most commonly used to denote the number of routing hops a
     /// packet should travel before being dropped. When a router receives an IPv4
     /// packet, it checks the TTL field of the packet. If the TTL is 0, the router
     /// drops the packet and optionally sends an ICMP "Time Exceeded" packet back
     /// to the address that sent the packet; otherwise, it decrements the value of
     /// the TTL by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the TTL field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its
     /// functionality to identify routing paths across a network.
     #[inline]
     pub fn ttl(&self) -> u8 {
-        *self.data.get(8).expect("insufficient bytes in IPv4 packet to retrieve Time To Live field")
+        *self
+            .data
+            .get(8)
+            .expect("insufficient bytes in IPv4 packet to retrieve Time To Live field")
     }
 
     #[inline]
@@ -1364,37 +1459,60 @@ impl<'a> Ipv4Mut<'a> {
     }
 
     /// A single byte value that identifies the protocol of the packet's payload.
-    /// 
+    ///
     /// This field is automatically determined based on the payload of the packet
     /// and cannot be manually set. If such functionality is desired, use
     /// [`Ipv4Mut::set_protocol()`].
     #[inline]
     pub fn protocol(&self) -> u8 {
-        *self.data.get(9).expect("insufficient bytes in IPv4 packet to retrieve Protocol field")
+        *self
+            .data
+            .get(9)
+            .expect("insufficient bytes in IPv4 packet to retrieve Protocol field")
     }
 
     #[inline]
     pub fn set_protocol(&mut self, proto: u8) {
-        *self.data.get_mut(9).expect("insufficient bytes in IPv4 packet to set Protocol field") = proto;
+        *self
+            .data
+            .get_mut(9)
+            .expect("insufficient bytes in IPv4 packet to set Protocol field") = proto;
     }
 
     /// The checksum of the packet, calculated across the entirity of the
     /// packet's header and payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(10..12).expect("insufficient bytes in IPv4 packet to retrieve Checksum field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(10..12)
+                .expect("insufficient bytes in IPv4 packet to retrieve Checksum field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
-        let chksum_field: &mut [u8; 2] = self.data.get_mut(10..12).expect("insufficient bytes in IPv4 packet to set Checksum field").try_into().unwrap();
+        let chksum_field: &mut [u8; 2] = self
+            .data
+            .get_mut(10..12)
+            .expect("insufficient bytes in IPv4 packet to set Checksum field")
+            .try_into()
+            .unwrap();
         *chksum_field = chksum.to_be_bytes();
     }
 
     /// The source IP address of the packet.
     #[inline]
     pub fn src(&self) -> u32 {
-        u32::from_be_bytes(self.data.get(12..16).expect("insufficient bytes in IPv4 packet to retrieve Source IP Address field").try_into().unwrap())
+        u32::from_be_bytes(
+            self.data
+                .get(12..16)
+                .expect("insufficient bytes in IPv4 packet to retrieve Source IP Address field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     #[inline]
@@ -1408,7 +1526,15 @@ impl<'a> Ipv4Mut<'a> {
     /// The destination IP address of the packet.
     #[inline]
     pub fn dst(&self) -> u32 {
-        u32::from_be_bytes(self.data.get(16..20).expect("insufficient bytes in IPv4 packet to retrieve Destination IP Address field").try_into().unwrap())
+        u32::from_be_bytes(
+            self.data
+                .get(16..20)
+                .expect(
+                    "insufficient bytes in IPv4 packet to retrieve Destination IP Address field",
+                )
+                .try_into()
+                .unwrap(),
+        )
     }
 
     #[inline]
@@ -1907,7 +2033,7 @@ pub struct Ipv4OptionsBuilder<'a, const N: usize> {
 
 impl<'a, const N: usize> Ipv4OptionsBuilder<'a, N> {
     pub fn build<'b>(ipv4: &mut Ipv4Mut<'b>) -> Result<(), ()> {
-        
+
     }
 }
 */
@@ -1942,7 +2068,6 @@ impl Ipv4Option {
         v
     }
 }
-
 
 impl Ipv4Option {
     #[inline]
@@ -2181,7 +2306,7 @@ impl<'a> Ipv4OptionMut<'a> {
 // =============================================================================
 
 /// An IPv6 (Internet Protocol version 6) packet.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2245,15 +2370,15 @@ impl Ipv6 {
     }
 
     /// The hop limit of the packet.
-    /// 
+    ///
     /// Similar to [`Ipv4::ttl()`], this field indicates the number of routing hops the
     /// message should be permitted to traverse before being dropped.
-    /// 
+    ///
     /// When a router receives an IPv6 packet, it checks the Hop Limit field of the packet.
-    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP 
+    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP
     /// "Time Exceeded" packet back to the address that sent the packet; otherwise, it
     /// decrements the value of the hop limit by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the Hop Limit field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its functionality
     /// to identify routing paths across a network.
@@ -2263,7 +2388,7 @@ impl Ipv6 {
     }
 
     /// Sets the hop limit of the packet.
-    /// 
+    ///
     /// For more information on the Hop Limit field, see the [`Ipv6::hop_limit()`] method.
     pub fn set_hop_limit(&mut self, hop_limit: u8) {
         self.hop_limit = hop_limit;
@@ -2271,7 +2396,7 @@ impl Ipv6 {
 
     /// The combined length of the IPv6 extension headers and payload.
     #[inline]
-    pub fn data_length(&self) ->Option<u16> {
+    pub fn data_length(&self) -> Option<u16> {
         todo!()
     }
 
@@ -2326,18 +2451,10 @@ impl FromBytesCurrent for Ipv6 {
             self.payload = None;
         } else {
             self.payload = match ipv6.next_header() {
-                DATA_PROTO_IPV6_NO_NXT => {
-                    None
-                }
-                DATA_PROTO_TCP => {
-                    Some(Box::new(Tcp::from_bytes_unchecked(ipv6.payload_raw())))
-                }
-                DATA_PROTO_UDP => {
-                    Some(Box::new(Udp::from_bytes_unchecked(ipv6.payload_raw())))
-                }
-                DATA_PROTO_SCTP => {
-                    Some(Box::new(Sctp::from_bytes_unchecked(ipv6.payload_raw())))
-                }
+                DATA_PROTO_IPV6_NO_NXT => None,
+                DATA_PROTO_TCP => Some(Box::new(Tcp::from_bytes_unchecked(ipv6.payload_raw()))),
+                DATA_PROTO_UDP => Some(Box::new(Udp::from_bytes_unchecked(ipv6.payload_raw()))),
+                DATA_PROTO_SCTP => Some(Box::new(Sctp::from_bytes_unchecked(ipv6.payload_raw()))),
                 /* Add additional protocols here */
                 _ => Some(Box::new(Raw::from_bytes_unchecked(ipv6.payload_raw()))),
             };
@@ -2387,13 +2504,21 @@ impl ToBytes for Ipv6 {
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.push(0b_0110_0000 | ((self.traffic_class.value & 0xF0) >> 4));
-        bytes.push(((self.traffic_class.value & 0x0F) << 4) | ((self.flow_label.value & 0x_00_0F_00_00) >> 16) as u8);
+        bytes.push(
+            ((self.traffic_class.value & 0x0F) << 4)
+                | ((self.flow_label.value & 0x_00_0F_00_00) >> 16) as u8,
+        );
         bytes.push(((self.flow_label.value & 0x_00_00_FF_00) >> 8) as u8);
         bytes.push((self.flow_label.value & 0x_00_00_00_FF) as u8);
-        bytes.extend(u16::try_from(self.payload.as_ref().map_or(0, |p| p.len())).unwrap_or(u16::MAX).to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.payload.as_ref().map_or(0, |p| p.len()))
+                .unwrap_or(u16::MAX)
+                .to_be_bytes(),
+        );
         bytes.push(match self.payload.as_ref() {
             None => DATA_PROTO_IPV6_NO_NXT,
-            Some(p) => p.layer_metadata()
+            Some(p) => p
+                .layer_metadata()
                 .as_any()
                 .downcast_ref::<&dyn Ipv6PayloadMetadata>()
                 .map(|m| m.ip_data_protocol())
@@ -2409,7 +2534,7 @@ impl ToBytes for Ipv6 {
 }
 
 /// An IPv6 (Internet Protocol version 6) packet.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2456,8 +2581,15 @@ impl<'a> Ipv6Ref<'a> {
     #[inline]
     pub fn traffic_class(&self) -> TrafficClass {
         TrafficClass {
-            value: self.data.first().expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field") << 4
-                + self.data.get(2).expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field") >> 4
+            value: self
+                .data
+                .first()
+                .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
+                << 4 + self
+                    .data
+                    .get(2)
+                    .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
+                >> 4,
         }
     }
 
@@ -2466,7 +2598,9 @@ impl<'a> Ipv6Ref<'a> {
     pub fn flow_label(&self) -> FlowLabel {
         FlowLabel {
             value: match (self.data.get(2), self.data.get(3), self.data.get(4)) {
-                (Some(&a), Some(&b), Some(&c)) => (((a & 0x0F) as u32) << 16) + ((b as u32) << 8) + c as u32,
+                (Some(&a), Some(&b), Some(&c)) => {
+                    (((a & 0x0F) as u32) << 16) + ((b as u32) << 8) + c as u32
+                }
                 _ => panic!("insufficient bytes in IPv6 packet to retrieve Flow Label field"),
             },
         }
@@ -2475,54 +2609,82 @@ impl<'a> Ipv6Ref<'a> {
     /// The combined length of the IPv6 extension headers and payload.
     #[inline]
     pub fn data_length(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in IPv6 packet to retrieve Data Length field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(4..6)
+                .expect("insufficient bytes in IPv6 packet to retrieve Data Length field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// A single byte value indicating the next header type following the IPv6 header.
-    /// 
+    ///
     /// If any IPv6 Extension Headers are present in the packet, the Next Header Type
     /// field will indicate the type of the first Extension Header. That option then
     /// contains a Next Header field that indicates the type of the next header after
     /// it, and so on; the final header in the IPv6 packet indicates the type of the payload.
-    /// 
+    ///
     /// The `pkts` library treats each of these Extension Headers as a distinct [`Layer`] type.
     #[inline]
     pub fn next_header(&self) -> u8 {
-        *self.data.get(6).expect("insufficient bytes in IPv6 packet to retrieve Next Header Type field")
+        *self
+            .data
+            .get(6)
+            .expect("insufficient bytes in IPv6 packet to retrieve Next Header Type field")
     }
 
     /// The hop limit of the packet.
-    /// 
+    ///
     /// Similar to [`Ipv4::ttl()`], this field indicates the number of routing hops the
     /// message should be permitted to traverse before being dropped.
-    /// 
+    ///
     /// When a router receives an IPv6 packet, it checks the Hop Limit field of the packet.
-    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP 
+    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP
     /// "Time Exceeded" packet back to the address that sent the packet; otherwise, it
     /// decrements the value of the hop limit by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the Hop Limit field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its functionality
     /// to identify routing paths across a network.
     pub fn hop_limit(&self) -> u8 {
-        *self.data.get(7).expect("insufficient bytes in IPv6 packet to retrieve Hop Limit field")
+        *self
+            .data
+            .get(7)
+            .expect("insufficient bytes in IPv6 packet to retrieve Hop Limit field")
     }
 
     /// The source IP address of the packet.
     #[inline]
     pub fn src(&self) -> u128 {
-        u128::from_be_bytes(self.data.get(8..24).expect("insufficient bytes in IPv6 packet to retrieve Source IP Address field").try_into().unwrap())
+        u128::from_be_bytes(
+            self.data
+                .get(8..24)
+                .expect("insufficient bytes in IPv6 packet to retrieve Source IP Address field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The destination IP address of the packet.
     #[inline]
     pub fn dst(&self) -> u128 {
-        u128::from_be_bytes(self.data.get(24..40).expect("insufficient bytes in IPv6 packet to retrieve Destination IP Address field").try_into().unwrap())
+        u128::from_be_bytes(
+            self.data
+                .get(24..40)
+                .expect(
+                    "insufficient bytes in IPv6 packet to retrieve Destination IP Address field",
+                )
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// The payload of the packet, in raw bytes.
     pub fn payload_raw(&self) -> &[u8] {
-        self.data.get(40..).expect("insufficient bytes in IPv6 packet to retrieve payload bytes")
+        self.data
+            .get(40..)
+            .expect("insufficient bytes in IPv6 packet to retrieve payload bytes")
     }
 }
 
@@ -2536,28 +2698,33 @@ impl<'a> FromBytesRef<'a> for Ipv6Ref<'a> {
 impl LayerOffset for Ipv6Ref<'_> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
-        let payload = bytes.get(40..).expect("insufficient bytes in IPv6 packet to retrieve payload");
+        let payload = bytes
+            .get(40..)
+            .expect("insufficient bytes in IPv6 packet to retrieve payload");
 
         match bytes.get(6).map(|b| *b) {
             Some(DATA_PROTO_TCP) => {
                 if layer_type == TcpRef::layer_id_static() {
                     Some(40)
                 } else {
-                    TcpRef::payload_byte_index_default(payload, layer_type).map(|offset| 40 + offset)
+                    TcpRef::payload_byte_index_default(payload, layer_type)
+                        .map(|offset| 40 + offset)
                 }
             }
             Some(DATA_PROTO_UDP) => {
                 if layer_type == UdpRef::layer_id_static() {
                     Some(40)
                 } else {
-                    UdpRef::payload_byte_index_default(payload, layer_type).map(|offset| 40 + offset)
+                    UdpRef::payload_byte_index_default(payload, layer_type)
+                        .map(|offset| 40 + offset)
                 }
             }
             Some(DATA_PROTO_SCTP) => {
                 if layer_type == SctpRef::layer_id_static() {
                     Some(40)
                 } else {
-                    SctpRef::payload_byte_index_default(payload, layer_type).map(|offset| 40 + offset)
+                    SctpRef::payload_byte_index_default(payload, layer_type)
+                        .map(|offset| 40 + offset)
                 }
             }
             _ => {
@@ -2574,16 +2741,20 @@ impl LayerOffset for Ipv6Ref<'_> {
 impl Validate for Ipv6Ref<'_> {
     #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        let (version, data_len) = match (curr_layer.first(), curr_layer.get(4..6)) {
-            (Some(&ver), Some(len_arr)) => (ver, u16::from_be_bytes(len_arr.try_into().unwrap()) as usize),
-            _ => return Err(ValidationError {
-                layer: Ipv4::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
-                reason:
-                    "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
-            }),
-            // If the Version byte is missing, the Data Length field will be too--we just report that. QED. 
-        };
+        let (version, data_len) =
+            match (curr_layer.first(), curr_layer.get(4..6)) {
+                (Some(&ver), Some(len_arr)) => (
+                    ver,
+                    u16::from_be_bytes(len_arr.try_into().unwrap()) as usize,
+                ),
+                _ => return Err(ValidationError {
+                    layer: Ipv4::name(),
+                    err_type: ValidationErrorType::InsufficientBytes,
+                    reason:
+                        "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
+                }),
+                // If the Version byte is missing, the Data Length field will be too--we just report that. QED.
+            };
 
         if 40 + data_len > curr_layer.len() {
             return Err(ValidationError {
@@ -2618,26 +2789,26 @@ impl Validate for Ipv6Ref<'_> {
 
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
-        let next_header_type = match curr_layer.get(6) {
-            Some(&t) => t,
-            None => return Err(ValidationError {
-                layer: Self::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
-                reason:
-                    "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
-            }),
-        };
-
-        let next_layer =
-            match curr_layer.get(40..) {
-                Some(l) => l,
+        let next_header_type =
+            match curr_layer.get(6) {
+                Some(&t) => t,
                 None => return Err(ValidationError {
                     layer: Self::name(),
                     err_type: ValidationErrorType::InsufficientBytes,
                     reason:
-                        "packet too short for Ipv6 frame--insufficient bytes available for Ipv6 header",
+                        "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
                 }),
             };
+
+        let next_layer = match curr_layer.get(40..) {
+            Some(l) => l,
+            None => return Err(ValidationError {
+                layer: Self::name(),
+                err_type: ValidationErrorType::InsufficientBytes,
+                reason:
+                    "packet too short for Ipv6 frame--insufficient bytes available for Ipv6 header",
+            }),
+        };
 
         match next_header_type {
             DATA_PROTO_TCP => TcpRef::validate(next_layer),
@@ -2673,7 +2844,10 @@ impl<'a> Ipv6Mut<'a> {
     /// Sets the Internet Protocol Version of the packet.
     #[inline]
     pub fn set_version_unchecked(&mut self, version: u8) {
-        let first = self.data.first_mut().expect("insufficient bytes in IPv6 packet to set IP Version field");
+        let first = self
+            .data
+            .first_mut()
+            .expect("insufficient bytes in IPv6 packet to set IP Version field");
         *first = (*first & 0x0F) | (version << 4);
     }
 
@@ -2681,17 +2855,30 @@ impl<'a> Ipv6Mut<'a> {
     #[inline]
     pub fn traffic_class(&self) -> TrafficClass {
         TrafficClass {
-            value: self.data.first().expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field") << 4
-                + self.data.get(2).expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field") >> 4
+            value: self
+                .data
+                .first()
+                .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
+                << 4 + self
+                    .data
+                    .get(2)
+                    .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
+                >> 4,
         }
     }
 
     /// Sets the Traffic Class of the packet.
     #[inline]
     pub fn set_traffic_class(&mut self, traffic_class: TrafficClass) {
-        let first = self.data.first_mut().expect("insufficient bytes in IPv6 packet to set Traffic Class field");
+        let first = self
+            .data
+            .first_mut()
+            .expect("insufficient bytes in IPv6 packet to set Traffic Class field");
         *first = (*first & 0x0F) | (traffic_class.value << 4);
-        let second = self.data.get_mut(2).expect("insufficient bytes in IPv6 packet to set Traffic Class field");
+        let second = self
+            .data
+            .get_mut(2)
+            .expect("insufficient bytes in IPv6 packet to set Traffic Class field");
         *second = (*second & 0xF0) | (traffic_class.value >> 4);
     }
 
@@ -2700,7 +2887,9 @@ impl<'a> Ipv6Mut<'a> {
     pub fn flow_label(&self) -> FlowLabel {
         FlowLabel {
             value: match (self.data.get(2), self.data.get(3), self.data.get(4)) {
-                (Some(&a), Some(&b), Some(&c)) => (((a & 0x0F) as u32) << 16) + ((b as u32) << 8) + c as u32,
+                (Some(&a), Some(&b), Some(&c)) => {
+                    (((a & 0x0F) as u32) << 16) + ((b as u32) << 8) + c as u32
+                }
                 _ => panic!("insufficient bytes in IPv6 packet to retrieve Flow Label field"),
             },
         }
@@ -2709,98 +2898,156 @@ impl<'a> Ipv6Mut<'a> {
     /// Sets the Flow Label of the packet.
     #[inline]
     pub fn set_flow_label(&mut self, flow_label: FlowLabel) {
-        let second = self.data.get_mut(2).expect("insufficient bytes in IPv6 packet to set Flow Label field");
+        let second = self
+            .data
+            .get_mut(2)
+            .expect("insufficient bytes in IPv6 packet to set Flow Label field");
         *second = (*second & 0xF0) | ((flow_label.value >> 16) & 0x0F) as u8;
-        let third = self.data.get_mut(3).expect("insufficient bytes in IPv6 packet to set Flow Label field");
+        let third = self
+            .data
+            .get_mut(3)
+            .expect("insufficient bytes in IPv6 packet to set Flow Label field");
         *third = ((flow_label.value >> 8) & 0xFF) as u8;
-        let fourth = self.data.get_mut(4).expect("insufficient bytes in IPv6 packet to set Flow Label field");
+        let fourth = self
+            .data
+            .get_mut(4)
+            .expect("insufficient bytes in IPv6 packet to set Flow Label field");
         *fourth = (flow_label.value & 0xFF) as u8;
     }
 
     /// The combined length of the IPv6 extension headers and payload.
     #[inline]
     pub fn data_length(&self) -> u16 {
-        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in IPv6 packet to retrieve Data Length field").try_into().unwrap())
+        u16::from_be_bytes(
+            self.data
+                .get(4..6)
+                .expect("insufficient bytes in IPv6 packet to retrieve Data Length field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// Sets the combined length of the IPv6 extension headers and payload.
     #[inline]
     pub fn set_data_length_unchecked(&mut self, data_length: u16) {
-        let data_length_field: &mut [u8; 2] = self.data.get_mut(4..6).expect("insufficient bytes in IPv6 packet to set Data Length field").try_into().unwrap();
+        let data_length_field: &mut [u8; 2] = self
+            .data
+            .get_mut(4..6)
+            .expect("insufficient bytes in IPv6 packet to set Data Length field")
+            .try_into()
+            .unwrap();
         *data_length_field = data_length.to_be_bytes();
     }
 
     /// A single byte value indicating the next header type following the IPv6 header.
-    /// 
+    ///
     /// If any IPv6 Extension Headers are present in the packet, the Next Header Type
     /// field will indicate the type of the first Extension Header. That option then
     /// contains a Next Header field that indicates the type of the next header after
     /// it, and so on; the final header in the IPv6 packet indicates the type of the payload.
-    /// 
+    ///
     /// The `pkts` library treats each of these Extension Headers as a distinct [`Layer`] type.
     #[inline]
     pub fn next_header(&self) -> u8 {
-        *self.data.get(6).expect("insufficient bytes in IPv6 packet to retrieve Next Header Type field")
+        *self
+            .data
+            .get(6)
+            .expect("insufficient bytes in IPv6 packet to retrieve Next Header Type field")
     }
 
     /// Sets the Next Header Type field of the packet.
     pub fn set_next_header_unchecked(&mut self, header: u8) {
-        *self.data.get_mut(6).expect("insufficient bytes in IPv6 packet to set Next Header Type field") = header;
+        *self
+            .data
+            .get_mut(6)
+            .expect("insufficient bytes in IPv6 packet to set Next Header Type field") = header;
     }
 
     /// The hop limit of the packet.
-    /// 
+    ///
     /// Similar to [`Ipv4::ttl()`], this field indicates the number of routing hops the
     /// message should be permitted to traverse before being dropped.
-    /// 
+    ///
     /// When a router receives an IPv6 packet, it checks the Hop Limit field of the packet.
-    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP 
+    /// If the hop limit is 0, the router drops the packet and optionally sends an ICMP
     /// "Time Exceeded" packet back to the address that sent the packet; otherwise, it
     /// decrements the value of the hop limit by 1 and routes the packet to its next hop.
-    /// 
+    ///
     /// the Hop Limit field is primarily used to avoid resource exhaustion in the event
     /// that a routing loop forms, though tools like `traceroute` also use its functionality
     /// to identify routing paths across a network.
     pub fn hop_limit(&self) -> u8 {
-        *self.data.get(7).expect("insufficient bytes in IPv6 packet to retrieve Hop Limit field")
+        *self
+            .data
+            .get(7)
+            .expect("insufficient bytes in IPv6 packet to retrieve Hop Limit field")
     }
 
     /// Sets the hop limit of the packet.
-    /// 
+    ///
     /// For more information on the hop limit, refer to the [`Ipv6Ref::hop_limit()`] method.
     pub fn set_hop_limit(&mut self, hop_limit: u8) {
-        *self.data.get_mut(7).expect("insufficient bytes in IPv6 packet to set Hop Limit field") = hop_limit;
+        *self
+            .data
+            .get_mut(7)
+            .expect("insufficient bytes in IPv6 packet to set Hop Limit field") = hop_limit;
     }
 
     /// The source IP address of the packet.
     #[inline]
     pub fn src(&self) -> u128 {
-        u128::from_be_bytes(self.data.get(8..24).expect("insufficient bytes in IPv6 packet to retrieve Source IP Address field").try_into().unwrap())
+        u128::from_be_bytes(
+            self.data
+                .get(8..24)
+                .expect("insufficient bytes in IPv6 packet to retrieve Source IP Address field")
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// Sets the source IP address of the packet.
     #[inline]
     pub fn set_src(&mut self, src: u128) {
-        let src_field: &mut [u8; 16] = self.data.get_mut(8..24).expect("insufficient bytes in IPv6 packet to set Source IP Address field").try_into().unwrap();
+        let src_field: &mut [u8; 16] = self
+            .data
+            .get_mut(8..24)
+            .expect("insufficient bytes in IPv6 packet to set Source IP Address field")
+            .try_into()
+            .unwrap();
         *src_field = src.to_be_bytes();
     }
 
     /// The destination IP address of the packet.
     #[inline]
     pub fn dst(&self) -> u128 {
-        u128::from_be_bytes(self.data.get(24..40).expect("insufficient bytes in IPv6 packet to retrieve Destination IP Address field").try_into().unwrap())
+        u128::from_be_bytes(
+            self.data
+                .get(24..40)
+                .expect(
+                    "insufficient bytes in IPv6 packet to retrieve Destination IP Address field",
+                )
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// Sets the destination IP address of the packet.
     #[inline]
     pub fn set_dst(&mut self, dst: u128) {
-        let dst_field: &mut [u8; 16] = self.data.get_mut(8..24).expect("insufficient bytes in IPv6 packet to set Destination IP Address field").try_into().unwrap();
+        let dst_field: &mut [u8; 16] = self
+            .data
+            .get_mut(8..24)
+            .expect("insufficient bytes in IPv6 packet to set Destination IP Address field")
+            .try_into()
+            .unwrap();
         *dst_field = dst.to_be_bytes();
     }
 
     /// The payload of the packet, in raw bytes.
     pub fn payload_raw(&self) -> &[u8] {
-        self.data.get(40..).expect("insufficient bytes in IPv6 packet to retrieve payload bytes")
+        self.data
+            .get(40..)
+            .expect("insufficient bytes in IPv6 packet to retrieve payload bytes")
     }
 }
 
@@ -2822,8 +3069,6 @@ impl<'a> FromBytesMut<'a> for Ipv6Mut<'a> {
         }
     }
 }
-
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TrafficClass {
@@ -2888,7 +3133,7 @@ impl From<u32> for FlowLabel {
 
 // TODO: duplicate to make DestinationOptionsExt
 /// The Hop-By-Hop Options extension header.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2904,11 +3149,10 @@ impl From<u32> for FlowLabel {
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
 #[derive(Clone, Debug)]
-pub struct HopByHopOptionsExt {
-}
+pub struct HopByHopOptionsExt {}
 
 /// The Routing extension header.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2931,7 +3175,7 @@ pub struct RoutingExt {
 }
 
 /// The Fragment extension header.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2950,7 +3194,7 @@ pub struct FragmentExt {
 }
 
 /// The Security Authentication Header IPSec field.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -2974,7 +3218,6 @@ pub struct AuthHeader {
     integrity_val: Vec<u8>,
 }
 
-
 // NOTE: Encapsulating Security Payload is considered a Layer of its own.
 // This is because it contains payload data, and its Next Header indicates
 // the type of layer contained in that payload. There are no layers following
@@ -2982,7 +3225,7 @@ pub struct AuthHeader {
 
 /*
 /// The Encapsulating Security Payload IPSec field.
-/// 
+///
 /// ## Packet Layout
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -3005,4 +3248,3 @@ pub struct EncapsulatingSecPayload {
 
 }
 */
-

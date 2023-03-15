@@ -430,7 +430,9 @@ impl<'a> SctpRef<'a> {
     /// these chunks may not be ordered correctly.
     #[inline]
     pub fn chunks(&self) -> ChunksIterRef<'a> {
-        ChunksIterRef { bytes: &self.data[12..] }
+        ChunksIterRef {
+            bytes: &self.data[12..],
+        }
     }
 }
 
@@ -571,10 +573,10 @@ impl<'a> Iterator for ControlChunksIterRef<'a> {
         while let Some(chunk) = self.chunk_iter.next() {
             match chunk {
                 ChunkRef::Control(c) => return Some(c),
-                _ => ()
+                _ => (),
             }
         }
-        return None
+        return None;
     }
 }
 
@@ -591,10 +593,10 @@ impl<'a> Iterator for PayloadChunksIterRef<'a> {
         while let Some(chunk) = self.chunk_iter.next() {
             match chunk {
                 ChunkRef::Payload(c) => return Some(c),
-                _ => ()
+                _ => (),
             }
         }
-        return None
+        return None;
     }
 }
 
@@ -614,13 +616,11 @@ impl<'a> Iterator for ChunksIterRef<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let (chunk_type, unpadded_len) = match (
-            self.bytes.first(),
-            utils::get_array::<2>(self.bytes, 2),
-        ) {
-            (Some(&t), Some(&l)) => (t, u16::from_be_bytes(l)),
-            _ => return None,
-        };
+        let (chunk_type, unpadded_len) =
+            match (self.bytes.first(), utils::get_array::<2>(self.bytes, 2)) {
+                (Some(&t), Some(&l)) => (t, u16::from_be_bytes(l)),
+                _ => return None,
+            };
 
         /*
         let min_len = match chunk_type {
@@ -637,7 +637,7 @@ impl<'a> Iterator for ChunksIterRef<'a> {
             | CHUNK_TYPE_SHUTDOWN_COMPLETE => 4,
             _ => 4,
         };
-        
+
 
         if self.bytes.len() < min_len {
             self.bytes = &[]; // Not needed, but this helps further calls to the iterator to short-circuit
@@ -5532,7 +5532,7 @@ impl ShutdownChunk {
     pub fn set_cum_tsn_ack(&mut self, ack: u32) {
         self.cum_tsn_ack = ack;
     }
-    
+
     #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN);
@@ -6840,8 +6840,6 @@ impl DataChunk {
     pub fn payload_mut(&mut self) -> &mut Box<dyn LayerObject> {
         &mut self.payload
     }
-
-
 }
 
 impl ToBytes for DataChunk {
@@ -6855,7 +6853,8 @@ impl ToBytes for DataChunk {
         bytes.extend(self.stream_id.to_be_bytes());
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
-        self.payload.to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
+        self.payload
+            .to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
         bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
     }
 }

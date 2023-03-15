@@ -2,14 +2,14 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! A library for creating, decoding and modifying packet layers.
-//! 
+//!
 
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
 
-pub mod sequence;
 pub mod error;
 pub mod layers;
+pub mod sequence;
 pub mod sessions;
 pub mod utils;
 
@@ -21,8 +21,8 @@ mod private {
 mod tests {
     use crate::layers::ip::Ipv4;
     use crate::layers::tcp::{Tcp, TcpRef};
-    use crate::layers::traits::*;
     use crate::layers::traits::extras::*;
+    use crate::layers::traits::*;
     use crate::parse_layers;
     use crate::sequence::*;
 
@@ -45,9 +45,8 @@ mod tests {
         let ip1 = Ipv4Sequence::new();
 
         let mut layered_seq = LayeredSequence::new(ip1, false)
-                .add(Ipv4Sequence::new(), true)
-                .add(Ipv4Sequence::new(), false)
-                .add(Ipv4Sequence::new(), true);
-
+            .add(Ipv4Sequence::new(), true)
+            .add(Ipv4Sequence::new(), false)
+            .add(Ipv4Sequence::new(), true);
     }
 }

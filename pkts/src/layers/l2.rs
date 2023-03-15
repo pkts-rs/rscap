@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-use pkts_macros::{Layer, LayerRef, LayerMut, StatelessLayer};
+use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::{error::*, utils};
 
-use super::{Raw, RawRef};
 use super::ip::{Ipv4, Ipv4Ref};
+use super::{Raw, RawRef};
 
 const ETH_PROTOCOL_IP: u16 = 0x0800;
 const ETH_PROTOCOL_EXPERIMENTAL: u16 = 0x88B5;
@@ -41,7 +41,7 @@ impl Ether {
     }
 
     /// The Ether Type contained within the Ethernet frame.
-    /// 
+    ///
     /// This field determines the type and structure of the Ethernet's
     /// payload.
     #[inline]
@@ -80,7 +80,7 @@ impl FromBytesCurrent for Ether {
         } else {
             self.payload = match ether.eth_type() {
                 ETH_PROTOCOL_IP if bytes[14] >> 4 == 4 => {
-                    Some(Box::new(Ipv4::from_bytes_unchecked(ether.payload_raw())))                       
+                    Some(Box::new(Ipv4::from_bytes_unchecked(ether.payload_raw())))
                 }
                 /* Add additional Networ layer protocols here */
                 _ => Some(Box::new(Raw::from_bytes_unchecked(ether.payload_raw()))),
@@ -145,17 +145,24 @@ impl ToBytes for Ether {
         match self.payload.as_ref() {
             None => bytes.extend(ETH_PROTOCOL_EXPERIMENTAL.to_be_bytes()),
             Some(p) => {
-                bytes.extend(match p.layer_metadata().as_any().downcast_ref::<&dyn EtherPayloadMetadata>() {
-                    Some(m) => m.eth_type(),
-                    None => ETH_PROTOCOL_EXPERIMENTAL,
-                }.to_be_bytes());
+                bytes.extend(
+                    match p
+                        .layer_metadata()
+                        .as_any()
+                        .downcast_ref::<&dyn EtherPayloadMetadata>()
+                    {
+                        Some(m) => m.eth_type(),
+                        None => ETH_PROTOCOL_EXPERIMENTAL,
+                    }
+                    .to_be_bytes(),
+                );
                 p.to_bytes_chksummed(bytes, Some((EtherRef::layer_id_static(), start)))
             }
         }
     }
 }
 
-/// A reference to the basic 802.3 Ethernet frame, which consists of 
+/// A reference to the basic 802.3 Ethernet frame, which consists of
 /// source and destination Ethernet addresses, Ether Type and payload.
 /// This `Layer` matches the structure of "cooked" L2 frames in Linux,
 /// as well as that of general 802.3 Ethernet packets, provided they do
@@ -173,37 +180,42 @@ impl<'a> EtherRef<'a> {
     /// The source MAC address contained within the Ethernet frame.
     #[inline]
     pub fn src_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 0).expect("insufficient bytes in Ether layer to extract Source MAC Address field")
+        *utils::get_array(self.data, 0)
+            .expect("insufficient bytes in Ether layer to extract Source MAC Address field")
     }
 
     /// The destination MAC address contained within the Ethernet frame.
     #[inline]
     pub fn dst_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 6).expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
+        *utils::get_array(self.data, 6)
+            .expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
     }
 
     /// The Ether Type contained within the Ethernet frame.
-    /// 
+    ///
     /// This field determines the type and structure of the Ethernet's
     /// payload.
     #[inline]
     pub fn eth_type(&self) -> u16 {
-        u16::from_be_bytes(*utils::get_array(self.data, 12).expect("insufficient bytes in Ether layer to extract EtherType field"))
+        u16::from_be_bytes(
+            *utils::get_array(self.data, 12)
+                .expect("insufficient bytes in Ether layer to extract EtherType field"),
+        )
     }
 
     /// The payload bytes of the Ethernet frame.
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
-        self.data.get(14..).expect("insufficient bytes in Ether layer to extract payload")
+        self.data
+            .get(14..)
+            .expect("insufficient bytes in Ether layer to extract payload")
     }
 }
 
 impl<'a> FromBytesRef<'a> for EtherRef<'a> {
     #[inline]
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        EtherRef {
-            data: bytes
-        }
+        EtherRef { data: bytes }
     }
 }
 
@@ -211,26 +223,25 @@ impl<'a> LayerOffset for EtherRef<'a> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         if bytes.len() <= 14 {
-            return None
+            return None;
         }
 
         let eth_type = u16::from_be_bytes(*utils::get_array(bytes, 12).unwrap());
         match eth_type {
             ETH_PROTOCOL_IP => match bytes[14] >> 4 {
-                0x04 => if layer_type == Ipv4Ref::layer_id_static() {
-                    Some(14)
-                } else {
-                    Ipv4Ref::payload_byte_index_default(&bytes[14..], layer_type).map(|val| 14 + val)
+                0x04 => {
+                    if layer_type == Ipv4Ref::layer_id_static() {
+                        Some(14)
+                    } else {
+                        Ipv4Ref::payload_byte_index_default(&bytes[14..], layer_type)
+                            .map(|val| 14 + val)
+                    }
                 }
                 /* Add new Internet Protocol (IP) protocols here */
-                _ => {
-                    None
-                }
-            }
+                _ => None,
+            },
             /* Add new Network layer protocols here */
-            _ => {
-                None 
-            }
+            _ => None,
         }
     }
 }
@@ -242,7 +253,7 @@ impl<'a> Validate for EtherRef<'a> {
             Err(ValidationError {
                 layer: Ether::name(),
                 err_type: ValidationErrorType::InsufficientBytes,
-                reason: "insufficient bytes in Ether layer for header fields", 
+                reason: "insufficient bytes in Ether layer for header fields",
             })
         } else {
             Ok(())
@@ -252,7 +263,7 @@ impl<'a> Validate for EtherRef<'a> {
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() == 14 {
-            return Ok(())
+            return Ok(());
         }
 
         let eth_type = u16::from_be_bytes(*utils::get_array(curr_layer, 10).unwrap());
@@ -260,8 +271,8 @@ impl<'a> Validate for EtherRef<'a> {
             ETH_PROTOCOL_IP => match curr_layer[14] {
                 0x04 => Ipv4Ref::validate(&curr_layer[14..]),
                 _ => RawRef::validate(&curr_layer[14..]), // Add new IP protocols here
-            }
-            _ => RawRef::validate(&curr_layer[14..]) // Add new L3 protocols here
+            },
+            _ => RawRef::validate(&curr_layer[14..]), // Add new L3 protocols here
         }
     }
 }
@@ -287,57 +298,75 @@ impl<'a> EtherMut<'a> {
     /// The source MAC address contained within the Ethernet frame.
     #[inline]
     pub fn src_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 0).expect("insufficient bytes in Ether layer to extract Source MAC Address field")
+        *utils::get_array(self.data, 0)
+            .expect("insufficient bytes in Ether layer to extract Source MAC Address field")
     }
 
     /// Sets the source MAC address contained within the Ethernet frame
     /// to the provided value.
     #[inline]
     pub fn set_src_mac(&mut self, src_mac: [u8; 6]) {
-        self.data.get_mut(0..6).expect("insufficient bytes in Ether layer to replace Source MAC Address field").copy_from_slice(src_mac.as_slice());
+        self.data
+            .get_mut(0..6)
+            .expect("insufficient bytes in Ether layer to replace Source MAC Address field")
+            .copy_from_slice(src_mac.as_slice());
     }
 
     /// The destination MAC address contained within the Ethernet frame.
     #[inline]
     pub fn dst_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 6).expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
+        *utils::get_array(self.data, 6)
+            .expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
     }
 
     /// Sets the destination MAC address contained within the Ethernet frame
     /// to the provided value.
     #[inline]
     pub fn set_dst_mac(&mut self, dst_mac: [u8; 6]) {
-        self.data.get_mut(6..12).expect("insufficient bytes in Ether layer to replace Destination MAC Address field").copy_from_slice(dst_mac.as_slice());
+        self.data
+            .get_mut(6..12)
+            .expect("insufficient bytes in Ether layer to replace Destination MAC Address field")
+            .copy_from_slice(dst_mac.as_slice());
     }
 
     /// The Ether Type contained within the Ethernet frame.
-    /// 
+    ///
     /// This field determines the type and structure of the Ethernet's
     /// payload.
     #[inline]
     pub fn eth_type(&self) -> u16 {
-        u16::from_be_bytes(*utils::get_array(self.data, 12).expect("insufficient bytes in Ether layer to extract EtherType field"))
+        u16::from_be_bytes(
+            *utils::get_array(self.data, 12)
+                .expect("insufficient bytes in Ether layer to extract EtherType field"),
+        )
     }
 
     /// Sets the Ether Type contained within the Ethernet frame.
-    /// 
+    ///
     /// This field determines the type and structure of the Ethernet's
     /// payload.
     #[inline]
     pub fn set_eth_type(&mut self, eth_type: u16) {
-        self.data.get_mut(12..14).expect("insufficient bytes in Ether layer to replace Ether Type field").copy_from_slice(eth_type.to_be_bytes().as_slice());
+        self.data
+            .get_mut(12..14)
+            .expect("insufficient bytes in Ether layer to replace Ether Type field")
+            .copy_from_slice(eth_type.to_be_bytes().as_slice());
     }
 
     /// The payload bytes of the Ethernet frame.
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
-        self.data.get(14..self.length).expect("insufficient bytes in Ether layer to extract payload")
+        self.data
+            .get(14..self.length)
+            .expect("insufficient bytes in Ether layer to extract payload")
     }
 
     /// A mutable reference to the payload bytes of the Ethernet frame.
     #[inline]
     pub fn payload_mut_raw(&mut self) -> &mut [u8] {
-        self.data.get_mut(14..self.length).expect("insufficient bytes in Ether layer to extract payload")
+        self.data
+            .get_mut(14..self.length)
+            .expect("insufficient bytes in Ether layer to extract payload")
     }
 }
 

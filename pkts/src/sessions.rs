@@ -2,26 +2,26 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! # [`Session`] types
-//! 
+//!
 //! While stateless protocols are not uncommon (see [`Dns`] or [`Http`]),
 //! many protocols implemented by `rscap` are stateful. These protocols
-//! require some form of state machine to be maintained by an endpoint 
+//! require some form of state machine to be maintained by an endpoint
 //! in order to guage the correctness of a received packet.
-//! 
+//!
 //! Some of these protocols are only **semantically** stateful, meaning that
 //! the format of the packet stays the same regardless of what state the protocol
 //! is in. A good example of this is [`Tcp`]--a TCP packet always contains
 //! the same header data in the same locations, but different flags (SYN, ACK
 //! or RST) may be required depending on what state a TCP connection is in.
-//! 
+//!
 //! Other protocols may be **syntactically** stateful in addition to being
-//! semantically stateful. This means that the protocol has defined more than 
+//! semantically stateful. This means that the protocol has defined more than
 //! one packet format, and the only way to choose the right format when
 //! converting raw bytes is to have some knowledge of the connection state.
 //! A good example of this is [`MysqlClient`] and [`MysqlServer`], which
 //! have various different packet formats for startup, authentication
 //! and data delivery.
-//! 
+//!
 //! Protocols that are syntactically stateless can be validated/parsed from bytes
 //! without requiring saved state; these are designated by the [`StatelessLayer`]
 //! trait. Stateless packets also generally implement the [`Validate`] trait, along
@@ -29,16 +29,16 @@
 //! Syntactically stateful protocols cannot validate or convert from bytes using
 //! these traits; to resolve this gap in functionality, [`Session`] types were
 //! designed.
-//! 
+//!
 //! In order to accurately capture packets that are syntactically stateful,
 //! rscap employs `Session` types that keep track of a protocol's current
 //! state and return the appropriate message structure for that state.
 //! Transitions between states are represented by methods that can be called
 //! on a Session, such that only valid transitions are offered in a given state.
-//! 
-//! 
+//!
+//!
 //! TODO: example(s) here
-//! 
+//!
 //! [`Dns`]: crate::layers::dns::Dns
 //! [`Http`]: crate::layers::http::Http
 //! [`Tcp`]: crate::layers::tcp::Tcp
@@ -50,7 +50,7 @@
 //! [`FromBytesCurrent`]: crate::layers::traits::extras::FromBytesCurrent
 //! [`FromBytesRef`]: crate::layers::traits::FromBytesRef
 //! [`FromBytesMut`]: crate::layers::traits::FromBytesMut
-//! 
+//!
 
 use crate::error::ValidationError;
 use crate::layers::traits::LayerRef;
@@ -73,7 +73,6 @@ pub trait Session {
     fn validate(&self, bytes: &[u8]) -> Result<(), ValidationError>;
 }
 
-
 pub struct MysqlClientSession {
     // The `state` field of a session intentionally implements `Copy`.
     // This is so that we can copy out the state of a given session and
@@ -88,18 +87,16 @@ pub enum MysqlClientState {
 }
 
 #[derive(Clone, Copy)]
-pub struct MysqlStartupState { }
+pub struct MysqlStartupState {}
 
 impl MysqlStartupState {
     pub fn error(session: &mut MysqlClientSession) {
-        session.state = MysqlClientState::Error(MysqlErrorState { });
+        session.state = MysqlClientState::Error(MysqlErrorState {});
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct MysqlErrorState { }
-
-
+pub struct MysqlErrorState {}
 
 /*
 pub struct MysqlClientSession<S: MysqlClientState> {
@@ -115,7 +112,7 @@ impl private::Sealed for MysqlStartupState { }
 impl MysqlClientState for MysqlStartupState { }
 
 impl MysqlClientSession<MysqlStartupState> {
-    //pub fn transition(self, input: &Self::Out<'_>) -> 
+    //pub fn transition(self, input: &Self::Out<'_>) ->
 }
 
 impl Session for MysqlClientSession<MysqlStartupState> {
@@ -134,7 +131,6 @@ impl Session for MysqlClientSession<MysqlStartupState> {
     }
 }
 */
-
 
 /*
 trait DualSession {

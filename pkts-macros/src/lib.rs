@@ -34,13 +34,24 @@ use syn::parse_macro_input;
 #[proc_macro_derive(StatelessLayer)]
 pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
-    let mut output = proc_macro::TokenStream::new();   
+    let mut output = proc_macro::TokenStream::new();
     let layer_type = ast.ident;
     // let layer_type_index = quote::format_ident!("{}TypeIndex", layer_type);
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
-    if ast.attrs.iter().find(|&a| a.path.is_ident("owned_type")).is_none() {
-        let ref_type: syn::Ident = ast.attrs.iter().find(|&a| a.path.is_ident("ref_type")).unwrap().parse_args().unwrap();
+    if ast
+        .attrs
+        .iter()
+        .find(|&a| a.path.is_ident("owned_type"))
+        .is_none()
+    {
+        let ref_type: syn::Ident = ast
+            .attrs
+            .iter()
+            .find(|&a| a.path.is_ident("ref_type"))
+            .unwrap()
+            .parse_args()
+            .unwrap();
         output.extend(proc_macro::TokenStream::from(quote::quote! {
             impl StatelessLayer for #layer_type { }
 
@@ -56,7 +67,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                 fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_current_layer(curr_layer)
                 }
-            
+
                 #[inline]
                 fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_payload_default(curr_layer)
@@ -77,12 +88,23 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                 }
             }
         }));
-    } else if ast.attrs.iter().find(|&a| a.path.is_ident("ref_type")).is_none() {
+    } else if ast
+        .attrs
+        .iter()
+        .find(|&a| a.path.is_ident("ref_type"))
+        .is_none()
+    {
         output.extend(proc_macro::TokenStream::from(quote::quote! {
             impl #impl_generics StatelessLayer for #layer_type #ty_generics #where_clause { }
         }));
     } else {
-        let ref_type: syn::Ident = ast.attrs.iter().find(|&a| a.path.is_ident("ref_type")).unwrap().parse_args().unwrap();
+        let ref_type: syn::Ident = ast
+            .attrs
+            .iter()
+            .find(|&a| a.path.is_ident("ref_type"))
+            .unwrap()
+            .parse_args()
+            .unwrap();
         output.extend(proc_macro::TokenStream::from(quote::quote! {
             impl #impl_generics StatelessLayer for #layer_type #ty_generics #where_clause { }
 
@@ -91,7 +113,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                 fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_current_layer(curr_layer)
                 }
-            
+
                 #[inline]
                 fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_payload_default(curr_layer)
@@ -123,7 +145,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         .expect("metadata_type attribute required for deriving Layer")
         .parse_args()
         .expect("metadata_type attribute must contain a struct name");
-    
+
     /*
     let payload_field = match ast.data {
         syn::Data::Struct(data_struct) => match data_struct.fields {
@@ -137,7 +159,12 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     // extern crate self as rscap;
     // TODO: use the above within the quote! to make derives stable without including layer names
-    output.extend(derive_base_layer_impl(&ast.generics, &layer_type, &layer_type.to_string().as_str(), &metadata_type));
+    output.extend(derive_base_layer_impl(
+        &ast.generics,
+        &layer_type,
+        &layer_type.to_string().as_str(),
+        &metadata_type,
+    ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
         impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::Div<RscapInternalT> for #layer_type {
             type Output = #layer_type;
@@ -147,13 +174,13 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 self.appended_with(rhs).unwrap() // TODO: change to expect()
             }
         }
-        
+
         impl From<#ref_type<'_>> for #layer_type {
             fn from(value: #ref_type<'_>) -> Self {
                 Self::from(&value)
             }
         }
-        
+
         impl IntoLayer for #layer_type {
             type Output = #layer_type;
         }
@@ -240,7 +267,6 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     output
 }
 
-
 #[proc_macro_derive(LayerRef, attributes(owned_type, metadata_type, data_field))]
 pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
@@ -262,14 +288,32 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         .expect("metadata_type attribute must contain a struct name");
     let data_field = match ast.data {
         syn::Data::Struct(data_struct) => match data_struct.fields {
-            syn::Fields::Named(named) => named.named.iter().find(|field| field.attrs.iter().find(|attr| attr.path.is_ident("data_field")).is_some())
-            .expect("data_field inner attribute required to derive `LayerRef`").ident.as_ref().unwrap().clone(),
+            syn::Fields::Named(named) => named
+                .named
+                .iter()
+                .find(|field| {
+                    field
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path.is_ident("data_field"))
+                        .is_some()
+                })
+                .expect("data_field inner attribute required to derive `LayerRef`")
+                .ident
+                .as_ref()
+                .unwrap()
+                .clone(),
             _ => panic!("data_field associated field must be named"),
         },
-        _ => panic!("Only structs are currently supported for `LayerRef` derive")
+        _ => panic!("Only structs are currently supported for `LayerRef` derive"),
     };
 
-    output.extend(derive_base_layer_impl(&ast.generics, &layer_type, &owned_type.to_string().as_str(), &metadata_type));
+    output.extend(derive_base_layer_impl(
+        &ast.generics,
+        &layer_type,
+        &owned_type.to_string().as_str(),
+        &metadata_type,
+    ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
         impl IntoLayer for #layer_type<'_> {
             type Output = #owned_type;
@@ -312,7 +356,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if self.is_layer::<T>() {
                     return Some(T::from_bytes_unchecked(self.#data_field))
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -323,7 +367,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                         .payload_byte_index(self.#data_field, &T::layer_id_static())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
-        
+
                 match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&self.#data_field[offset..])),
                     None => None
@@ -340,7 +384,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if self.is_layer::<T>() {
                     n -= 1
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -353,12 +397,12 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                             return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                         }
 
-                        while let Some(new_offset) = 
+                        while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
                                 custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
                             } else {
                                 T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
-                            } 
+                            }
                         {
                             curr_offset = new_offset;
                             n -= 1;
@@ -369,11 +413,11 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     }
                     return None
                 }
-        
+
                 if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     n -= 1;
                     if n == 0 {
-                        return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))                       
+                        return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                     }
 
                     while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
@@ -426,7 +470,10 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     output
 }
 
-#[proc_macro_derive(LayerMut, attributes(owned_type, ref_type, metadata_type, data_field, data_length_field))]
+#[proc_macro_derive(
+    LayerMut,
+    attributes(owned_type, ref_type, metadata_type, data_field, data_length_field)
+)]
 pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let mut output = proc_macro::TokenStream::new();
@@ -455,25 +502,56 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
     let data_field = match &ast.data {
         syn::Data::Struct(data_struct) => match &data_struct.fields {
-            syn::Fields::Named(named) => named.named.iter().find(|field| field.attrs.iter().find(|attr| attr.path.is_ident("data_field")).is_some())
-            .expect("data_field inner attribute required to derive `LayerMut`").ident.as_ref().unwrap().clone(),
+            syn::Fields::Named(named) => named
+                .named
+                .iter()
+                .find(|field| {
+                    field
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path.is_ident("data_field"))
+                        .is_some()
+                })
+                .expect("data_field inner attribute required to derive `LayerMut`")
+                .ident
+                .as_ref()
+                .unwrap()
+                .clone(),
             _ => panic!("data_field associated field must be named"),
         },
-        _ => panic!("Only structs are currently supported for `LayerMut` derive")
+        _ => panic!("Only structs are currently supported for `LayerMut` derive"),
     };
 
     let data_length_field = match &ast.data {
         syn::Data::Struct(data_struct) => match &data_struct.fields {
-            syn::Fields::Named(named) => named.named.iter().find(|field| field.attrs.iter().find(|attr| attr.path.is_ident("data_length_field")).is_some())
-            .expect("data_length_field inner attribute required to derive `LayerMut`").ident.as_ref().unwrap().clone(),
+            syn::Fields::Named(named) => named
+                .named
+                .iter()
+                .find(|field| {
+                    field
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path.is_ident("data_length_field"))
+                        .is_some()
+                })
+                .expect("data_length_field inner attribute required to derive `LayerMut`")
+                .ident
+                .as_ref()
+                .unwrap()
+                .clone(),
             _ => panic!("data_length_field associated field must be named"),
         },
-        _ => panic!("Only structs are currently supported for `LayerMut` derive")
+        _ => panic!("Only structs are currently supported for `LayerMut` derive"),
     };
 
-    output.extend(derive_base_layer_impl(&ast.generics, &layer_type, &owned_type.to_string().as_str(), &metadata_type));
+    output.extend(derive_base_layer_impl(
+        &ast.generics,
+        &layer_type,
+        &owned_type.to_string().as_str(),
+        &metadata_type,
+    ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
- 
+
         impl core::convert::From<&#layer_type<'_>> for #owned_type {
             fn from(value: &#layer_type<'_>) -> Self {
                 Self::from(#ref_type::from(value))
@@ -544,7 +622,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if <Self as AnyLayerMut>::AssociatedRef::layer_id_static() == T::layer_id_static() {
                     return Some(T::from_bytes_unchecked(self.#data_field))
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -555,7 +633,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                         .payload_byte_index(self.#data_field, &T::layer_id_static())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
-        
+
                 match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&self.#data_field[offset..])),
                     None => None
@@ -572,7 +650,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if <Self as AnyLayerMut>::AssociatedRef::layer_id_static() == T::layer_id_static() {
                     n -= 1
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -585,12 +663,12 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                             return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                         }
 
-                        while let Some(new_offset) = 
+                        while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
                                 custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
                             } else {
                                 T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
-                            } 
+                            }
                         {
                             curr_offset = new_offset;
                             n -= 1;
@@ -605,7 +683,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     n -= 1;
                     if n == 0 {
-                        return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))                       
+                        return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                     }
 
                     while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
@@ -626,7 +704,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if self.is_layer::<T>() {
                     return Some(T::from_bytes_unchecked(self.#data_field));
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -637,7 +715,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                         .payload_byte_index(self.#data_field, &T::layer_id_static())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
-        
+
                 match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&mut self.#data_field[offset..])),
                     None => None
@@ -654,7 +732,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 if self.is_layer::<T>() {
                     n -= 1;
                 }
-        
+
                 #[cfg(feature = "custom_layer_selection")]
                 if let Some(&custom_selection) = self
                     .layer_metadata()
@@ -667,12 +745,12 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                             return Some(T::from_bytes_unchecked(&mut self.#data_field[curr_offset..]))
                         }
 
-                        while let Some(new_offset) = 
+                        while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
                                 custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
                             } else {
                                 T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
-                            } 
+                            }
                         {
                             curr_offset = new_offset;
                             n -= 1;
@@ -683,11 +761,11 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     }
                     return None
                 }
-                
+
                 if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
                     n -= 1;
                     if n == 0 {
-                        return Some(T::from_bytes_unchecked(&mut self.#data_field[curr_offset..]))                       
+                        return Some(T::from_bytes_unchecked(&mut self.#data_field[curr_offset..]))
                     }
 
                     while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
@@ -724,13 +802,17 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 self.into()
             }
         }
-        
     }));
 
     output
 }
 
-fn derive_base_layer_impl(generics: &syn::Generics, layer_type: &syn::Ident, layer_name: &str, metadata_type: &syn::Ident) -> proc_macro::TokenStream {
+fn derive_base_layer_impl(
+    generics: &syn::Generics,
+    layer_type: &syn::Ident,
+    layer_name: &str,
+    metadata_type: &syn::Ident,
+) -> proc_macro::TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let expanded = quote::quote! {
         impl #impl_generics BaseLayer for #layer_type #ty_generics #where_clause {
@@ -765,8 +847,12 @@ fn derive_base_layer_impl(generics: &syn::Generics, layer_type: &syn::Ident, lay
 
 #[proc_macro]
 pub fn layer_metadata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let struct_name: syn::Ident = syn::parse(input).expect("Invalid struct name passed in to layer_metadata!() macro");
-    let metadata_const = quote::format_ident!("{}_METADATA_RSCAP_INTERNAL", struct_name.to_string().to_uppercase());
+    let struct_name: syn::Ident =
+        syn::parse(input).expect("Invalid struct name passed in to layer_metadata!() macro");
+    let metadata_const = quote::format_ident!(
+        "{}_METADATA_RSCAP_INTERNAL",
+        struct_name.to_string().to_uppercase()
+    );
     //#[cfg(not(feature = "custom_layer_selection"))]
     let expanded = quote::quote! {
         pub struct #struct_name {
@@ -810,5 +896,5 @@ pub fn layer_metadata(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     };
     */
 
-    proc_macro::TokenStream::from(expanded)   
+    proc_macro::TokenStream::from(expanded)
 }

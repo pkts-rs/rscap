@@ -1386,8 +1386,8 @@ pub mod avp {
     }
 
     pub enum DisconnectCause {
-        Rebooting, // = 0
-        Busy, // = 1
+        Rebooting,       // = 0
+        Busy,            // = 1
         DoNotWantToTalk, // = 2
         Unknown(i32),
     }
@@ -1758,15 +1758,13 @@ impl<'a> GenericAvpRef<'a> {
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 4) {
             Some(unpadded_len_arr) => {
-                let flags = AvpFlags { flags: unpadded_len_arr[0] };
+                let flags = AvpFlags {
+                    flags: unpadded_len_arr[0],
+                };
                 let unpadded_len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
                 let len = utils::padded_length::<4>(unpadded_len);
 
-                let minimum_length = if flags.vendor_specific() {
-                    12
-                } else {
-                    8
-                };
+                let minimum_length = if flags.vendor_specific() { 12 } else { 8 };
 
                 // Validate length field (too big) and header bytes
                 if cmp::max(minimum_length, len) > bytes.len() {
@@ -1850,11 +1848,9 @@ impl<'a> GenericAvpRef<'a> {
     #[inline]
     pub fn vendor_id(&self) -> Option<u32> {
         if self.flags().vendor_specific() {
-            Some(u32::from_be_bytes(
-                utils::to_array(self.data, 8).expect(
-                    "insufficient bytes in Diameter AVP to retrieve Vendor Identifier field",
-                ),
-            ))
+            Some(u32::from_be_bytes(utils::to_array(self.data, 8).expect(
+                "insufficient bytes in Diameter AVP to retrieve Vendor Identifier field",
+            )))
         } else {
             None
         }

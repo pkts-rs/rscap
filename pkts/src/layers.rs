@@ -2,17 +2,17 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! Layers are the fundamental abstraction used in this library for data.
-//! 
-//! In general, most communication protocols make use of multiple 
+//!
+//! In general, most communication protocols make use of multiple
 //! encapsulated layers of data, where each layer performs a distinct purpose
 //! in relaying information from one peer to another. Each layer can be
 //! generalized into a header and payload, where the header contains data
-//! specific to the operation of that layer and the payload contains the 
+//! specific to the operation of that layer and the payload contains the
 //! next layer of data.
-//! 
-//! Layers for all sorts of different data protocols are provided in this 
+//!
+//! Layers for all sorts of different data protocols are provided in this
 //! submodule, as well as traits that make operating on multiple layers more
-//! simple. 
+//! simple.
 
 pub mod diameter;
 pub(crate) mod example;
@@ -35,17 +35,17 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::fmt::Debug;
 
 /// A raw [`Layer`] composed of unstructured bytes.
-/// 
+///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
-/// automatically by a given method call, or when payload layer data is literally 
+/// automatically by a given method call, or when payload layer data is literally
 /// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
-/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
 /// `rscap` doesn't infer `Layer` types beyond the Transport layer.
-/// 
+///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
 /// [`Udp`]: crate::layers::udp::Udp
@@ -146,17 +146,17 @@ impl Raw {
 }
 
 /// A reference to a raw [`Layer`] composed of unstructured bytes.
-/// 
+///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
-/// automatically by a given method call, or when payload layer data is literally 
+/// automatically by a given method call, or when payload layer data is literally
 /// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
-/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
 /// `rscap` doesn't infer `Layer` types beyond the Transport layer.
-/// 
+///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
 /// [`Udp`]: crate::layers::udp::Udp
@@ -203,17 +203,17 @@ impl Validate for RawRef<'_> {
 }
 
 /// A mutable reference to a raw [`Layer`] composed of unstructured bytes.
-/// 
+///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
-/// automatically by a given method call, or when payload layer data is literally 
+/// automatically by a given method call, or when payload layer data is literally
 /// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
-/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload, 
+/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
 /// `rscap` doesn't infer `Layer` types beyond the Transport layer.
-/// 
+///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
 /// [`Udp`]: crate::layers::udp::Udp
