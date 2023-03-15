@@ -3,7 +3,7 @@ name = "pkts-macros"
 description = "procedural macros for deriving `pkts` library traits"
 authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
 license = "GPL-2.0-only"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/pkts-rs/rscap"
 

@@ -15,4 +15,4 @@ alloc = []
 
 [dependencies]
 libc = { version = "0.2" }
-pkts = { version = "0.1.0", path = "../pkts" }
+pkts = { version = "0.1.1", path = "../pkts" }
