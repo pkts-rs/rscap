@@ -806,7 +806,7 @@ macro_rules! parse_layers_unchecked {
 
 pub mod extras {
     use super::*;
-    use core::{any, mem};
+    use core::any;
 
     pub type LayerId = any::TypeId;
 
@@ -1054,12 +1054,18 @@ pub mod extras {
     }
 
     pub trait Ipv4PayloadMetadata: LayerMetadata {
+        /// The protocol number that uniquely identifies the type of the payload.
         fn ip_data_protocol(&self) -> u8;
 
         /*
         /// If you're implementing this trait and you don't know what this is, just set it to `None`.
         fn diff_serv_number() -> Option<u8>;
         */
+    }
+
+    pub trait Ipv6PayloadMetadata: LayerMetadata {
+        /// The protocol number that uniquely identifies the type of the payload.
+        fn ip_data_protocol(&self) -> u8;
     }
 
     pub trait EtherPayloadMetadata: LayerMetadata {
@@ -1092,9 +1098,24 @@ pub mod extras {
         }
     }
 
+    layer_metadata!(Ipv6Metadata);
+
+    impl EtherPayloadMetadata for Ipv6Metadata {
+        fn eth_type(&self) -> u16 {
+            0x0800
+        }
+    }
+
     layer_metadata!(SctpMetadata);
 
     impl Ipv4PayloadMetadata for SctpMetadata {
+        #[inline]
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_SCTP
+        }
+    }
+
+    impl Ipv6PayloadMetadata for SctpMetadata {
         #[inline]
         fn ip_data_protocol(&self) -> u8 {
             crate::layers::ip::DATA_PROTO_SCTP
@@ -1110,6 +1131,13 @@ pub mod extras {
         }
     }
 
+    impl Ipv6PayloadMetadata for TcpMetadata {
+        #[inline]
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_TCP
+        }
+    }
+
     layer_metadata!(UdpMetadata);
 
     impl Ipv4PayloadMetadata for UdpMetadata {
@@ -1119,9 +1147,23 @@ pub mod extras {
         }
     }
 
+    impl Ipv6PayloadMetadata for UdpMetadata {
+        #[inline]
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_UDP
+        }
+    }
+
     layer_metadata!(RawMetadata);
 
     impl Ipv4PayloadMetadata for RawMetadata {
+        #[inline]
+        fn ip_data_protocol(&self) -> u8 {
+            crate::layers::ip::DATA_PROTO_EXP1
+        }
+    }
+
+    impl Ipv6PayloadMetadata for RawMetadata {
         #[inline]
         fn ip_data_protocol(&self) -> u8 {
             crate::layers::ip::DATA_PROTO_EXP1

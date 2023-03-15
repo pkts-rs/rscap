@@ -409,7 +409,7 @@ impl SequenceObject for Ipv4Sequence {
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {
         let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt);
         let ihl = cmp::max(ipv4.ihl() as usize, 5) * 4;
-        let tl = cmp::max(ipv4.total_length() as usize, ihl);
+        let tl = cmp::max(ipv4.packet_length() as usize, ihl);
         let data = pkt.get(ihl..tl).expect("IPv4 Defragment instance encountered packet containing fewer bytes than advertised in its Total Length field");
 
         let mf = ipv4.flags().more_fragments();
