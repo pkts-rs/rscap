@@ -67,8 +67,24 @@ const ABORT_FLAGS_T_BIT: u8 = 0b_0000_0001;
 // SHUTDOWN COMPLETE Chunk flags
 const SHUTDOWN_COMPLETE_FLAGS_T_BIT: u8 = 0b_0000_0001;
 
+/// An SCTP (Stream Control Transmission Protocol) packet.
 ///
-///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                        Verification Tag                       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |                            Checksum                           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 Z                             Chunks                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpMetadata)]
 #[ref_type(SctpRef)]
@@ -106,7 +122,7 @@ impl Sctp {
         self.dport = dport;
     }
 
-    /// The Verification Tag assigned to the packet.
+    /// The Verification Tag of the packet.
     ///
     /// The recipient of an SCTP packet uses the Verification Tag to validate the packet's source.
     #[inline]
@@ -114,28 +130,49 @@ impl Sctp {
         self.verify_tag
     }
 
-    /// Sets the Verification Tag of the packet to the given value.
+    /// Sets the Verification Tag of the packet.
     #[inline]
     pub fn set_verify_tag(&mut self, verify_tag: u32) {
         self.verify_tag = verify_tag;
     }
 
-    /// The CRC32c Checksum of the SCTP packet.
-    ///
-    /// By default, the checksum of an [`Sctp`] packet is not recalculated when its fields are modified.
-    /// To make sure that a correct checksum is sent in a packet, use the `generate_checksum()` method
-    /// before converting a packet into its corresponding bytes.
+    /// Retrieves the assigned CRC32c checksum for the packet, or `None` if no checksum has
+    /// been assigned to the packet.
+    /// 
+    /// By default, the SCTP checksum is automatically calculated when an [`Sctp`] instance is
+    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
+    /// If a checksum has already been assigned to the packet, this method will return it;
+    /// otherwise, it will return `None`. This means that an [`Sctp`] instance created from bytes
+    /// or from a [`SctpRef`] instance will still have a checksum of `None` by default, regardless
+    /// of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u32> {
         self.chksum
     }
 
-    /// Sets the Checksum of the packet to the given value.
+    /// Assigns the CRC32c checksum to be used for the packet.
+    ///
+    /// By default, the SCTP checksum is automatically calculated when an [`Sctp`] instance is
+    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// used instead. You generally shouldn't need to use this method unless:
+    ///   1. You know the expected checksum of the packet in advance and don't want the checksum
+    ///      calculation to automatically run again (since it can be a costly operation), or
+    ///   2. Checksum offloading is being employed for the SCTP packet and you want to zero out the
+    ///      checksum field (again, avoiding unnecessary extra computation), or
+    ///   3. You want to explicitly set an invalid checksum.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u32) {
         self.chksum = Some(chksum);
     }
 
+    /// Clears any previously assigned CRC32c checksum for the packet.
+    /// 
+    /// This method guarantees that the SCTP checksum will be automatically calculated for this
+    /// [`Sctp`] instance whenever the packet is converted to bytes. You shouldn't need to call
+    /// this method unless you've previously explicitly assigned a checksum to the packet--either
+    /// through a call to [`Sctp::set_chksum()`] or through a Builder pattern. Packets converted
+    /// from bytes into [`Sctp`] instances from bytes or from a [`SctpRef`] instance will have a 
+    /// checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
@@ -203,7 +240,7 @@ impl Sctp {
 
     /// The list of Payload Data (DATA) Chunks contained within the packet.
     ///
-    /// Payload Data chunks are ordered by increasing TSN value, and are always placed after any Control Chunks in the packet.
+    /// Payload DATA chunks are ordered by increasing TSN value, and are always placed after any Control Chunks in the packet.
     /// A packet MUST NOT have any Payload Data Chunks when any of the below Control Chunks are present:
     ///
     /// - [`ControlChunk::Shutdown`]
@@ -313,7 +350,7 @@ impl LayerObject for Sctp {
 
 impl ToBytes for Sctp {
     #[inline]
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
@@ -331,8 +368,24 @@ impl ToBytes for Sctp {
     }
 }
 
+/// An SCTP (Stream Control Transmission Protocol) packet.
 ///
-///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                        Verification Tag                       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |                            Checksum                           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 Z                             Chunks                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Sctp)]
 #[metadata_type(SctpMetadata)]
@@ -372,10 +425,6 @@ impl<'a> SctpRef<'a> {
     }
 
     /// The CRC32c Checksum of the SCTP packet.
-    ///
-    /// By default, the checksum of an [`Sctp`] packet is not recalculated when its fields are modified.
-    /// To make sure that a correct checksum is sent in a packet, use the `generate_checksum()` method
-    /// before converting a packet into its corresponding bytes.
     #[inline]
     pub fn chksum(&self) -> u32 {
         u32::from_be_bytes(
@@ -560,6 +609,7 @@ impl<'a> From<&'a SctpMut<'a>> for SctpRef<'a> {
     }
 }
 
+/// An iterator over the Control chunks of an SCTP packet.
 #[derive(Clone, Copy, Debug)]
 pub struct ControlChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
@@ -580,6 +630,7 @@ impl<'a> Iterator for ControlChunksIterRef<'a> {
     }
 }
 
+/// An iterator over the Payload chunks (i.e. the DATA chunks) of an SCTP packet.
 #[derive(Clone, Copy, Debug)]
 pub struct PayloadChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
@@ -600,12 +651,14 @@ impl<'a> Iterator for PayloadChunksIterRef<'a> {
     }
 }
 
+/// An SCTP chunk (may be a Control chunk or a Payload chunk).
 #[derive(Clone, Copy, Debug)]
 pub enum ChunkRef<'a> {
     Control(ControlChunkRef<'a>),
     Payload(DataChunkRef<'a>),
 }
 
+/// An iterator over all the chunks of an SCTP packet.
 #[derive(Clone, Copy, Debug)]
 pub struct ChunksIterRef<'a> {
     bytes: &'a [u8],
@@ -621,31 +674,6 @@ impl<'a> Iterator for ChunksIterRef<'a> {
                 (Some(&t), Some(&l)) => (t, u16::from_be_bytes(l)),
                 _ => return None,
             };
-
-        /*
-        let min_len = match chunk_type {
-            CHUNK_TYPE_INIT | CHUNK_TYPE_INIT_ACK => 20,
-            CHUNK_TYPE_SACK | CHUNK_TYPE_DATA => 16,
-            CHUNK_TYPE_HEARTBEAT
-            | CHUNK_TYPE_HEARTBEAT_ACK
-            | CHUNK_TYPE_ABORT
-            | CHUNK_TYPE_SHUTDOWN
-            | CHUNK_TYPE_SHUTDOWN_ACK
-            | CHUNK_TYPE_ERROR
-            | CHUNK_TYPE_COOKIE_ECHO
-            | CHUNK_TYPE_COOKIE_ACK
-            | CHUNK_TYPE_SHUTDOWN_COMPLETE => 4,
-            _ => 4,
-        };
-
-
-        if self.bytes.len() < min_len {
-            self.bytes = &[]; // Not needed, but this helps further calls to the iterator to short-circuit
-            return None;
-        }
-
-        let len = cmp::max(min_len, utils::padded_length::<4>(unpadded_len as usize));
-        */
 
         let len = utils::padded_length::<4>(unpadded_len as usize);
         match (self.bytes.get(..len), self.bytes.get(len..)) {
@@ -663,25 +691,29 @@ impl<'a> Iterator for ChunksIterRef<'a> {
             }
             _ => {
                 panic!("insufficient bytes for ChunkRef in iterator.");
-                /*
-                // Just take whatever remaining bytes we can for the payload
-                let chunk_bytes = self.bytes;
-                self.bytes = &[];
-                if chunk_type == CHUNK_TYPE_DATA {
-                    Some(ChunkRef::Payload(DataChunkRef::from_bytes_unchecked(
-                        chunk_bytes,
-                    )))
-                } else {
-                    Some(ChunkRef::Control(ControlChunkRef::from_bytes_unchecked(
-                        chunk_bytes,
-                    )))
-                }
-                */
             }
         }
     }
 }
 
+/// An SCTP (Stream Control Transmission Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                        Verification Tag                       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |                            Checksum                           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 Z                             Chunks                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[ref_type(SctpRef)]
 #[owned_type(Sctp)]
@@ -710,6 +742,7 @@ impl<'a> FromBytesMut<'a> for SctpMut<'a> {
 //                             Non-Layer Components
 // =============================================================================
 
+/// An SCTP Control chunk.
 #[derive(Clone, Debug)]
 pub enum ControlChunk {
     Init(InitChunk),
@@ -830,6 +863,7 @@ impl From<&ControlChunkRef<'_>> for ControlChunk {
     }
 }
 
+/// An SCTP Control chunk reference.
 #[derive(Clone, Copy, Debug)]
 pub enum ControlChunkRef<'a> {
     Init(InitChunkRef<'a>),
@@ -901,8 +935,28 @@ impl<'a> ControlChunkRef<'a> {
     }
 }
 
+/// An SCTP INIT chunk.
 ///
-///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |    Type (1)   |  Chunk Flags  |             Length            |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                            Init Tag                           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |           Advertised Receiver Window Credit (a_rwnd)          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |        Outbound Streams       |        Inbound Streams        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |           Initial Transmission Sequence Number (TSN)          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 Z             Optional or Variable-Length Parameters            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct InitChunk {
     flags: u8,
@@ -915,103 +969,142 @@ pub struct InitChunk {
 }
 
 impl InitChunk {
+    /// Converts the given bytes into an [`InitChunk`] instance, returning an error if the bytes are
+    /// not well-formed.
     #[inline]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
+    /// Converts the given bytes into an [`InitChunk`] instance without validating the bytes.
+    /// 
+    /// # Panics
+    /// 
+    /// The following method may panic if the bytes being passed in do not represent a well-formed
+    /// INIT chunk (i.e. if a call to [`InitChunk::validate()`] would return an error).
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
         Self::from(InitChunkRef::from_bytes_unchecked(bytes))
     }
 
+    /// Validates the given bytes against the expected structure and syntactic values of an
+    /// INIT chunk. If the bytes represent a well-formed INIT chunk, this method will return
+    /// `Ok()`; otherwise, it will return a [`ValidationError`] indicating what part of the
+    /// chunk was invalid.
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         InitChunkRef::validate(bytes)
     }
 
+    /// The Type field of the INIT chunk.
     #[inline]
     pub fn chunk_type(&self) -> u8 {
         CHUNK_TYPE_INIT
     }
 
+    /// The flags of the INIT chunk (in bytes).
     #[inline]
     pub fn flags_raw(&self) -> u8 {
         self.flags
     }
 
+    /// Sets the flags of the INIT chunk.
     #[inline]
     pub fn set_flags_raw(&mut self, flags: u8) {
         self.flags = flags;
     }
 
+    /// The length (without padding) of the INIT chunk.
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
         u16::try_from(20 + self.options.iter().map(|o| o.len()).sum::<usize>())
             .expect("too many bytes in SCTP INIT chunk to represent in a 16-bit Length field")
     }
 
+    /// The length (including padding) of the INIT chunk.
     #[inline]
     pub fn len(&self) -> usize {
         20 + self.options.iter().map(|o| o.len()).sum::<usize>()
     }
 
+    /// The Initiate Tag of the chunk.
+    /// 
+    /// The Initiate Tag is stored by the recipient of the INIT tag and is subsequently transmitted
+    /// as the Verification Tag of every SCTP packet for the duration of the association.
     #[inline]
     pub fn init_tag(&self) -> u32 {
         self.init_tag
     }
 
+    /// Sets the Initiate Tag of the chunk.
     #[inline]
     pub fn set_init_tag(&mut self, init_tag: u32) {
         self.init_tag = init_tag;
     }
 
+    /// The Advertised Receiver Window Credit (a_rwnd).
+    /// 
+    /// This field represents the number of bytes the sender has reserved as a window for messages
+    /// received in this association.
     #[inline]
     pub fn a_rwnd(&self) -> u32 {
         self.a_rwnd
     }
 
+    /// Sets the Advertised Receiver Window Credit (a_rwnd).
     #[inline]
     pub fn set_a_rwnd(&mut self, a_rwnd: u32) {
         self.a_rwnd = a_rwnd;
     }
 
+    /// The number of Outbound Streams the sender of the INIT chunk wishes to create for the
+    /// association.
     #[inline]
     pub fn ostreams(&self) -> u16 {
         self.ostreams
     }
 
+    /// Sets the number of Outbound Streams advertised by the INIT chunk.
     #[inline]
     pub fn set_ostreams(&mut self, ostreams: u16) {
         self.ostreams = ostreams;
     }
 
+    /// The number of Inbound Streams the sender of the INIT chunk will allow its peer to create for
+    /// the association.
     #[inline]
     pub fn istreams(&self) -> u16 {
         self.istreams
     }
 
+    /// Sets the number of Inbound Streams advertised by the INIT chunk.
     #[inline]
     pub fn set_istreams(&mut self, istreams: u16) {
         self.istreams = istreams;
     }
 
+    /// The Initial Transmission Sequence Number (TSN).
+    /// 
+    /// Indicates the TSN that the sender of the INIT chunk will begin its association with.
     #[inline]
     pub fn init_tsn(&self) -> u32 {
         self.init_tsn
     }
 
+    /// Sets the Initial Transmission Sequence Number (TSN) of the INIT chunk.
     #[inline]
     pub fn set_init_tsn(&mut self, init_tsn: u32) {
         self.init_tsn = init_tsn;
     }
 
+    /// The optional or variable-length parameters of the INIT chunk.
     #[inline]
     pub fn options(&self) -> &Vec<InitOption> {
         &self.options
     }
 
+    /// A mutable reference to the optional or variable-length parameters of the INIT chunk.
     #[inline]
     pub fn options_mut(&mut self) -> &mut Vec<InitOption> {
         &mut self.options
@@ -1062,8 +1155,28 @@ impl From<&InitChunkRef<'_>> for InitChunk {
     }
 }
 
+/// An SCTP INIT chunk reference.
 ///
-///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |    Type (1)   |  Chunk Flags  |             Length            |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                            Init Tag                           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |           Advertised Receiver Window Credit (a_rwnd)          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |        Outbound Streams       |        Inbound Streams        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |           Initial Transmission Sequence Number (TSN)          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 Z             Optional or Variable-Length Parameters            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct InitChunkRef<'a> {
     data: &'a [u8],
@@ -5264,6 +5377,22 @@ impl<'a> ProtocolViolationErrorRef<'a> {
     }
 }
 
+
+
+/// An optional/variable-length parameter with a type not recognized by the `pkts` library.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |         Parameter Type        |        Parameter Length       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 Z                        Parameter Value                        Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct GenericParam {
     param_type: u16,
@@ -5345,6 +5474,21 @@ impl From<&GenericParamRef<'_>> for GenericParam {
     }
 }
 
+/// An optional/variable-length parameter for an SCTP Control chunk with a type not recognized by
+/// the `pkts` library.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |         Parameter Type        |        Parameter Length       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 Z                        Parameter Value                        Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParamRef<'a> {
     data: &'a [u8],
@@ -6540,8 +6684,20 @@ impl ShutdownCompleteFlags {
     }
 }
 
-/// A chunk containing a Chunk Type value that does not match any
-/// chunk type defined in RFC 4960.
+/// A chunk containing a Chunk Type value that does not match any chunk type defined in RFC 4960.
+/// 
+/// ## Packet Format
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |   Chunk Type  |  Chunk Flags  |          Chunk Length         |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 Z                          Chunk Value                          Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct UnknownChunk {
     chunk_type: u8,
@@ -6629,8 +6785,20 @@ impl From<&UnknownChunkRef<'_>> for UnknownChunk {
     }
 }
 
-/// A chunk containing a Chunk Type value that does not match any
-/// chunk type defined in RFC 4960.
+/// A chunk containing a Chunk Type value that does not match any chunk type defined in RFC 4960.
+/// 
+/// ## Packet Format
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |   Chunk Type  |  Chunk Flags  |          Chunk Length         |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 Z                          Chunk Value                          Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct UnknownChunkRef<'a> {
     data: &'a [u8],
@@ -6737,6 +6905,26 @@ impl<'a> UnknownChunkRef<'a> {
     }
 }
 
+/// An SCTP DATA chunk.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |    Type (0)   | Reserved|U|B|E|             Length            |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |               Transmission Sequence Number (TSN)              |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |           Stream ID           |  Stream Sequence Number (SSN) |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |                  Payload Protocol Identifier                  |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 Z                           User Data                           Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug)]
 pub struct DataChunk {
     flags: DataChunkFlags,
@@ -6748,37 +6936,53 @@ pub struct DataChunk {
 }
 
 impl DataChunk {
+    /// Converts the given bytes into a [`DataChunk`] instance, returning an error if the bytes are
+    /// not well-formed.
     #[inline]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    #[inline]
-    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        DataChunkRef::validate(bytes)
-    }
-
+    /// Converts the given bytes into a [`DataChunk`] instance without validating the bytes.
+    /// 
+    /// # Panics
+    /// 
+    /// The following method may panic if the bytes being passed in do not represent a well-formed
+    /// DATA chunk (i.e. if a call to [`DataChunk::validate()`] would return an error).
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
         Self::from(DataChunkRef::from_bytes_unchecked(bytes))
     }
 
+    /// Validates the given bytes against the expected structure and syntactic values of a
+    /// DATA chunk. If the bytes represent a well-formed DATA chunk, this method will return
+    /// `Ok()`; otherwise, it will return a [`ValidationError`] indicating what part of the
+    /// chunk was invalid.
     #[inline]
-    pub fn chunk_type(&self) -> u8 {
-        0 // Payload Data (DATA)
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        DataChunkRef::validate(bytes)
     }
 
+    /// The Type field of the DATA chunk.
+    #[inline]
+    pub fn chunk_type(&self) -> u8 {
+        CHUNK_TYPE_DATA
+    }
+
+    /// The flags of the DATA chunk.
     #[inline]
     pub fn flags(&self) -> DataChunkFlags {
         self.flags
     }
 
+    /// Sets the flags of the DATA chunk.
     #[inline]
     pub fn set_flags(&mut self, flags: DataChunkFlags) {
         self.flags = flags;
     }
 
+    /// The length (without padding) of the DATA chunk.
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
         (20 + self.payload.len())
@@ -6786,56 +6990,67 @@ impl DataChunk {
             .expect("too many bytes in SCTP DATA Chunk to represent in a 16-bit Length field")
     }
 
+    /// The length (including padding) of the DATA chunk.
     #[inline]
     pub fn len(&self) -> usize {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
+    /// The Transmission Sequence Number (TSN) of the DATA chunk.
     #[inline]
     pub fn tsn(&self) -> u32 {
         self.tsn
     }
 
+    /// Sets the Transmission Sequence Number (TSN) of the DATA chunk.
     #[inline]
     pub fn set_tsn(&mut self, tsn: u32) {
         self.tsn = tsn;
     }
 
+    /// The Stream Identifier of the DATA chunk.
     #[inline]
     pub fn stream_id(&self) -> u16 {
         self.stream_id
     }
 
+    /// Sets the Stream Identifier of the DATA chunk.
     #[inline]
     pub fn set_stream_id(&mut self, stream_id: u16) {
         self.stream_id = stream_id;
     }
 
+    /// The Stream Sequence Number (SSN) of the DATA chunk.
     #[inline]
     pub fn stream_seq(&self) -> u16 {
         self.stream_seq
     }
 
+    /// Sets the Stream Sequence Number (SSN) of the DATA chunk.
     #[inline]
     pub fn set_stream_seq(&mut self, stream_seq: u16) {
         self.stream_seq = stream_seq;
     }
 
+    /// The Payload Protocol Identifier (PPID) of the DATA chunk.
     #[inline]
     pub fn proto_id(&self) -> u32 {
         self.proto_id
     }
 
+    /// Sets the Payload Protocol Identifier (PPID) of the DATA chunk.
     #[inline]
     pub fn set_proto_id(&mut self, proto_id: u32) {
         self.proto_id = proto_id;
     }
 
+    /// The User Data payload of the DATA chunk.
     #[inline]
     pub fn payload(&self) -> &dyn LayerObject {
         self.payload.as_ref()
     }
 
+    /// A mutable reference to the User Data payload of the DATA chunk.
     #[inline]
     pub fn payload_mut(&mut self) -> &mut Box<dyn LayerObject> {
         &mut self.payload
@@ -6880,18 +7095,56 @@ impl From<DataChunkRef<'_>> for DataChunk {
     }
 }
 
+/// An SCTP DATA chunk.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |    Type (0)   |  Res  |I|U|B|E|             Length            |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |               Transmission Sequence Number (TSN)              |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |           Stream ID           |  Stream Sequence Number (SSN) |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 |                  Payload Protocol Identifier                  |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 Z                           User Data                           Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct DataChunkRef<'a> {
     data: &'a [u8],
 }
 
 impl<'a> DataChunkRef<'a> {
+    /// Converts the given bytes into a [`DataChunkRef`] instance, returning an error if they are
+    /// not well-formed.
     #[inline]
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
+    /// Converts the given bytes into a [`DataChunkRef`] instance without validating the bytes.
+    /// 
+    /// # Panics
+    /// 
+    /// The following method may panic or cause a panic at some future method invocation on the
+    /// instance if the bytes being passed in do not represent a well-formed DATA chunk (i.e. if a
+    /// call to [`DataChunk::validate()`] would return an error).
+    #[inline]
+    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+        DataChunkRef { data: bytes }
+    }
+
+    /// Validates the given bytes against the expected structure and syntactic values of a
+    /// DATA chunk. If the bytes represent a well-formed DATA chunk, this method will return
+    /// `Ok()`; otherwise, it will return a [`ValidationError`] indicating what part of the
+    /// chunk was invalid.
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let len = match utils::to_array(bytes, 2) {
@@ -6954,11 +7207,7 @@ impl<'a> DataChunkRef<'a> {
         }
     }
 
-    #[inline]
-    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        DataChunkRef { data: bytes }
-    }
-
+    /// The Type field of the DATA chunk.
     #[inline]
     pub fn chunk_type(&self) -> u8 {
         *self
@@ -6967,6 +7216,7 @@ impl<'a> DataChunkRef<'a> {
             .expect("insufficient bytes in SCTP DATA chunk to extrack Chunk Type field")
     }
 
+    /// The flags of the DATA chunk.
     #[inline]
     pub fn flags(&self) -> DataChunkFlags {
         DataChunkFlags {
@@ -6977,6 +7227,7 @@ impl<'a> DataChunkRef<'a> {
         }
     }
 
+    /// The length (without padding) of the DATA chunk.
     #[inline]
     pub fn chunk_len(&self) -> u16 {
         u16::from_be_bytes(
@@ -6985,11 +7236,13 @@ impl<'a> DataChunkRef<'a> {
         )
     }
 
+    /// The length (including padding) of the DATA chunk.
     #[inline]
     pub fn chunk_len_padded(&self) -> usize {
         utils::padded_length::<4>(self.chunk_len() as usize)
     }
 
+    /// The Transmission Sequence Number (TSN) of the DATA chunk.
     #[inline]
     pub fn tsn(&self) -> u32 {
         u32::from_be_bytes(
@@ -6998,6 +7251,7 @@ impl<'a> DataChunkRef<'a> {
         )
     }
 
+    /// Sets the Stream Identifier of the DATA chunk.
     #[inline]
     pub fn stream_id(&self) -> u16 {
         u16::from_be_bytes(
@@ -7007,6 +7261,7 @@ impl<'a> DataChunkRef<'a> {
         )
     }
 
+    /// The Stream Sequence Number (SSN) of the DATA chunk.
     #[inline]
     pub fn stream_seq(&self) -> u16 {
         u16::from_be_bytes(utils::to_array(self.data, 10).expect(
@@ -7014,6 +7269,7 @@ impl<'a> DataChunkRef<'a> {
         ))
     }
 
+    /// The Payload Protocol Identifier (PPID) of the DATA chunk.
     #[inline]
     pub fn proto_id(&self) -> u32 {
         u32::from_be_bytes(utils::to_array(self.data, 12).expect(
@@ -7021,6 +7277,7 @@ impl<'a> DataChunkRef<'a> {
         ))
     }
 
+    /// The User Data payload of the DATA chunk.
     #[inline]
     pub fn user_data(&self) -> &[u8] {
         self.data
@@ -7028,6 +7285,7 @@ impl<'a> DataChunkRef<'a> {
             .expect("insufficient bytes in SCTP DATA chunk to retrieve User Data field")
     }
 
+    /// The padding at the end of the DATA chunk.
     #[inline]
     pub fn padding(&self) -> &[u8] {
         self.data
@@ -7036,27 +7294,35 @@ impl<'a> DataChunkRef<'a> {
     }
 }
 
+/// The flags of a DATA chunk.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DataChunkFlags {
     data: u8,
 }
 
 impl DataChunkFlags {
+    /// Creates a new `DataChunkFlags` instance with none of the flags set.
     #[inline]
     pub fn new() -> Self {
         DataChunkFlags::default()
     }
 
+    /// The raw byte representation of the DATA chunk flags.
     #[inline]
     pub fn as_raw(&self) -> u8 {
         self.data
     }
 
+    /// The Immediate ('I') flag.
+    /// 
+    /// When set, this flag indicates that a corresponding SACK chunk should be sent back by the
+    /// recipient without delay.
     #[inline]
     pub fn immediate(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_IMMEDIATE_BIT > 0
     }
 
+    /// Sets the Immediate ('I') flag.
     #[inline]
     pub fn set_immediate(&mut self, immediate: bool) {
         if immediate {
@@ -7066,11 +7332,16 @@ impl DataChunkFlags {
         }
     }
 
+    /// The Unordered ('U') flag.
+    /// 
+    /// When set, this flag indicates that the instance is an unordered DATA chunk (i.e. no stream
+    /// sequence number associated with it).
     #[inline]
     pub fn unordered(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_UNORDERED_BIT > 0
     }
 
+    /// Sets the Unordered ('U') flag.
     #[inline]
     pub fn set_unordered(&mut self, unordered: bool) {
         if unordered {
@@ -7080,11 +7351,17 @@ impl DataChunkFlags {
         }
     }
 
+    /// The Beginning ('B') Fragment flag.
+    /// 
+    /// When set, this flag indicates that the chunk contains the first fragment of user data.
+    /// If combined with the Ending ('E') flag, this indicates that the payload of the DATA
+    /// chunk instance is unfragmented.
     #[inline]
     pub fn beginning_fragment(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_BEGINNING_BIT > 0
     }
 
+    /// Sets the Beginning ('B') Fragment flag.
     #[inline]
     pub fn set_beginning_fragment(&mut self, beginning: bool) {
         if beginning {
@@ -7094,11 +7371,17 @@ impl DataChunkFlags {
         }
     }
 
+    /// The Ending ('E') Fragment flag.
+    /// 
+    /// When set, this flag indicates that the chunk contains the last fragment of user data.
+    /// If combined with the Beginning ('B') flag, this indicates that the payload of the DATA
+    /// chunk instance is unfragmented.
     #[inline]
     pub fn ending_fragment(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_ENDING_BIT > 0
     }
 
+    /// Sets the Ending ('E') Fragment flag.
     #[inline]
     pub fn set_ending_fragment(&mut self, ending: bool) {
         if ending {
@@ -7108,11 +7391,13 @@ impl DataChunkFlags {
         }
     }
 
+    /// The reserved flag bits.
     #[inline]
     pub fn reserved(&self) -> u8 {
         self.data & 0xF0
     }
 
+    /// Sets the reserved flag bits.
     #[inline]
     pub fn set_reserved(&mut self, reserved: u8) {
         self.data &= 0x0F;
