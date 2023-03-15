@@ -99,11 +99,12 @@ impl LayerObject for Raw {
 }
 
 impl ToBytes for Raw {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.extend(&self.data);
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_extended(bytes),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((RawRef::layer_id_static(), start))),
         }
     }
 }

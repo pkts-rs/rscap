@@ -138,15 +138,19 @@ impl LayerObject for Ether {
 
 impl ToBytes for Ether {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.extend(self.src);
         bytes.extend(self.dst);
         match self.payload.as_ref() {
             None => bytes.extend(ETH_PROTOCOL_EXPERIMENTAL.to_be_bytes()),
-            Some(p) => bytes.extend(match p.layer_metadata().as_any().downcast_ref::<&dyn EtherPayloadMetadata>() {
-                Some(m) => m.eth_type(),
-                None => ETH_PROTOCOL_EXPERIMENTAL,
-            }.to_be_bytes()),
+            Some(p) => {
+                bytes.extend(match p.layer_metadata().as_any().downcast_ref::<&dyn EtherPayloadMetadata>() {
+                    Some(m) => m.eth_type(),
+                    None => ETH_PROTOCOL_EXPERIMENTAL,
+                }.to_be_bytes());
+                p.to_bytes_chksummed(bytes, Some((EtherRef::layer_id_static(), start)))
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-use crate::error::*;
+use crate::{error::*, utils};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::{Raw, RawRef};
@@ -11,13 +11,15 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::fmt::Debug;
 use std::cmp;
 
+use super::ip::{DATA_PROTO_UDP, Ipv4Ref, Ipv6Ref};
+
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[ref_type(UdpRef)]
 pub struct Udp {
     sport: u16,
     dport: u16,
-    chksum: u16,
+    chksum: Option<u16>,
     payload: Option<Box<dyn LayerObject>>,
 }
 
@@ -42,14 +44,27 @@ impl Udp {
         self.dport = dst_port;
     }
 
+    /// Retrieves the assigned checksum for the packet, or `None` if no checksum
+    /// has explicitly been assigned to the packet.
     #[inline]
-    pub fn chksum(&self) -> u16 {
+    pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
+    /// Explicitly assigns a checksum to be used for the packet.
+    /// 
+    /// By default, the UDP checksum is automatically calculated when a [`Udp`]
+    /// instance is converted to bytes. Setting the checksum with this method
+    /// overrides that behavior so that the specified checksum is used instead.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
-        self.chksum = chksum;
+        self.chksum = Some(chksum);
+    }
+
+    /// Clears any explicitly assigned checksum that was assigned to the packet.
+    #[inline]
+    pub fn clear_chksum(&mut self) {
+        self.chksum = None;
     }
 }
 
@@ -95,18 +110,51 @@ impl LayerObject for Udp {
 
 impl ToBytes for Udp {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         let len: u16 = self
             .len()
             .try_into()
-            .expect("UDP packet payload exceeded maximum permittable size of 2^16 bytes");
+            .expect("UDP packet payload exceeded maximum permittable size of 65535 bytes");
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(len.to_be_bytes());
-        bytes.extend(self.chksum.to_be_bytes());
+        bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_extended(bytes),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((UdpRef::layer_id_static(), start))),
+        }
+
+        if self.chksum.is_none() {
+            if let Some((id, prev_idx)) = prev {
+                let new_chksum = if id == Ipv4Ref::layer_id_static() {
+                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
+                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
+                    let upper_layer_len = (bytes.len() - start) as u16;
+                    data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
+
+                    data_chksum
+                } else if id == Ipv6Ref::layer_id_static() {
+                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
+                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                    let upper_layer_len = (bytes.len() - start) as u32;
+                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
+                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
+                    // Omit adding 0, it does nothing anyways
+                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
+
+                    data_chksum
+                } else {
+                    return // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
+                };
+
+                let chksum_field: &mut [u8; 2] = &mut bytes[start + 6..start + 8].try_into().unwrap();
+                *chksum_field = new_chksum.to_be_bytes();
+            }
+            // else don't bother calculating the checksum
         }
     }
 }
@@ -118,7 +166,7 @@ impl FromBytesCurrent for Udp {
         Udp {
             sport: udp.sport(),
             dport: udp.dport(),
-            chksum: udp.chksum(),
+            chksum: None,
             payload: None,
         }
     }

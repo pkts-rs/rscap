@@ -11,6 +11,10 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::iter::Iterator;
 use core::cmp;
 
+use super::ip::DATA_PROTO_TCP;
+use super::ip::Ipv4Ref;
+use super::ip::Ipv6Ref;
+
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpMetadata)]
 #[ref_type(TcpRef)]
@@ -22,7 +26,7 @@ pub struct Tcp {
     reserved: u8,
     flags: TcpFlags,
     window: u16,
-    chksum: u16,
+    chksum: Option<u16>,
     urgent_ptr: u16,
     options: TcpOptions,
     payload: Option<Box<dyn LayerObject>>,
@@ -106,13 +110,18 @@ impl Tcp {
     }
 
     #[inline]
-    pub fn chksum(&self) -> u16 {
+    pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
-        self.chksum = chksum;
+        self.chksum = Some(chksum);
+    }
+
+    #[inline]
+    pub fn clear_chksum(&mut self) {
+        self.chksum = None;
     }
 
     #[inline]
@@ -179,7 +188,8 @@ impl LayerObject for Tcp {
 
 impl ToBytes for Tcp {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(self.seq.to_be_bytes());
@@ -191,11 +201,43 @@ impl ToBytes for Tcp {
         );
         bytes.push((self.flags.data & 0x00FF) as u8);
         bytes.extend(self.window.to_be_bytes());
-        bytes.extend(self.chksum.to_be_bytes());
+        bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         bytes.extend(self.urgent_ptr.to_be_bytes());
         match self.payload.as_ref() {
             None => (),
-            Some(p) => p.to_bytes_extended(bytes),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((TcpRef::layer_id_static(), start))),
+        }
+        
+        if self.chksum.is_none() {
+            if let Some((id, prev_idx)) = prev {
+                let new_chksum = if id == Ipv4Ref::layer_id_static() {
+                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
+                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_TCP as u16);
+                    let upper_layer_len = (bytes.len() - start) as u16;
+                    data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
+
+                    data_chksum
+                } else if id == Ipv6Ref::layer_id_static() {
+                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                    let addr_chksum = utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
+                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                    let upper_layer_len = (bytes.len() - start) as u32;
+                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
+                    data_chksum = utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
+                    // Omit adding 0, it does nothing anyways
+                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_TCP as u16);
+
+                    data_chksum
+                } else {
+                    return // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
+                };
+
+                let chksum_field: &mut [u8; 2] = &mut bytes[start + 16..start + 18].try_into().unwrap();
+                *chksum_field = new_chksum.to_be_bytes();
+            }
+            // else don't bother calculating the checksum
         }
     }
 }
@@ -212,7 +254,7 @@ impl FromBytesCurrent for Tcp {
             reserved: tcp.reserved(),
             flags: tcp.flags(),
             window: tcp.window(),
-            chksum: tcp.chksum(),
+            chksum: None,
             urgent_ptr: tcp.urgent_ptr(),
             options: TcpOptions::from(tcp.options()),
             payload: None,
@@ -835,10 +877,8 @@ impl TcpOptions {
     pub fn padding_mut(&mut self) -> &mut Option<Vec<u8>> {
         &mut self.padding
     }
-}
 
-impl ToBytes for TcpOptions {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self.options.as_ref() {
             None => (),
             Some(options) => {
@@ -1056,11 +1096,9 @@ impl TcpOption {
             None => &[],
         }
     }
-}
 
-impl ToBytes for TcpOption {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.option_type);
         match self.option_type {
             0 | 1 => (),

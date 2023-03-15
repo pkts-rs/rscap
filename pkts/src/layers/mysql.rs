@@ -105,11 +105,12 @@ impl LayerObject for MysqlPacket {
 
 impl ToBytes for MysqlPacket {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.push(self.sequence_id);
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
         match &self.payload {
-            Some(p) => p.to_bytes_extended(bytes),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((MysqlPacketRef::layer_id_static(), start))),
             None => ()
         }
     }
@@ -256,7 +257,7 @@ impl LayerObject for MysqlClient {
 }
 
 impl ToBytes for MysqlClient {
-    fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }

@@ -133,29 +133,29 @@ pub trait ToSlice {
 
 /// A trait for serializing a [`Layer`] type into its binary representation.
 pub trait ToBytes {
+    /// Appends the layer's byte representation to the given byte vector and
+    /// calculates the checksum of the given layer if needed.
+    /// 
+    /// NOTE: this API is unstable, and should not be relied upon. It may be
+    /// modified or removed at any point.
+    #[doc(hidden)]
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>);
+
+    /*
     /// Appends the layer's byte representation to the given byte vector.
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>);
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        self.to_bytes_chksummed(bytes, None);
+    }
+    */
 
     /// Serializes the given layer into bytes stored in a vector.
     #[inline]
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        self.to_bytes_extended(&mut bytes);
+        self.to_bytes_chksummed(&mut bytes, None);
         bytes
     }
 }
-
-// TODO: I added this because I could, but do we need it? Is it useless?
-impl<T: ToSlice> ToBytes for T {
-    #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        bytes.extend(self.to_slice());
-    }
-}
-
-
-
-
 
 /// An object-safe subtrait of [`Layer`], suitable for internal operations involving
 /// generic layer payloads.

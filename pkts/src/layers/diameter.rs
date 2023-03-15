@@ -175,7 +175,7 @@ impl LayerObject for Diameter {
 
 impl ToBytes for Diameter {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         // Version
         bytes.push(1);
         let len: u32 = self
@@ -569,7 +569,7 @@ impl LayerObject for DiamBase {
 
 impl ToBytes for DiamBase {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         // Version
         bytes.push(1);
         let len: u32 = self
@@ -1089,11 +1089,16 @@ impl BaseCommand {
             // _ => panic!("Internal Error--unexpected Command Code enum variant for comm_code()"),
         }
     }
-}
 
-impl ToBytes for BaseCommand {
     #[inline]
-    fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        self.to_bytes_extended(&mut v);
+        v
+    }
+
+    #[inline]
+    pub fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
         todo!()
     }
 }
@@ -1687,11 +1692,16 @@ impl GenericAvp {
     pub fn data_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data
     }
-}
 
-impl ToBytes for GenericAvp {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        self.to_bytes_extended(&mut v);
+        v
+    }
+
+    #[inline]
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         // AVP Code
         bytes.extend(self.code.to_be_bytes());
         // Flags

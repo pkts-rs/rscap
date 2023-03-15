@@ -10,11 +10,27 @@
 
 use core::{array, cmp, default, iter, mem};
 
-/*
+// TODO: optimize this
 pub fn ones_complement_16bit(bytes: &[u8]) -> u16 {
-    todo!()
+    let mut res: u16 = 0;
+    let mut iter = bytes.iter();
+    while let Some(&first) = iter.next() {
+        let second = *iter.next().unwrap_or(&0);
+        res = ones_complement_add(res, (first as u16) << 8 | (second as u16));
+    }
+
+    res
 }
-*/
+
+#[inline]
+pub fn ones_complement_add(a: u16, b: u16) -> u16 {
+    let new = a.wrapping_add(b);
+    if new < a {
+        new.wrapping_add(1)
+    } else {
+        new
+    }
+}
 
 #[inline]
 pub(crate) fn to_array<const T: usize>(bytes: &[u8], start: usize) -> Option<[u8; T]> {

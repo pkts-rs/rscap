@@ -76,7 +76,7 @@ pub struct Sctp {
     sport: u16,
     dport: u16,
     verify_tag: u32,
-    chksum: u32,
+    chksum: Option<u32>,
     control_chunks: Vec<ControlChunk>,
     payload_chunks: Vec<DataChunk>,
 }
@@ -126,14 +126,19 @@ impl Sctp {
     /// To make sure that a correct checksum is sent in a packet, use the `generate_checksum()` method
     /// before converting a packet into its corresponding bytes.
     #[inline]
-    pub fn chksum(&self) -> u32 {
+    pub fn chksum(&self) -> Option<u32> {
         self.chksum
     }
 
     /// Sets the Checksum of the packet to the given value.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u32) {
-        self.chksum = chksum;
+        self.chksum = Some(chksum);
+    }
+
+    #[inline]
+    pub fn clear_chksum(&mut self) {
+        self.chksum = None;
     }
 
     /// Recalculates the checksum of the given `Sctp` packet and sets the checksum field accordingly.
@@ -243,7 +248,7 @@ impl FromBytesCurrent for Sctp {
             sport: sctp.sport(),
             dport: sctp.dport(),
             verify_tag: sctp.verify_tag(),
-            chksum: sctp.chksum(),
+            chksum: None,
             control_chunks,
             payload_chunks,
         }
@@ -308,18 +313,21 @@ impl LayerObject for Sctp {
 
 impl ToBytes for Sctp {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(self.verify_tag.to_be_bytes());
-        bytes.extend(self.chksum.to_be_bytes());
+        bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         for chunk in &self.control_chunks {
             chunk.to_bytes_extended(bytes);
         }
 
         for chunk in &self.payload_chunks {
-            chunk.to_bytes_extended(bytes);
+            chunk.to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
         }
+
+        // TODO: set checksum here
     }
 }
 
@@ -773,11 +781,9 @@ impl ControlChunk {
             ControlChunk::Unknown(c) => c.len(),
         }
     }
-}
 
-impl ToBytes for ControlChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             ControlChunk::Init(c) => c.to_bytes_extended(bytes),
             ControlChunk::InitAck(c) => c.to_bytes_extended(bytes),
@@ -1010,11 +1016,9 @@ impl InitChunk {
     pub fn options_mut(&mut self) -> &mut Vec<InitOption> {
         &mut self.options
     }
-}
 
-impl ToBytes for InitChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_INIT);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -1335,9 +1339,7 @@ impl InitOption {
     pub fn len(&self) -> usize {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
-}
 
-impl ToBytes for InitOption {
     #[inline]
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
@@ -1658,11 +1660,9 @@ impl InitAckChunk {
     pub fn options_mut(&mut self) -> &mut Vec<InitAckOption> {
         &mut self.options
     }
-}
 
-impl ToBytes for InitAckChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_INIT_ACK);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -1969,11 +1969,9 @@ impl InitAckOption {
     pub fn len(&self) -> usize {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
-}
 
-impl ToBytes for InitAckOption {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             InitAckOption::StateCookie(c) => {
                 bytes.extend(INIT_ACK_OPT_STATE_COOKIE.to_be_bytes());
@@ -2261,11 +2259,9 @@ impl SackChunk {
     pub fn duplicate_tsns_mut(&mut self) -> &mut Vec<u32> {
         &mut self.duplicate_tsns
     }
-}
 
-impl ToBytes for SackChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SACK);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -2590,11 +2586,9 @@ impl HeartbeatChunk {
     pub fn heartbeat_mut(&mut self) -> &mut Vec<u8> {
         &mut self.heartbeat
     }
-}
 
-impl ToBytes for HeartbeatChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_HEARTBEAT);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -2865,10 +2859,9 @@ impl HeartbeatAckChunk {
     pub fn heartbeat_mut(&mut self) -> &mut Vec<u8> {
         &mut self.heartbeat
     }
-}
 
-impl ToBytes for HeartbeatAckChunk {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    #[inline]
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_HEARTBEAT_ACK);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -3049,10 +3042,9 @@ impl AbortChunk {
     pub fn set_causes(&mut self) -> &mut Vec<ErrorCause> {
         &mut self.causes
     }
-}
 
-impl ToBytes for AbortChunk {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    #[inline]
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_ABORT);
         bytes.push(self.flags.raw());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -3310,6 +3302,35 @@ impl ErrorCause {
             Self::Unknown(e) => e.len(),
         }
     }
+
+    #[inline]
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        match self {
+            ErrorCause::InvalidStreamIdentifier(e) => e.to_bytes_extended(bytes),
+            ErrorCause::MissingMandatoryParameter(e) => e.to_bytes_extended(bytes),
+            ErrorCause::StaleCookie(e) => e.to_bytes_extended(bytes),
+            ErrorCause::OutOfResource => {
+                bytes.extend(ERR_CODE_OUT_OF_RESOURCE.to_be_bytes());
+                bytes.extend(4u16.to_be_bytes());
+            }
+            ErrorCause::UnresolvableAddress(e) => e.to_bytes_extended(bytes),
+            ErrorCause::UnrecognizedChunkType(e) => e.to_bytes_extended(bytes),
+            ErrorCause::InvalidMandatoryParameter => {
+                bytes.extend(ERR_CODE_INVALID_MAND_PARAM.to_be_bytes());
+                bytes.extend(4u16.to_be_bytes());
+            }
+            ErrorCause::UnrecognizedParameters(e) => e.to_bytes_extended(bytes),
+            ErrorCause::NoUserData(e) => e.to_bytes_extended(bytes),
+            ErrorCause::CookieDuringShutdown => {
+                bytes.extend(ERR_CODE_COOKIE_RCVD_SHUTTING_DOWN.to_be_bytes());
+                bytes.extend(4u16.to_be_bytes());
+            }
+            ErrorCause::AssociationNewAddress(e) => e.to_bytes_extended(bytes),
+            ErrorCause::UserInitiatedAbort(e) => e.to_bytes_extended(bytes),
+            ErrorCause::ProtocolViolation(e) => e.to_bytes_extended(bytes),
+            ErrorCause::Unknown(e) => e.to_bytes_extended(bytes),
+        }
+    }
 }
 
 impl From<ErrorCauseRef<'_>> for ErrorCause {
@@ -3354,36 +3375,6 @@ impl From<&ErrorCauseRef<'_>> for ErrorCause {
                               .to_vec(),
                           */
             ),
-        }
-    }
-}
-
-impl ToBytes for ErrorCause {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        match self {
-            ErrorCause::InvalidStreamIdentifier(e) => e.to_bytes_extended(bytes),
-            ErrorCause::MissingMandatoryParameter(e) => e.to_bytes_extended(bytes),
-            ErrorCause::StaleCookie(e) => e.to_bytes_extended(bytes),
-            ErrorCause::OutOfResource => {
-                bytes.extend(ERR_CODE_OUT_OF_RESOURCE.to_be_bytes());
-                bytes.extend(4u16.to_be_bytes());
-            }
-            ErrorCause::UnresolvableAddress(e) => e.to_bytes_extended(bytes),
-            ErrorCause::UnrecognizedChunkType(e) => e.to_bytes_extended(bytes),
-            ErrorCause::InvalidMandatoryParameter => {
-                bytes.extend(ERR_CODE_INVALID_MAND_PARAM.to_be_bytes());
-                bytes.extend(4u16.to_be_bytes());
-            }
-            ErrorCause::UnrecognizedParameters(e) => e.to_bytes_extended(bytes),
-            ErrorCause::NoUserData(e) => e.to_bytes_extended(bytes),
-            ErrorCause::CookieDuringShutdown => {
-                bytes.extend(ERR_CODE_COOKIE_RCVD_SHUTTING_DOWN.to_be_bytes());
-                bytes.extend(4u16.to_be_bytes());
-            }
-            ErrorCause::AssociationNewAddress(e) => e.to_bytes_extended(bytes),
-            ErrorCause::UserInitiatedAbort(e) => e.to_bytes_extended(bytes),
-            ErrorCause::ProtocolViolation(e) => e.to_bytes_extended(bytes),
-            ErrorCause::Unknown(e) => e.to_bytes_extended(bytes),
         }
     }
 }
@@ -3611,11 +3602,9 @@ impl StreamIdentifierError {
     pub fn set_reserved(&mut self, reserved: u16) {
         self.reserved = reserved;
     }
-}
 
-impl ToBytes for StreamIdentifierError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_INVALID_STREAM_ID.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
         bytes.extend(self.stream_id.to_be_bytes());
@@ -3785,11 +3774,9 @@ impl MissingParameterError {
     pub fn missing_params_mut(&mut self) -> &mut Vec<u16> {
         &mut self.missing_params
     }
-}
 
-impl ToBytes for MissingParameterError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_MISSING_MAND_PARAM.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         bytes.extend((u32::try_from(self.missing_params.len()).expect("too many Missing Params in SCTP Missing Parameter Error option to represent in a 32-bit Length field")).to_be_bytes());
@@ -3995,11 +3982,9 @@ impl StaleCookieError {
     pub fn set_staleness(&mut self, staleness: u32) {
         self.staleness = staleness;
     }
-}
 
-impl ToBytes for StaleCookieError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_STALE_COOKIE.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
         bytes.extend(self.staleness.to_be_bytes());
@@ -4166,11 +4151,9 @@ impl UnresolvableAddrError {
     pub fn addr_mut(&mut self) -> &mut Vec<u8> {
         &mut self.addr
     }
-}
 
-impl ToBytes for UnresolvableAddrError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_UNRESOLVABLE_ADDRESS.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         bytes.extend(&self.addr);
@@ -4342,11 +4325,9 @@ impl UnrecognizedChunkError {
     pub fn chunk_mut(&mut self) -> &mut Vec<u8> {
         &mut self.chunk
     }
-}
 
-impl ToBytes for UnrecognizedChunkError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_STALE_COOKIE.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
         bytes.extend(&self.chunk);
@@ -4500,11 +4481,9 @@ impl UnrecognizedParamError {
     pub fn params_mut(&mut self) -> &mut Vec<GenericParam> {
         &mut self.params
     }
-}
 
-impl ToBytes for UnrecognizedParamError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_UNRECOGNIZED_PARAMS.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         for param in self.params.iter() {
@@ -4690,11 +4669,9 @@ impl NoUserDataError {
     pub fn set_tsn(&mut self, tsn: u32) {
         self.tsn = tsn;
     }
-}
 
-impl ToBytes for NoUserDataError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_NO_USER_DATA.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
         bytes.extend(self.tsn.to_be_bytes());
@@ -4859,11 +4836,9 @@ impl AssociationNewAddrError {
     pub fn params_mut(&mut self) -> &mut Vec<GenericParam> {
         &mut self.tlvs
     }
-}
 
-impl ToBytes for AssociationNewAddrError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_RESTART_ASSOC_NEW_ADDR.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         for tlv in self.tlvs.iter() {
@@ -5023,11 +4998,9 @@ impl UserInitiatedAbortError {
     pub fn reason_mut(&mut self) -> &mut Vec<u8> {
         &mut self.reason
     }
-}
 
-impl ToBytes for UserInitiatedAbortError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_USER_INITIATED_ABORT.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         bytes.extend(&self.reason);
@@ -5180,11 +5153,9 @@ impl ProtocolViolationError {
     pub fn information_mut(&mut self) -> &mut Vec<u8> {
         &mut self.information
     }
-}
 
-impl ToBytes for ProtocolViolationError {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_PROTOCOL_VIOLATION.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         bytes.extend(&self.information);
@@ -5347,11 +5318,9 @@ impl GenericParam {
     pub fn value_mut(&mut self) -> &mut Vec<u8> {
         &mut self.value
     }
-}
 
-impl ToBytes for GenericParam {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(self.param_type.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
         bytes.extend(self.value.iter());
@@ -5563,11 +5532,9 @@ impl ShutdownChunk {
     pub fn set_cum_tsn_ack(&mut self, ack: u32) {
         self.cum_tsn_ack = ack;
     }
-}
-
-impl ToBytes for ShutdownChunk {
+    
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN);
         bytes.push(self.flags);
         bytes.extend(8u16.to_be_bytes());
@@ -5736,11 +5703,9 @@ impl ShutdownAckChunk {
     pub fn len(&self) -> usize {
         4
     }
-}
 
-impl ToBytes for ShutdownAckChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN_ACK);
         bytes.push(self.flags);
         bytes.extend(4u16.to_be_bytes());
@@ -5907,11 +5872,9 @@ impl ErrorChunk {
     pub fn set_causes(&mut self) -> &mut Vec<ErrorCause> {
         &mut self.causes
     }
-}
 
-impl ToBytes for ErrorChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_ERROR);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -6098,11 +6061,9 @@ impl CookieEchoChunk {
     pub fn cookie_mut(&mut self) -> &mut Vec<u8> {
         &mut self.cookie
     }
-}
 
-impl ToBytes for CookieEchoChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_COOKIE_ECHO);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -6284,11 +6245,9 @@ impl CookieAckChunk {
     pub fn len(&self) -> usize {
         4
     }
-}
 
-impl ToBytes for CookieAckChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_COOKIE_ACK);
         bytes.push(self.flags);
         bytes.extend(4u16.to_be_bytes());
@@ -6439,11 +6398,9 @@ impl ShutdownCompleteChunk {
     pub fn len(&self) -> usize {
         4
     }
-}
 
-impl ToBytes for ShutdownCompleteChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN_COMPLETE);
         bytes.push(self.flags.data);
         bytes.extend(4u16.to_be_bytes());
@@ -6643,11 +6600,9 @@ impl UnknownChunk {
     pub fn value_mut(&mut self) -> &mut Vec<u8> {
         &mut self.value
     }
-}
 
-impl ToBytes for UnknownChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.chunk_type);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -6885,11 +6840,14 @@ impl DataChunk {
     pub fn payload_mut(&mut self) -> &mut Box<dyn LayerObject> {
         &mut self.payload
     }
+
+
 }
 
 impl ToBytes for DataChunk {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.push(0); // DATA Type = 0
         bytes.push(self.flags.as_raw());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -6897,7 +6855,7 @@ impl ToBytes for DataChunk {
         bytes.extend(self.stream_id.to_be_bytes());
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
-        self.payload.to_bytes_extended(bytes);
+        self.payload.to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
         bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
     }
 }

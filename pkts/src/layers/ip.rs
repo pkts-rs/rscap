@@ -9,7 +9,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::error::*;
+use crate::{error::*, utils};
 
 use super::sctp::{SctpRef, Sctp};
 use super::tcp::{Tcp, TcpRef};
@@ -427,7 +427,7 @@ pub struct Ipv4 {
     flags: Ipv4Flags,
     frag_offset: u16,
     ttl: u8,
-    chksum: u16,
+    chksum: Option<u16>,
     src: u32,
     dst: u32,
     options: Ipv4Options,
@@ -614,21 +614,19 @@ impl Ipv4 {
 
     /// The checksum of the packet, calculated across the entirity of the
     /// packet's header and payload data.
-    /// 
-    /// Checksums are not automatically calculated, and should be updated
-    /// after modifying any fields in the IPv4 header or payload.
     #[inline]
-    pub fn chksum(&self) -> u16 {
+    pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
     /// Sets the checkksum of the packet.
-    /// 
-    /// Checksums are not automatically calculated, and should be updated
-    /// after modifying any fields in the IPv4 header or payload.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
-        self.chksum = chksum;
+        self.chksum = Some(chksum);
+    }
+
+    pub fn clear_chksum(&mut self) {
+        self.chksum = None;
     }
 
     /// The source IP address of the packet.
@@ -688,7 +686,7 @@ impl FromBytesCurrent for Ipv4 {
             flags: ipv4.flags(),
             frag_offset: ipv4.frag_offset(),
             ttl: ipv4.ttl(),
-            chksum: ipv4.chksum(),
+            chksum: None,
             src: ipv4.src(),
             dst: ipv4.dst(),
             options: Ipv4Options::from(ipv4.options()),
@@ -761,7 +759,8 @@ impl LayerObject for Ipv4 {
 }
 
 impl ToBytes for Ipv4 {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.push(0x40 | self.ihl());
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
         bytes.extend(u16::try_from(self.len()).unwrap_or(0xFFFF).to_be_bytes()); // WARNING: packets with contents greater than 65535 bytes will have their length field truncated
@@ -780,12 +779,17 @@ impl ToBytes for Ipv4 {
                 })
                 .unwrap_or(DATA_PROTO_EXP1) as u8,
         ); // 0xFD when no payload specified
-        bytes.extend(self.chksum.to_be_bytes());
+        bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         bytes.extend(self.src.to_be_bytes());
         bytes.extend(self.dst.to_be_bytes());
         self.options.to_bytes_extended(bytes);
         if let Some(payload) = self.payload.as_ref() {
-            payload.to_bytes_extended(bytes)
+            payload.to_bytes_chksummed(bytes, Some((Ipv4Ref::layer_id_static(), start)))
+        }
+
+        if self.chksum.is_none() {
+            let chksum_field: &mut [u8; 2] = &mut bytes[start + 10..start + 12].try_into().unwrap();
+            *chksum_field = utils::ones_complement_16bit(&bytes[start..]).to_be_bytes();
         }
     }
 }
@@ -1627,9 +1631,15 @@ impl Ipv4Options {
             Some(p) => p.as_slice(),
         }
     }
-}
 
-impl ToBytes for Ipv4Options {
+    #[inline]
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        self.to_bytes_extended(&mut v);
+        v
+    }
+
+    #[inline]
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self.options.as_ref() {
             None => (),
@@ -1909,7 +1919,8 @@ pub struct Ipv4Option {
     value: Option<Vec<u8>>,
 }
 
-impl ToBytes for Ipv4Option {
+impl Ipv4Option {
+    #[inline]
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.option_type);
         match self.option_type {
@@ -1923,7 +1934,15 @@ impl ToBytes for Ipv4Option {
             },
         }
     }
+
+    #[inline]
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        self.to_bytes_extended(&mut v);
+        v
+    }
 }
+
 
 impl Ipv4Option {
     #[inline]
@@ -2365,7 +2384,8 @@ impl LayerObject for Ipv6 {
 
 impl ToBytes for Ipv6 {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+        let start = bytes.len();
         bytes.push(0b_0110_0000 | ((self.traffic_class.value & 0xF0) >> 4));
         bytes.push(((self.traffic_class.value & 0x0F) << 4) | ((self.flow_label.value & 0x_00_0F_00_00) >> 16) as u8);
         bytes.push(((self.flow_label.value & 0x_00_00_FF_00) >> 8) as u8);
@@ -2383,7 +2403,7 @@ impl ToBytes for Ipv6 {
         bytes.extend(self.src.to_be_bytes());
         bytes.extend(self.dst.to_be_bytes());
         if let Some(p) = self.payload.as_ref() {
-            p.to_bytes_extended(bytes);
+            p.to_bytes_chksummed(bytes, Some((Ipv6Ref::layer_id_static(), start)));
         }
     }
 }

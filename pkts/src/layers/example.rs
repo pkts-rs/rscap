@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-use std::array;
-use std::marker::PhantomData;
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::error::*;
 
-use super::ip::Ipv4Mut;
-use super::tcp::TcpMut;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(ExampleMetadata)]
@@ -69,7 +65,7 @@ impl LayerObject for Example {
 }
 
 impl ToBytes for Example {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }

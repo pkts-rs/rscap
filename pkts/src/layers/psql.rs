@@ -147,7 +147,7 @@ impl LayerObject for PsqlClient {
 }
 
 impl ToBytes for PsqlClient {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }
@@ -269,10 +269,8 @@ impl ClientMessage {
             ClientMessage::Terminate => 5,
         }
     }
-}
 
-impl ToBytes for ClientMessage {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             ClientMessage::AuthDataResponse(m) => m.to_bytes_extended(bytes),
             ClientMessage::Bind(_) => todo!(),
@@ -341,11 +339,9 @@ impl AuthDataResponse {
     pub fn auth_data_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data
     }
-}
 
-impl ToBytes for AuthDataResponse {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((4 + self.data.len() as i32).to_be_bytes());
         bytes.extend(&self.data);
@@ -393,11 +389,9 @@ impl CancelRequest {
     pub fn set_key(&mut self, key: i32) {
         self.key = key;
     }
-}
 
-impl ToBytes for CancelRequest {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend(16i32.to_be_bytes());
         bytes.extend(self.proc_id.to_be_bytes());
@@ -435,17 +429,16 @@ impl ClosePortal {
     pub fn set_name(&mut self, name: String) {
         self.portal_name = name
     }
-}
 
-impl ToBytes for ClosePortal {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.push(self.close_type());
         bytes.extend(self.portal_name.as_bytes());
     }
 }
+
 
 #[derive(Clone, Debug)]
 pub struct ClosePrepared {
@@ -477,11 +470,9 @@ impl ClosePrepared {
     pub fn set_stmt_name(&mut self, name: String) {
         self.stmt_name = name
     }
-}
 
-impl ToBytes for ClosePrepared {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.push(self.close_type());
@@ -515,11 +506,9 @@ impl CopyData {
     pub fn data_stream_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data_stream
     }
-}
 
-impl ToBytes for CopyData {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(&self.data_stream);
@@ -551,16 +540,14 @@ impl CopyFail {
     pub fn set_err_message(&mut self, err_msg: String)  {
         self.err_msg = err_msg;
     }
-}
 
-impl ToBytes for CopyFail {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.err_msg.as_bytes());
         bytes.push(0x00); // null-terminating byte
-    }
+    }   
 }
 
 #[derive(Clone, Debug)]
@@ -593,11 +580,9 @@ impl DescribePortal {
     pub fn set_name(&mut self, name: String) {
         self.portal_name = name
     }
-}
 
-impl ToBytes for DescribePortal {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.push(self.describe_type());
@@ -636,11 +621,9 @@ impl DescribePrepared {
     pub fn set_name(&mut self, name: String) {
         self.stmt_name = name
     }
-}
 
-impl ToBytes for DescribePrepared {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.push(self.describe_type());
@@ -685,11 +668,9 @@ impl Execute {
     pub fn set_max_rows(&mut self, max: Option<i32>) {
         self.max_rows = max;
     }
-}
 
-impl ToBytes for Execute {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.portal_name.as_bytes());
@@ -745,11 +726,9 @@ impl Parse {
     pub fn param_data_types_mut(&mut self) -> &mut Vec<Option<i32>> {
         &mut self.type_ids
     }
-}
 
-impl ToBytes for Parse {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.dst_stmt.as_bytes());
@@ -788,11 +767,9 @@ impl Query {
     pub fn set_query(&mut self, query: String) {
         self.query = query;
     }
-}
 
-impl ToBytes for Query {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.query.as_bytes());
@@ -841,11 +818,9 @@ impl StartupMessage {
     pub fn params_mut(&mut self) -> &mut Vec<(String, String)> {
         &mut self.params
     }
-}
 
-impl ToBytes for StartupMessage {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend((self.len() as i32).to_be_bytes());
         bytes.extend(CLIENT_STARTUP_V3_0.to_be_bytes());
         for (k, v) in &self.params {
@@ -932,11 +907,9 @@ impl Bind {
     pub fn results_fmt_mut(&mut self) -> &mut Vec<FormatCode> {
         &mut self.results_fmt
     }
-}
 
-impl ToBytes for Bind {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.dst_portal.as_bytes());
@@ -1020,11 +993,9 @@ impl FunctionCall {
     pub fn set_result_fmt(&mut self, result_fmt: FormatCode) {
         self.result_fmt = result_fmt;
     }
-}
 
-impl ToBytes for FunctionCall {
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
         bytes.extend(self.function_id.to_be_bytes());
@@ -1047,6 +1018,17 @@ pub enum FormatCode {
     Unknown(i16), // x < 0 || x > 1
 }
 
+impl FormatCode {
+    #[inline]
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        bytes.extend(match self {
+            FormatCode::Text => 0,
+            FormatCode::Binary => 1,
+            FormatCode::Unknown(b) => *b,
+        }.to_be_bytes());
+    }
+}
+
 impl From<i16> for FormatCode {
     #[inline]
     fn from(value: i16) -> Self {
@@ -1055,17 +1037,6 @@ impl From<i16> for FormatCode {
             1 => FormatCode::Binary,
             u => FormatCode::Unknown(u),
         }
-    }
-}
-
-impl ToBytes for FormatCode {
-    #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        bytes.extend(match self {
-            FormatCode::Text => 0,
-            FormatCode::Binary => 1,
-            FormatCode::Unknown(b) => *b,
-        }.to_be_bytes());
     }
 }
 
@@ -2537,7 +2508,7 @@ impl LayerObject for PsqlServer {
 }
 
 impl ToBytes for PsqlServer {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }
