@@ -44,24 +44,43 @@ impl Udp {
         self.dport = dst_port;
     }
 
-    /// Retrieves the assigned checksum for the packet, or `None` if no checksum
-    /// has explicitly been assigned to the packet.
+    /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
+    /// been assigned to the packet.
+    /// 
+    /// By default, the UDP checksum is automatically calculated when a [`Udp`] instance is
+    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
+    /// If a checksum has already been assigned to the packet, this method will return it;
+    /// otherwise, it will return `None`. This means that a [`Udp`] instance created from bytes
+    /// or from a [`UdpRef`] instance will still have a checksum of `None` by default, regardless
+    /// of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
-    /// Explicitly assigns a checksum to be used for the packet.
+    /// Assigns a checksum to be used for the packet.
     ///
-    /// By default, the UDP checksum is automatically calculated when a [`Udp`]
-    /// instance is converted to bytes. Setting the checksum with this method
-    /// overrides that behavior so that the specified checksum is used instead.
+    /// By default, the UDP checksum is automatically calculated when a [`Udp`] instance is
+    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// used instead. You generally shouldn't need to use this method unless:
+    ///   1. You know the expected checksum of the packet in advance and don't want the checksum
+    ///      calculation to automatically run again (since it can be a costly operation), or
+    ///   2. Checksum offloading is being employed for the UDP packet and you want to zero out the
+    ///      checksum field (again, avoiding unnecessary extra computation), or
+    ///   3. You want to explicitly set an invalid checksum.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         self.chksum = Some(chksum);
     }
 
-    /// Clears any explicitly assigned checksum that was assigned to the packet.
+    /// Clears any previously assigned checksum for the packet.
+    /// 
+    /// This method guarantees that the UDP checksum will be automatically calculated for this
+    /// [`Udp`] instance whenever the packet is converted to bytes. You shouldn't need to call
+    /// this method unless you've previously explicitly assigned a checksum to the packet--either
+    /// through a call to [`Udp::set_chksum()`] or through a Builder pattern. Packets converted
+    /// from bytes into [`Udp`] instances from bytes or from a [`UdpRef`] instance will have a 
+    /// checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
@@ -246,6 +265,7 @@ impl UdpRef<'_> {
         )
     }
 
+    /// The one's complement Checksum field of the packet.
     #[inline]
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(
@@ -357,11 +377,20 @@ impl UdpMut<'_> {
         self.data[5] = len_bytes[1];
     }
 
+    /// The one's complement Checksum field of the packet.
     #[inline]
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(self.data[6..8].try_into().unwrap())
     }
 
+    /// Sets the one's complement checksum to be used for the packet.
+    ///
+    /// Checksums are _not_ automatically generated for [`UdpMut`] instances,
+    /// so any changes in a UDP packet's contents--including source or destination
+    /// IP address or IP protocol type--should be followed by a corresponding change
+    /// in the checksum as well. Checksums _are_ automatically generated for [`Udp`]
+    /// instances, so consider using it instead of this interface if ease of use is
+    /// more of a priority than raw speed and performance.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         let chksum_bytes = chksum.to_be_bytes();

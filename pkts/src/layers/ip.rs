@@ -612,19 +612,43 @@ impl Ipv4 {
         }
     }
 
-    /// The checksum of the packet, calculated across the entirity of the
-    /// packet's header and payload data.
+    /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
+    /// been assigned to the packet.
+    /// 
+    /// By default, the IPv4 checksum is automatically calculated when an [`Ipv4`] instance is
+    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
+    /// If a checksum has already been assigned to the packet, this method will return it;
+    /// otherwise, it will return `None`. This means that an [`Ipv4`] instance created from bytes
+    /// or from a [`Ipv4Ref`] instance will still have a checksum of `None` by default, regardless
+    /// of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
-    /// Sets the checkksum of the packet.
+    /// Assigns a checksum to be used for the packet.
+    ///
+    /// By default, the IPv4 checksum is automatically calculated when an [`Ipv4`] instance is
+    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// used instead. You generally shouldn't need to use this method unless:
+    ///   1. You know the expected checksum of the packet in advance and don't want the checksum
+    ///      calculation to automatically run again (since it can be a costly operation), or
+    ///   2. Checksum offloading is being employed for the IPv4 packet and you want to zero out the
+    ///      checksum field (again, avoiding unnecessary extra computation), or
+    ///   3. You want to explicitly set an invalid checksum.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         self.chksum = Some(chksum);
     }
 
+    /// Clears any previously assigned checksum for the packet.
+    /// 
+    /// This method guarantees that the IPv4 checksum will be automatically calculated for this
+    /// [`Ipv4`] instance whenever the packet is converted to bytes. You shouldn't need to call
+    /// this method unless you've previously explicitly assigned a checksum to the packet--either
+    /// through a call to [`Ipv4::set_chksum()`] or through a Builder pattern. Packets converted
+    /// from bytes into [`Ipv4`] instances from bytes or from a [`Ipv4Ref`] instance will have a 
+    /// checksum of `None` by default.
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
     }
@@ -1479,8 +1503,8 @@ impl<'a> Ipv4Mut<'a> {
             .expect("insufficient bytes in IPv4 packet to set Protocol field") = proto;
     }
 
-    /// The checksum of the packet, calculated across the entirity of the
-    /// packet's header and payload data.
+    /// The one's complement checksum of the packet, calculated across the entirity of the packet's
+    /// header and payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(
@@ -1492,6 +1516,12 @@ impl<'a> Ipv4Mut<'a> {
         )
     }
 
+    /// Sets the one's complement checksum to be used for the packet.
+    ///
+    /// Checksums are _not_ automatically generated for [`Ipv4Mut`] instances, so any changes in a
+    /// IPv4 packet's contents should be followed by a corresponding change in the checksum as well.
+    /// Checksums _are_ automatically generated for [`Ipv4`] instances, so consider using it instead
+    /// of this interface if ease of use is more of a priority than raw speed and performance.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         let chksum_field: &mut [u8; 2] = self

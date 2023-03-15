@@ -109,16 +109,43 @@ impl Tcp {
         self.window = window;
     }
 
+    /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
+    /// been assigned to the packet.
+    /// 
+    /// By default, the TCP checksum is automatically calculated when a [`Tcp`] instance is
+    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
+    /// If a checksum has already been assigned to the packet, this method will return it;
+    /// otherwise, it will return `None`. This means that a [`Tcp`] instance created from bytes
+    /// or from a [`TcpRef`] instance will still have a checksum of `None` by default, regardless
+    /// of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u16> {
         self.chksum
     }
 
+    /// Assigns a checksum to be used for the packet.
+    ///
+    /// By default, the TCP checksum is automatically calculated when a [`Tcp`] instance is
+    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// used instead. You generally shouldn't need to use this method unless:
+    ///   1. You know the expected checksum of the packet in advance and don't want the checksum
+    ///      calculation to automatically run again (since it can be a costly operation), or
+    ///   2. Checksum offloading is being employed for the TCP packet and you want to zero out the
+    ///      checksum field (again, avoiding unnecessary extra computation), or
+    ///   3. You want to explicitly set an invalid checksum.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         self.chksum = Some(chksum);
     }
 
+    /// Clears any previously assigned checksum for the packet.
+    /// 
+    /// This method guarantees that the TCP checksum will be automatically calculated for this
+    /// [`Tcp`] instance whenever the packet is converted to bytes. You shouldn't need to call
+    /// this method unless you've previously explicitly assigned a checksum to the packet--either
+    /// through a call to [`Tcp::set_chksum()`] or through a Builder pattern. Packets converted
+    /// from bytes into [`Tcp`] instances from bytes or from a [`TcpRef`] instance will have a 
+    /// checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
@@ -613,6 +640,14 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the one's complement checksum to be used for the packet.
+    ///
+    /// Checksums are _not_ automatically generated for [`TcpMut`] instances,
+    /// so any changes in a TCP packet's contents--including source or destination
+    /// IP address or IP protocol type--should be followed by a corresponding change
+    /// in the checksum as well. Checksums _are_ automatically generated for [`Tcp`]
+    /// instances, so consider using it instead of this interface if ease of use is
+    /// more of a priority than raw speed and performance.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
         let arr = utils::get_mut_array(self.data, 8)
