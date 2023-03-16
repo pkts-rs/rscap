@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me[at]nathanielbennnett[dotcom]>
 
-//! The User Datagram Protocol (UDP) layer and its related fields.
+//! The User Datagram Protocol (UDP) layer and related data structures.
+//!
+//! UDP is a Transport Layer protocol that allows for unreliable transfer of datagrams over an IP
+//! network. It provides weak guarantees of data correctness through a 16-bit one's complement
+//! checksum and preserves message boundaries, but does not guarantee delivery or provide any
+//! built-in mechanism for packet acknowledgement/retransmission.
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -15,6 +20,22 @@ use std::cmp;
 
 use super::ip::{Ipv4, Ipv6, DATA_PROTO_UDP};
 
+/// A UDP (User Datagram Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |             Length            |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[ref_type(UdpRef)]
@@ -26,21 +47,25 @@ pub struct Udp {
 }
 
 impl Udp {
+    /// The source port of the UDP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
         self.sport
     }
 
+    /// Sets the source port of the UDP packet.
     #[inline]
     pub fn set_sport(&mut self, src_port: u16) {
         self.sport = src_port;
     }
 
+    /// The destination port of the UDP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
         self.dport
     }
 
+    /// Sets the destination port of the UDP packet.
     #[inline]
     pub fn set_dport(&mut self, dst_port: u16) {
         self.dport = dst_port;
@@ -213,6 +238,22 @@ impl CanSetPayload for Udp {
     }
 }
 
+/// A UDP (User Datagram Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |             Length            |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
@@ -240,48 +281,34 @@ impl LayerOffset for UdpRef<'_> {
 }
 
 impl UdpRef<'_> {
+    /// The source port of the UDP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data[0..2]
-                .try_into()
-                .expect("insufficient bytes in UdpRef to retrieve source port"),
-        )
+        u16::from_be_bytes(self.data.get(0..2).expect("insufficient bytes in UDP packet to retrieve Source Port field").try_into().unwrap())
     }
 
+    /// The destination port of the UDP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data[2..4]
-                .try_into()
-                .expect("insufficient bytes in UdpRef to retrieve destination port"),
-        )
+        u16::from_be_bytes(self.data.get(2..4).expect("insufficient bytes in UDP packet to retrieve Destination Port field").try_into().unwrap())
     }
 
+    /// The combined length (in bytes) of the UDP header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data[4..6]
-                .try_into()
-                .expect("insufficient bytes in UdpRef to retrieve packet length"),
-        )
+        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in UDP packet to retrieve Packet Length field").try_into().unwrap())
     }
 
     /// The one's complement Checksum field of the packet.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data[6..8]
-                .try_into()
-                .expect("insufficient bytes in UdpRef to retrieve checksum"),
-        )
+        u16::from_be_bytes(self.data.get(6..8).expect("insufficient bytes in UDP packet to retrieve Checksum field").try_into().unwrap())
     }
 
+    /// The payload data of the UDP packet.
     #[inline]
     pub fn payload(&self) -> &[u8] {
-        self.data
-            .get(8..)
-            .expect("insufficient bytes in UdpRef to retrieve payload")
+        &self.data.get(8..).expect("insufficient bytes in UDP packet to retrieve payload data")
     }
 }
 
@@ -331,6 +358,22 @@ impl<'a> From<&'a UdpMut<'a>> for UdpRef<'a> {
     }
 }
 
+/// A UDP (User Datagram Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |             Length            |            Checksum           |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Debug, LayerMut, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
@@ -343,46 +386,49 @@ pub struct UdpMut<'a> {
 }
 
 impl UdpMut<'_> {
+    /// The source port of the UDP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(self.data[0..2].try_into().unwrap())
+        u16::from_be_bytes(self.data.get(0..2).expect("insufficient bytes in UDP packet to retrieve Source Port field").try_into().unwrap())
     }
 
+    /// Sets the source port of the UDP packet.
     #[inline]
     pub fn set_sport(&mut self, src_port: u16) {
-        let src_port_bytes = src_port.to_be_bytes();
-        self.data[0] = src_port_bytes[0];
-        self.data[1] = src_port_bytes[1];
+        let src_port_field: &mut [u8; 2] = self.data.get_mut(0..2).expect("insufficient bytes in UDP packet to set Source Port field").try_into().unwrap();
+        *src_port_field = src_port.to_be_bytes();
     }
 
+    /// The destination port of the UDP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(self.data[2..4].try_into().unwrap())
+        u16::from_be_bytes(self.data.get(2..4).expect("insufficient bytes in UDP packet to retrieve Destination Port field").try_into().unwrap())
     }
 
+    /// Sets the destination port of the UDP packet.
     #[inline]
     pub fn set_dport(&mut self, dst_port: u16) {
-        let dst_port_bytes = dst_port.to_be_bytes();
-        self.data[2] = dst_port_bytes[0];
-        self.data[3] = dst_port_bytes[1];
+        let dst_port_field: &mut [u8; 2] = self.data.get_mut(2..4).expect("insufficient bytes in UDP packet to set Destination Port field").try_into().unwrap();
+        *dst_port_field = dst_port.to_be_bytes();
     }
 
+    /// The combined length (in bytes) of the UDP header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(self.data[4..6].try_into().unwrap())
+        u16::from_be_bytes(self.data.get(4..6).expect("insufficient bytes in UDP packet to retrieve Packet Length field").try_into().unwrap())
     }
 
+    /// Sets the combined length (in bytes) of the UDP header and payload.
     #[inline]
     pub fn set_packet_length(&mut self, len: u16) {
-        let len_bytes = len.to_be_bytes();
-        self.data[4] = len_bytes[0];
-        self.data[5] = len_bytes[1];
+        let pkt_length_field: &mut [u8; 2] = self.data.get_mut(4..6).expect("insufficient bytes in UDP packet to set Packet Length field").try_into().unwrap();
+        *pkt_length_field = len.to_be_bytes();
     }
 
     /// The one's complement Checksum field of the packet.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(self.data[6..8].try_into().unwrap())
+        u16::from_be_bytes(self.data.get(6..8).expect("insufficient bytes in UDP packet to retrieve Checksum field").try_into().unwrap())
     }
 
     /// Sets the one's complement checksum to be used for the packet.
@@ -395,16 +441,17 @@ impl UdpMut<'_> {
     /// more of a priority than raw speed and performance.
     #[inline]
     pub fn set_chksum(&mut self, chksum: u16) {
-        let chksum_bytes = chksum.to_be_bytes();
-        self.data[6] = chksum_bytes[0];
-        self.data[7] = chksum_bytes[1];
+        let chksum_field: &mut [u8; 2] = self.data.get_mut(6..8).expect("insufficient bytes in UDP packet to set Checksum field").try_into().unwrap();
+        *chksum_field = chksum.to_be_bytes();
     }
 
+    /// The payload data of the UDP packet.
     #[inline]
     pub fn payload(&self) -> &[u8] {
-        &self.data[8..self.len]
+        &self.data.get(8..self.len).expect("insufficient bytes in UDP packet to retrieve payload data")
     }
 
+    /// Sets the payload data of the udp packet.
     #[inline]
     pub fn set_payload_unchecked(&mut self, payload: &[u8]) {
         let payload_location = self
