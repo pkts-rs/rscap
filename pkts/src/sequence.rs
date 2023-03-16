@@ -861,13 +861,6 @@ impl Default for Ipv4Fragment {
     }
 }
 
-struct ReorderBuffer {
-    pub occupied: bool,
-//    pub fragment_idx: Option<usize>,
-    pub data: [u8; 65535],
-    pub len: usize,
-}
-
 pub struct SctpSegments<const RWND: usize, const FRAG_CNT: usize> {
     frags: [SctpFragment; FRAG_CNT],
     frags_start: usize,
@@ -887,6 +880,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             frags_len: 0,
             reorder: core::array::from_fn(|_| ReorderBuffer {
                 occupied: false,
+                ordered: false,
                 // fragment_idx: None,
                 data: [0; 65535],
                 len: 0
@@ -900,30 +894,40 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
     #[inline]
     pub fn get(&mut self) -> Option<&[u8]> {
         if self.reorder[self.reorder_start].occupied {
+            // There's an entry ready to be received
+
             let len = self.reorder[self.reorder_start].len;
             // let fragment_idx = self.reorder[self.reorder_start].fragment_idx;
             self.reorder[self.reorder_start].occupied = false;
+            if self.reorder[self.reorder_start].ordered {
+                self.curr_stream_seq += 1;
+            }
+
             let old_idx = self.reorder_start;
             self.reorder_start = (old_idx + 1) % RWND;
-            
             Some(&self.reorder[old_idx].data[..len])
         } else {
             None
         }
     }
 
-    pub fn put(&mut self, data: &[u8], stream_seq: u16, tsn: u32, bf: bool, ef: bool) {
+    pub fn put(&mut self, data: &[u8], stream_seq: u16, tsn: u32, flags: DataChunkFlags) {
         if !self.started {
             self.started = true;
             self.curr_stream_seq = stream_seq; // BUG: what if the first frame arrives out of order?
         }
 
         let diff = self.curr_stream_seq.diff_wrapped(stream_seq) as usize;
-        if diff >= RWND {
+        if !flags.unordered() && diff >= RWND {
             return // Drop packet--not within receive window
         }
 
-        if bf && ef { // Packet isn't fragmented--only needs to be reordered
+        if flags.beginning_fragment() && flags.ending_fragment() {
+            // The packet isn't a fragment--it only needs to be reordered
+            if flags.unordered() {
+                // The packet isn't a fragment, and doesn't need to be reordered
+
+            }
             let rwnd_idx = (self.reorder_start + diff) % RWND;
             self.reorder[rwnd_idx].occupied = true;
             self.reorder[rwnd_idx].data[..data.len()].copy_from_slice(data);
@@ -956,7 +960,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             }
 
             let frag = &mut self.frags[frag_idx];
-            frag.insert(data, tsn, (bf, ef));
+            frag.insert(data, tsn, (flags.beginning_fragment(), flags.ending_fragment()));
 
             if frag.is_complete() {
                 let rwnd_idx = (self.reorder_start + diff) % RWND;
@@ -966,6 +970,14 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             }
         }
     }
+}
+
+struct ReorderBuffer {
+    pub occupied: bool,
+    pub ordered: bool,
+//    pub fragment_idx: Option<usize>,
+    pub data: [u8; 65535],
+    pub len: usize,
 }
 
 trait WrappingCmp {
@@ -1081,10 +1093,11 @@ impl SctpFragment {
         self.buf[offset..offset + 2].copy_from_slice(tsn_truncated.to_be_bytes().as_slice());
         self.buf[offset + 2..offset + 4].copy_from_slice((data.len() as u16).to_be_bytes().as_slice());
         self.buf[offset + 4..offset + data.len() + 4].copy_from_slice(data);
+
         // Set the next link to a length of 0, signifying the end of the linked list
         self.buf[offset + data.len() + 4..offset + data.len() + 6].copy_from_slice(&[0, 0]);
 
-        // Finally, update the end pointer
+        // Finally, update the linked list end pointer
         self.last_frag_idx += data.len() + 4;
     }
 
@@ -1102,22 +1115,29 @@ impl SctpFragment {
 
     fn shift_links(&mut self, start: usize, new_start: usize) {
         if new_start == start {
+            // Links aren't moving at all--don't need to copy bytes
             return
         } else if new_start < start {
             let shift_left = start - new_start;
+
+            // Links are moving to the left
             for i in start..self.last_frag_idx + 2 {
+                // Starting from the left, shift each byte left
                 self.buf[i - shift_left] = self.buf[i];
             }
 
-            // Update the end pointer (since the end has shifted)
+            // Update the end pointer (since the links have shifted left)
             self.last_frag_idx -= shift_left;
         } else { // start < new_start
             let shift_right = new_start - start;
+
+            // Links are moving to the right
             for i in (start..self.last_frag_idx + 2).rev() {
+                // Starting from the right,, shift each byte right
                 self.buf[i + shift_right] = self.buf[i];
             }
 
-            // Update the end pointer (since the end has shifted)
+            // Update the end pointer (since the links have shifted right)
             self.last_frag_idx += shift_right;
         }
     }
@@ -1125,6 +1145,9 @@ impl SctpFragment {
     #[inline]
     pub fn is_complete(&self) -> bool {
         let first = FragHeader::new(&self.buf);
+        // If the Beginning fragment & Ending fragment are received, and
+        // all TSNs in between the two have been received (and therefore
+        // merged into the first link), the fragments are complete.
         self.begin_recvd && self.end_recvd && first.tsn() == (self.end_tsn & 0xFFFF) as u16
     }
 
@@ -1138,7 +1161,7 @@ impl SctpFragment {
                 return // Drop the packet--too long
             }
 
-            // No packets have been received yet--add current
+            // No packets have been received yet--add incoming as first packet
             self.begin_recvd |= beginning;
             self.end_recvd |= ending;
             self.begin_tsn = tsn;
@@ -1191,10 +1214,15 @@ impl SctpFragment {
                 }
 
                 if node.tsn() == tsn_truncated {
-                    return // Duplicate fragment
+                    return // Fragment is a duplicate--discard
                 }
 
                 self.insert_link(frag, node.header_offset(), tsn_truncated);
+
+                // If the fragment was the first in line, update the beginning TSN
+                if tsn.lt_wrapped(self.begin_tsn) {
+                    self.begin_tsn = tsn;
+                }
             }
 
             self.begin_recvd |= beginning;
@@ -1216,15 +1244,16 @@ impl SctpFragment {
                 let mut next_len = next.data_length();
                 let mut next_tsn = next.tsn();
                 while first_tsn.wrapping_add(1) == next_tsn {
+                    // Remove the header of the second link. This effectively combines the data
+                    // of the second link with the first link as long as we update the length field.
                     self.shift_links(next_offset + 4, next_offset);
-                    new_first_len += next_len;
-                    next_offset += next_len as usize;
-
-                    new_first_tsn = next_tsn;
+                    new_first_tsn = next_tsn; // Update the TSN value of the first link.
+                    new_first_len += next_len; // Update the length field of the first link.
+                    next_offset += next_len as usize; // Update the offset to the 2nd link in list.
 
                     let next = FragHeader { data: &self.buf, offset: next_offset };
                     if next.data_length() == 0 {
-                        break
+                        break // We've reached the end of the linked list
                     }
 
                     next_len = next.data_length();
@@ -1234,10 +1263,10 @@ impl SctpFragment {
                 if first_tsn != new_first_tsn {
                     // Now we need to write our new first length to the linked list bytes
                     self.buf[0..2].copy_from_slice(new_first_len.to_be_bytes().as_slice());
-                    // We also need to write our new first tsn
+                    // We also need to write our new TSN value
                     self.buf[2..4].copy_from_slice(first_tsn.to_be_bytes().as_slice());
                 }
-            }   
+            }
         }
 
         self.total_len += frag.len();
