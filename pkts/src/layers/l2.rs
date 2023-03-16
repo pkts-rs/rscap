@@ -2,19 +2,16 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! Ethernet and similar link-layer protocol layers.
-//! 
-//! 
+//!
+//!
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
-use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6Ref, Ipv6};
-use crate::layers::{Raw, RawRef};
+use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
+use crate::layers::{Raw, RawRef};
 use crate::{error::*, utils};
-
-
-
 
 const ETH_PROTOCOL_IP: u16 = 0x0800;
 const ETH_PROTOCOL_EXPERIMENTAL: u16 = 0x88B5;

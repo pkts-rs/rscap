@@ -6,7 +6,6 @@
 
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
-
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod error;

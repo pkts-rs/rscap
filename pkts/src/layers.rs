@@ -2,7 +2,7 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! The collection of various protocol layers implemented by this library.
-//! 
+//!
 //! The `Layer` type is a fundamental abstraction used in this library for data.
 //! In general, most communication protocols make use of multiple
 //! encapsulated layers of data, where each layer performs a distinct purpose
@@ -13,9 +13,9 @@
 //!
 //! Layers for all sorts of different data protocols are provided in this
 //! submodule, as well as traits that make operating on multiple layers easier.
-//! 
+//!
 //! The submodule is organized so that tightly related layers are each within
-//! their own modules. For instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers 
+//! their own modules. For instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers
 //! are all contained within the [`ip`] module. In addition to this, the [`traits`]
 //! module contains traits commonly implemented across all `Layer`s.
 

@@ -2,8 +2,8 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! Internet Protocol (IP) network layers, including IPSec.
-//! 
-//! 
+//!
+//!
 
 use core::cmp;
 use core::fmt::Debug;
@@ -618,7 +618,7 @@ impl Ipv4 {
 
     /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
     /// been assigned to the packet.
-    /// 
+    ///
     /// By default, the IPv4 checksum is automatically calculated when an [`Ipv4`] instance is
     /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
     /// If a checksum has already been assigned to the packet, this method will return it;
@@ -646,12 +646,12 @@ impl Ipv4 {
     }
 
     /// Clears any previously assigned checksum for the packet.
-    /// 
+    ///
     /// This method guarantees that the IPv4 checksum will be automatically calculated for this
     /// [`Ipv4`] instance whenever the packet is converted to bytes. You shouldn't need to call
     /// this method unless you've previously explicitly assigned a checksum to the packet--either
     /// through a call to [`Ipv4::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Ipv4`] instances from bytes or from a [`Ipv4Ref`] instance will have a 
+    /// from bytes into [`Ipv4`] instances from bytes or from a [`Ipv4Ref`] instance will have a
     /// checksum of `None` by default.
     pub fn clear_chksum(&mut self) {
         self.chksum = None;

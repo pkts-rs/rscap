@@ -2,7 +2,7 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! Protocol layers used for Postgres data exchange.
-//! 
+//!
 
 use std::collections::HashMap;
 

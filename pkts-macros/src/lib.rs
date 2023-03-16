@@ -264,7 +264,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         impl LayerIdentifier for #layer_type {
             #[inline]
             fn layer_id() -> LayerId {
-                 core::any::TypeId::of::<#layer_type>()               
+                 core::any::TypeId::of::<#layer_type>()
             }
         }
 

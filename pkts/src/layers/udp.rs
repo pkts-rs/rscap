@@ -5,7 +5,7 @@
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::layers::{Raw};
+use crate::layers::Raw;
 use crate::{error::*, utils};
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
@@ -13,7 +13,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::fmt::Debug;
 use std::cmp;
 
-use super::ip::{DATA_PROTO_UDP, Ipv6, Ipv4};
+use super::ip::{Ipv4, Ipv6, DATA_PROTO_UDP};
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
@@ -48,7 +48,7 @@ impl Udp {
 
     /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
     /// been assigned to the packet.
-    /// 
+    ///
     /// By default, the UDP checksum is automatically calculated when a [`Udp`] instance is
     /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
     /// If a checksum has already been assigned to the packet, this method will return it;
@@ -76,12 +76,12 @@ impl Udp {
     }
 
     /// Clears any previously assigned checksum for the packet.
-    /// 
+    ///
     /// This method guarantees that the UDP checksum will be automatically calculated for this
     /// [`Udp`] instance whenever the packet is converted to bytes. You shouldn't need to call
     /// this method unless you've previously explicitly assigned a checksum to the packet--either
     /// through a call to [`Udp::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Udp`] instances from bytes or from a [`UdpRef`] instance will have a 
+    /// from bytes into [`Udp`] instances from bytes or from a [`UdpRef`] instance will have a
     /// checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {

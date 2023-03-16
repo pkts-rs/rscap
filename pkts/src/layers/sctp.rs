@@ -2,8 +2,8 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! The Stream Control Transmission Protocol (SCTP) layer and its related fields.
-//! 
-//! 
+//!
+//!
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -142,7 +142,7 @@ impl Sctp {
 
     /// Retrieves the assigned CRC32c checksum for the packet, or `None` if no checksum has
     /// been assigned to the packet.
-    /// 
+    ///
     /// By default, the SCTP checksum is automatically calculated when an [`Sctp`] instance is
     /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
     /// If a checksum has already been assigned to the packet, this method will return it;
@@ -170,12 +170,12 @@ impl Sctp {
     }
 
     /// Clears any previously assigned CRC32c checksum for the packet.
-    /// 
+    ///
     /// This method guarantees that the SCTP checksum will be automatically calculated for this
     /// [`Sctp`] instance whenever the packet is converted to bytes. You shouldn't need to call
     /// this method unless you've previously explicitly assigned a checksum to the packet--either
     /// through a call to [`Sctp::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Sctp`] instances from bytes or from a [`SctpRef`] instance will have a 
+    /// from bytes into [`Sctp`] instances from bytes or from a [`SctpRef`] instance will have a
     /// checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
@@ -982,9 +982,9 @@ impl InitChunk {
     }
 
     /// Converts the given bytes into an [`InitChunk`] instance without validating the bytes.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// The following method may panic if the bytes being passed in do not represent a well-formed
     /// INIT chunk (i.e. if a call to [`InitChunk::validate()`] would return an error).
     #[inline]
@@ -1033,7 +1033,7 @@ impl InitChunk {
     }
 
     /// The Initiate Tag of the chunk.
-    /// 
+    ///
     /// The Initiate Tag is stored by the recipient of the INIT tag and is subsequently transmitted
     /// as the Verification Tag of every SCTP packet for the duration of the association.
     #[inline]
@@ -1048,7 +1048,7 @@ impl InitChunk {
     }
 
     /// The Advertised Receiver Window Credit (a_rwnd).
-    /// 
+    ///
     /// This field represents the number of bytes the sender has reserved as a window for messages
     /// received in this association.
     #[inline]
@@ -1089,7 +1089,7 @@ impl InitChunk {
     }
 
     /// The Initial Transmission Sequence Number (TSN).
-    /// 
+    ///
     /// Indicates the TSN that the sender of the INIT chunk will begin its association with.
     #[inline]
     pub fn init_tsn(&self) -> u32 {
@@ -5381,8 +5381,6 @@ impl<'a> ProtocolViolationErrorRef<'a> {
     }
 }
 
-
-
 /// An optional/variable-length parameter with a type not recognized by the `pkts` library.
 ///
 /// ## Packet Layout
@@ -6689,7 +6687,7 @@ impl ShutdownCompleteFlags {
 }
 
 /// A chunk containing a Chunk Type value that does not match any chunk type defined in RFC 4960.
-/// 
+///
 /// ## Packet Format
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -6790,7 +6788,7 @@ impl From<&UnknownChunkRef<'_>> for UnknownChunk {
 }
 
 /// A chunk containing a Chunk Type value that does not match any chunk type defined in RFC 4960.
-/// 
+///
 /// ## Packet Format
 /// ```txt
 ///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
@@ -6949,9 +6947,9 @@ impl DataChunk {
     }
 
     /// Converts the given bytes into a [`DataChunk`] instance without validating the bytes.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// The following method may panic if the bytes being passed in do not represent a well-formed
     /// DATA chunk (i.e. if a call to [`DataChunk::validate()`] would return an error).
     #[inline]
@@ -7134,9 +7132,9 @@ impl<'a> DataChunkRef<'a> {
     }
 
     /// Converts the given bytes into a [`DataChunkRef`] instance without validating the bytes.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// The following method may panic or cause a panic at some future method invocation on the
     /// instance if the bytes being passed in do not represent a well-formed DATA chunk (i.e. if a
     /// call to [`DataChunk::validate()`] would return an error).
@@ -7318,7 +7316,7 @@ impl DataChunkFlags {
     }
 
     /// The Immediate ('I') flag.
-    /// 
+    ///
     /// When set, this flag indicates that a corresponding SACK chunk should be sent back by the
     /// recipient without delay.
     #[inline]
@@ -7337,7 +7335,7 @@ impl DataChunkFlags {
     }
 
     /// The Unordered ('U') flag.
-    /// 
+    ///
     /// When set, this flag indicates that the instance is an unordered DATA chunk (i.e. no stream
     /// sequence number associated with it).
     #[inline]
@@ -7356,7 +7354,7 @@ impl DataChunkFlags {
     }
 
     /// The Beginning ('B') Fragment flag.
-    /// 
+    ///
     /// When set, this flag indicates that the chunk contains the first fragment of user data.
     /// If combined with the Ending ('E') flag, this indicates that the payload of the DATA
     /// chunk instance is unfragmented.
@@ -7376,7 +7374,7 @@ impl DataChunkFlags {
     }
 
     /// The Ending ('E') Fragment flag.
-    /// 
+    ///
     /// When set, this flag indicates that the chunk contains the last fragment of user data.
     /// If combined with the Beginning ('B') flag, this indicates that the payload of the DATA
     /// chunk instance is unfragmented.

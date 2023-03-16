@@ -114,9 +114,7 @@ impl ToBytes for MysqlPacket {
         bytes.push(self.sequence_id);
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
         match &self.payload {
-            Some(p) => {
-                p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)))
-            }
+            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
             None => (),
         }
     }

@@ -39,14 +39,13 @@
 //!
 //! TODO: example here
 
-
 #[cfg(feature = "alloc")]
-use std::collections::{HashMap, VecDeque, hash_map::RandomState};
+use std::collections::{hash_map::RandomState, HashMap, VecDeque};
 
+use core::cmp;
+use core::iter::Iterator;
 #[cfg(feature = "alloc")]
 use core::marker::PhantomData;
-use core::iter::Iterator;
-use core::cmp;
 #[cfg(feature = "alloc")]
 use core::mem;
 
@@ -114,9 +113,9 @@ pub trait SequenceObject {
     /// has been reassembled/reordered in internal buffers. If all of the conditions _are_ met,
     /// the returned packet will be a sub-slice of `pkt`, and no bytes will be copied into
     /// internal buffers.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This method will not check the incoming packet's contents before processing it. It is
     /// up to the caller of this method to ensure that `pkt` is not malformed. A packet that
     /// does not conform to the required layer type may lead to a panic condition, or it may
@@ -468,7 +467,7 @@ impl<const FRAG_CNT: usize> SequenceObject for Ipv4Sequence<FRAG_CNT> {
     fn put_and_get_unchecked<'a>(&'a mut self, pkt: &'a [u8]) -> Option<&'a [u8]> {
         match self.filter() {
             Some(drop_pkt) if drop_pkt(pkt) => return None,
-            _ => ()
+            _ => (),
         }
 
         let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt);
@@ -486,7 +485,6 @@ impl<const FRAG_CNT: usize> SequenceObject for Ipv4Sequence<FRAG_CNT> {
     }
 
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {
-
         let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt);
         let ihl = cmp::max(ipv4.ihl() as usize, 5) * 4;
         let tl = cmp::max(ipv4.packet_length() as usize, ihl);
@@ -553,14 +551,17 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
     pub fn put(&mut self, data: &[u8], id: u16, mf: bool, fo: usize) {
         let is_fragment = mf || fo != 0;
         if fo != 0 && (data.len() % 8 != 0) || data.len() == 0 {
-            return // Invalid fragmentation
-            // TODO: shouldn't this be checked as part of Ipv4::validate()????
+            return; // Invalid fragmentation
+                    // TODO: shouldn't this be checked as part of Ipv4::validate()????
         }
 
         // If we know we're going to need to take out a fragment and insert a
         // new one with different values, just reuse the struct and avoid
         // reallocation costs.
-        let reused = if is_fragment && self.insert_order.len() >= FRAG_CNT && !self.fragments.contains_key(&id) {
+        let reused = if is_fragment
+            && self.insert_order.len() >= FRAG_CNT
+            && !self.fragments.contains_key(&id)
+        {
             let remove_idx = self.insert_order.pop_back().expect("internal error: fragments and insert_order counts became unaligned in Ipv4Sequence");
             let mut removed = self.fragments.remove(&remove_idx).expect("internal error: insert_order contained index not found in fragments of Ipv4Sequence");
             removed.clear();
@@ -579,7 +580,10 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
                 self.insert_order.push_front(id);
                 total_fragments = self.fragments.len() + 1;
             }
-            let frag = self.fragments.entry(id).or_insert(reused.unwrap_or(Ipv4Fragment::new()));
+            let frag = self
+                .fragments
+                .entry(id)
+                .or_insert(reused.unwrap_or(Ipv4Fragment::new()));
             frag.last_frag_seen |= !mf;
             let data_offset = fo * 8;
             let data_end = data_offset + data.len();
@@ -589,10 +593,12 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
                 frag.data[data_offset..].copy_from_slice(&data[..end]);
             }
             if data_offset > frag.data.len() {
-                frag.data.extend(core::iter::repeat(0).take(data_offset - frag.data.len()));
+                frag.data
+                    .extend(core::iter::repeat(0).take(data_offset - frag.data.len()));
             }
             if data_end > frag.data.len() {
-                frag.data.extend_from_slice(&data[frag.data.len() - data_offset..]);
+                frag.data
+                    .extend_from_slice(&data[frag.data.len() - data_offset..]);
             }
 
             let mut frag_end = data_end / 8;
@@ -602,8 +608,11 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             // First, add u32 chunks as needed to the bitmap
             if frag.rcvbt.len() < new_rcvbt_len {
                 frag_end = frag.rcvbt.len() * 32;
-                if frag.rcvbt.len() + 1 < new_rcvbt_len { // 2 or more extra chunks--fill in all but the last chunk
-                    frag.rcvbt.extend(core::iter::repeat(u32::MAX).take(new_rcvbt_len - frag.rcvbt.len()));
+                if frag.rcvbt.len() + 1 < new_rcvbt_len {
+                    // 2 or more extra chunks--fill in all but the last chunk
+                    frag.rcvbt.extend(
+                        core::iter::repeat(u32::MAX).take(new_rcvbt_len - frag.rcvbt.len()),
+                    );
                 }
                 // Fill the last chunk based on end bit offset
                 frag.rcvbt.push(!(u32::MAX >> frag_bit_end));
@@ -613,7 +622,8 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             let rcvbt_end = (frag_end + 31) / 32;
             let frag_bit_start = fo % 32;
             let frag_bit_end = frag_end % 32;
-            if rcvbt_start + 1 < rcvbt_end { // Start and end are in different u32 chunks
+            if rcvbt_start + 1 < rcvbt_end {
+                // Start and end are in different u32 chunks
                 // Update the first chunk based on start bit offset
                 frag.rcvbt[rcvbt_start] |= u32::MAX >> frag_bit_start;
                 if rcvbt_start + 2 < rcvbt_end {
@@ -624,8 +634,10 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
                 }
                 // Update the last chunk based off end bit offset
                 frag.rcvbt[rcvbt_end - 1] |= !(u32::MAX >> frag_bit_end);
-            } else { // Start and end are within the same u32 chunk--update only the bits in between start and end
-                frag.rcvbt[rcvbt_start] |= !(u32::MAX >> frag_bit_end) & (u32::MAX >> frag_bit_start);
+            } else {
+                // Start and end are within the same u32 chunk--update only the bits in between start and end
+                frag.rcvbt[rcvbt_start] |=
+                    !(u32::MAX >> frag_bit_end) & (u32::MAX >> frag_bit_start);
             }
 
             if frag.rdl >= data_offset && frag.rdl < data_end {
@@ -645,12 +657,13 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
                 mem::swap(&mut self.reassembled, &mut frag.data);
                 self.retrieved = false;
                 frag.clear();
-                if total_fragments >= 64 { // NOTE: limits saving of old allocated fragment contexts so that no more than ~4MB is reserved. This DOES NOT stop intentional resource exhaustion attacks from malicious packets; FRAG_CNT ultimately deals with that.
+                if total_fragments >= 64 {
+                    // NOTE: limits saving of old allocated fragment contexts so that no more than ~4MB is reserved. This DOES NOT stop intentional resource exhaustion attacks from malicious packets; FRAG_CNT ultimately deals with that.
                     self.fragments.remove(&id);
                     for (idx, val) in self.insert_order.iter().enumerate() {
                         if *val == id {
                             self.insert_order.remove(idx);
-                            break
+                            break;
                         }
                     }
                 }
@@ -675,7 +688,7 @@ impl Ipv4Fragment {
             rdl: 0,
             data: Vec::new(),
             rcvbt: Vec::new(),
-            last_frag_seen: false
+            last_frag_seen: false,
         }
     }
 
@@ -718,7 +731,7 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             self.ready = false;
             match self.ready_idx {
                 None => Some(&self.unfragmented.0[..self.unfragmented.1]),
-                Some(idx) => Some(&self.fragments[idx].buf[..self.fragments[idx].len])
+                Some(idx) => Some(&self.fragments[idx].buf[..self.fragments[idx].len]),
             }
         } else {
             None
@@ -729,8 +742,8 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
         let is_fragment = mf || fo != 0;
 
         if fo != 0 && (data.len() % 8 != 0) || data.len() == 0 {
-            return // Invalid fragmentation
-            // TODO: shouldn't this be checked as part of Ipv4::validate()????
+            return; // Invalid fragmentation
+                    // TODO: shouldn't this be checked as part of Ipv4::validate()????
         }
 
         if !is_fragment {
@@ -738,7 +751,7 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             self.unfragmented.1 = data.len();
         } else {
             let frag_idx;
-            
+
             // Get the index of where we will write this fragment, evicting
             // an old fragment buffer if needed
             'outer: {
@@ -780,7 +793,8 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             let rcvbt_end = (frag_end + 31) / 32;
             let frag_bit_start = fo % 32;
             let frag_bit_end = frag_end % 32;
-            if rcvbt_start + 1 < rcvbt_end { // Start and end are in different u32 chunks
+            if rcvbt_start + 1 < rcvbt_end {
+                // Start and end are in different u32 chunks
                 // Update the first chunk based on start bit offset
                 frag.rcvbt[rcvbt_start] |= u32::MAX >> frag_bit_start;
                 if rcvbt_start + 2 < rcvbt_end {
@@ -791,8 +805,10 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
                 }
                 // Update the last chunk based off end bit offset
                 frag.rcvbt[rcvbt_end - 1] |= !(u32::MAX >> frag_bit_end);
-            } else { // Start and end are within the same u32 chunk--update only the bits in between start and end
-                frag.rcvbt[rcvbt_start] |= !(u32::MAX >> frag_bit_end) & (u32::MAX >> frag_bit_start);
+            } else {
+                // Start and end are within the same u32 chunk--update only the bits in between start and end
+                frag.rcvbt[rcvbt_start] |=
+                    !(u32::MAX >> frag_bit_end) & (u32::MAX >> frag_bit_start);
             }
 
             if frag.rdl >= data_offset && frag.rdl < data_end {
@@ -811,7 +827,7 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
             // If the packet's last fragment has been observed,
             // *and* it is fully reassembled, *and* it hasn't already
             // been returned, return it. We check to make sure it hasn't
-            // already been returned because a wayward fragment could 
+            // already been returned because a wayward fragment could
             // still arrive and result in the packet being delivered twice.
             if frag.len != 0 && frag.rdl == frag.buf.len() && prev_rdl != frag.rdl {
                 self.ready = true;
@@ -883,7 +899,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
                 ordered: false,
                 // fragment_idx: None,
                 data: [0; 65535],
-                len: 0
+                len: 0,
             }),
             reorder_start: 0,
             curr_stream_seq: 0,
@@ -919,14 +935,13 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
 
         let diff = self.curr_stream_seq.diff_wrapped(stream_seq) as usize;
         if !flags.unordered() && diff >= RWND {
-            return // Drop packet--not within receive window
+            return; // Drop packet--not within receive window
         }
 
         if flags.beginning_fragment() && flags.ending_fragment() {
             // The packet isn't a fragment--it only needs to be reordered
             if flags.unordered() {
                 // The packet isn't a fragment, and doesn't need to be reordered
-
             }
             let rwnd_idx = (self.reorder_start + diff) % RWND;
             self.reorder[rwnd_idx].occupied = true;
@@ -934,7 +949,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             self.reorder[rwnd_idx].len = data.len();
         } else {
             let frag_idx;
-            
+
             // Get the index of where we will write this fragment, evicting
             // an old fragment buffer if needed
             'outer: {
@@ -960,7 +975,11 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             }
 
             let frag = &mut self.frags[frag_idx];
-            frag.insert(data, tsn, (flags.beginning_fragment(), flags.ending_fragment()));
+            frag.insert(
+                data,
+                tsn,
+                (flags.beginning_fragment(), flags.ending_fragment()),
+            );
 
             if frag.is_complete() {
                 let rwnd_idx = (self.reorder_start + diff) % RWND;
@@ -975,7 +994,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
 struct ReorderBuffer {
     pub occupied: bool,
     pub ordered: bool,
-//    pub fragment_idx: Option<usize>,
+    //    pub fragment_idx: Option<usize>,
     pub data: [u8; 65535],
     pub len: usize,
 }
@@ -1058,7 +1077,7 @@ impl WrappingCmp for u16 {
 
 // Length: 2 bytes. If 0, no more fragments
 // TSN: 2 bytes (just take 2 LSB)
-// 4 byte overhead, potentially for every single 4-byte chunk: 65535 * 2 (plus 2 extra bytes for final null length) = 65536 * 2 
+// 4 byte overhead, potentially for every single 4-byte chunk: 65535 * 2 (plus 2 extra bytes for final null length) = 65536 * 2
 // #[cfg(not(feature = "alloc"))]
 pub struct SctpFragment {
     buf: [u8; (65536 * 2)], // Must be this size to handle the case where a packet of size 65535 is fragmented into fragments of minimum length (4 bytes, assuming padding is used efficiently)
@@ -1091,7 +1110,8 @@ impl SctpFragment {
     fn append_link(&mut self, data: &[u8], offset: usize, tsn_truncated: u16) {
         // Add the link list header and data to the buffer
         self.buf[offset..offset + 2].copy_from_slice(tsn_truncated.to_be_bytes().as_slice());
-        self.buf[offset + 2..offset + 4].copy_from_slice((data.len() as u16).to_be_bytes().as_slice());
+        self.buf[offset + 2..offset + 4]
+            .copy_from_slice((data.len() as u16).to_be_bytes().as_slice());
         self.buf[offset + 4..offset + data.len() + 4].copy_from_slice(data);
 
         // Set the next link to a length of 0, signifying the end of the linked list
@@ -1109,14 +1129,15 @@ impl SctpFragment {
 
         // Then, insert the new link
         self.buf[offset..offset + 2].copy_from_slice(tsn_truncated.to_be_bytes().as_slice());
-        self.buf[offset + 2..offset + 4].copy_from_slice((data.len() as u16).to_be_bytes().as_slice());
+        self.buf[offset + 2..offset + 4]
+            .copy_from_slice((data.len() as u16).to_be_bytes().as_slice());
         self.buf[offset + 4..offset + data.len() + 4].copy_from_slice(data);
     }
 
     fn shift_links(&mut self, start: usize, new_start: usize) {
         if new_start == start {
             // Links aren't moving at all--don't need to copy bytes
-            return
+            return;
         } else if new_start < start {
             let shift_left = start - new_start;
 
@@ -1128,7 +1149,8 @@ impl SctpFragment {
 
             // Update the end pointer (since the links have shifted left)
             self.last_frag_idx -= shift_left;
-        } else { // start < new_start
+        } else {
+            // start < new_start
             let shift_right = new_start - start;
 
             // Links are moving to the right
@@ -1158,7 +1180,7 @@ impl SctpFragment {
 
         if self.total_len == 0 {
             if frag.len() > 65535 {
-                return // Drop the packet--too long
+                return; // Drop the packet--too long
             }
 
             // No packets have been received yet--add incoming as first packet
@@ -1170,36 +1192,36 @@ impl SctpFragment {
             self.append_link(frag, 0, tsn_truncated);
         } else {
             if self.total_len + frag.len() > 65535 {
-                return // Too much data to reassemble
+                return; // Too much data to reassemble
             }
 
             if beginning && self.begin_recvd {
-                return // we already have the beginning fragment
+                return; // we already have the beginning fragment
             }
-            
+
             if ending && self.end_recvd {
-                return // we already have the ending fragment
+                return; // we already have the ending fragment
             }
-            
+
             if tsn.lt_wrapped(self.begin_tsn) && self.begin_recvd {
-                return // fragment TSN was before beginning fragment
+                return; // fragment TSN was before beginning fragment
             }
-            
+
             if tsn.gt_wrapped(self.end_tsn) && self.end_recvd {
-                return // fragment TSN was after ending fragment
+                return; // fragment TSN was after ending fragment
             }
-            
+
             if tsn.lt_wrapped(self.begin_tsn) && tsn.diff_wrapped(self.end_tsn) >= 16384 {
-                return // fragment difference exceeds max possible reassembly window width
+                return; // fragment difference exceeds max possible reassembly window width
             }
-            
+
             if tsn.gt_wrapped(self.end_tsn) && self.begin_tsn.diff_wrapped(tsn) >= 16384 {
-                return // fragment difference exceeds max possible reassembly window width
+                return; // fragment difference exceeds max possible reassembly window width
             }
 
             let first_trunc_tsn = u16::from_be_bytes(self.buf[2..4].try_into().unwrap());
             if tsn_truncated.lt_wrapped(first_trunc_tsn) && self.begin_recvd {
-                return // The TSN indicates this fragment is a duplicate we've already merged in
+                return; // The TSN indicates this fragment is a duplicate we've already merged in
             }
 
             if tsn.gt_wrapped(self.end_tsn) {
@@ -1214,7 +1236,7 @@ impl SctpFragment {
                 }
 
                 if node.tsn() == tsn_truncated {
-                    return // Fragment is a duplicate--discard
+                    return; // Fragment is a duplicate--discard
                 }
 
                 self.insert_link(frag, node.header_offset(), tsn_truncated);
@@ -1251,9 +1273,12 @@ impl SctpFragment {
                     new_first_len += next_len; // Update the length field of the first link.
                     next_offset += next_len as usize; // Update the offset to the 2nd link in list.
 
-                    let next = FragHeader { data: &self.buf, offset: next_offset };
+                    let next = FragHeader {
+                        data: &self.buf,
+                        offset: next_offset,
+                    };
                     if next.data_length() == 0 {
-                        break // We've reached the end of the linked list
+                        break; // We've reached the end of the linked list
                     }
 
                     next_len = next.data_length();
@@ -1270,7 +1295,6 @@ impl SctpFragment {
         }
 
         self.total_len += frag.len();
-
     }
 }
 
@@ -1298,23 +1322,27 @@ struct FragHeader<'a> {
 
 impl<'a> FragHeader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        FragHeader {
-            data,
-            offset: 0,
-        }
+        FragHeader { data, offset: 0 }
     }
 
     pub fn data_length(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect("internal error: FragHeader::data_length() out of bounds"))
+        u16::from_be_bytes(
+            utils::to_array(self.data, 0)
+                .expect("internal error: FragHeader::data_length() out of bounds"),
+        )
     }
 
     pub fn tsn(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 2).expect("internal error: FragHeader::tsn() out of bounds"))
+        u16::from_be_bytes(
+            utils::to_array(self.data, 2).expect("internal error: FragHeader::tsn() out of bounds"),
+        )
     }
 
     pub fn data(&self) -> &'a [u8] {
         let len = self.data_length() as usize;
-        self.data.get(4..4 + len).expect("internal error: FragHeader::data() out of bounds")
+        self.data
+            .get(4..4 + len)
+            .expect("internal error: FragHeader::data() out of bounds")
     }
 
     pub fn header_offset(&self) -> usize {
@@ -1323,7 +1351,10 @@ impl<'a> FragHeader<'a> {
 
     pub fn next(&self) -> Option<FragHeader<'a>> {
         let next_offset = 4 + self.data_length() as usize;
-        let next_len = u16::from_be_bytes(utils::to_array(self.data, next_offset).expect("internal error: FragHeader::next() out of bounds"));
+        let next_len = u16::from_be_bytes(
+            utils::to_array(self.data, next_offset)
+                .expect("internal error: FragHeader::next() out of bounds"),
+        );
         if next_len > 0 {
             Some(FragHeader {
                 data: &self.data[next_offset..],
@@ -1439,9 +1470,7 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
         let sctp = SctpRef::from_bytes_unchecked(pkt);
 
         let mut data_chunks = sctp.payload_chunks();
-        if data_chunks.count() > 1 {
-            
-        }
+        if data_chunks.count() > 1 {}
         todo!()
     }
     /*
@@ -1542,4 +1571,3 @@ impl UnboundedSequence for SctpSequence {
         }
     }
 }
-

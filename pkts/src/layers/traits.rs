@@ -2,8 +2,8 @@
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
 //! Traits common among all `Layer` types.
-//! 
-//! 
+//!
+//!
 
 use crate::error::*;
 use core::fmt;
@@ -980,14 +980,14 @@ pub mod extras {
     }
 
     /// Assigns a unique identifier to the layer.
-    /// 
+    ///
     /// Each protocol layer must have the same LayerId returned by this trait across [`Layer`],
     /// [`LayerRef`] and [`LayerMut`] types of that protocol. So, there were a protocol layer
     /// called `Example`, then `Example::layer_id()` == `ExampleRef::layer_id()`, and likewise
     /// `Example::layer_id()` == `ExampleMut::layer_id()`.
     pub trait LayerIdentifier: Sized {
         /// A unique identifier for the layer type.
-        /// 
+        ///
         /// This identifier is guaranteed to be the same across instances of [`Layer`], [`LayerRef`]
         /// and [`LayerMut`] types of the same protocol layer.
         fn layer_id() -> LayerId;
