@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-//! The Transmission Control Protocol (TCP) and its related fields.
+//! The Transmission Control Protocol (TCP) and related data structures.
 //!
 //!
 

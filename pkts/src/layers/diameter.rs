@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-//! The Diameter protocol and any protocol that uses Diameter as its base protocol.
-//!
-//!
+//! The base Diameter protocol and its derived protocols (i.e. _Diameter Applications_).
+//! 
+//! 
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;

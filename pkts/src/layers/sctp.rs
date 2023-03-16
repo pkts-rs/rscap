@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-//! The Stream Control Transmission Protocol (SCTP) layer and its related fields.
+//! The Stream Control Transmission Protocol (SCTP) layer and related data structures.
 //!
 //!
 

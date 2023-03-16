@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
-//! Protocol layers used for MySQL data exchange.
+//! Protocol layers used for communication between MySQL clients and databases.
+//!
 
 use std::cmp::Ordering;
 
