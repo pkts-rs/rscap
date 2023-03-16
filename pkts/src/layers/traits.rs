@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
+//! Traits common among all `Layer` types.
+//! 
+//! 
+
 use crate::error::*;
 use core::fmt;
 use extras::*;

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
+//! Ethernet and similar link-layer protocol layers.
+//! 
+//! 
+
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
 use crate::layers::traits::extras::*;

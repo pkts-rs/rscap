@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
+//! Protocol layers used for MySQL data exchange.
+
 use std::cmp::Ordering;
 
 use super::{Raw, RawRef};

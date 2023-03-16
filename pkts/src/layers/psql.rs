@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
+//! Protocol layers used for Postgres data exchange.
+//! 
+
 use std::collections::HashMap;
 
 use core::iter::Iterator;

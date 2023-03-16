@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
 
+//! Internet Protocol (IP) network layers, including IPSec.
+//! 
+//! 
+
 use core::cmp;
 use core::fmt::Debug;
 use core::iter::Iterator;
