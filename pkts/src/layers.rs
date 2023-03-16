@@ -38,13 +38,13 @@ use core::fmt::Debug;
 ///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
 /// automatically by a given method call, or when payload layer data is literally
-/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// meant to be interpreted as an opaque array of bytes. A [`Raw`] layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
 /// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
 ///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
@@ -149,13 +149,13 @@ impl Raw {
 ///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
 /// automatically by a given method call, or when payload layer data is literally
-/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// meant to be interpreted as an opaque array of bytes. A [`Raw`] layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
 /// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
 ///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
@@ -206,13 +206,13 @@ impl Validate for RawRef<'_> {
 ///
 /// This type is primarily used when inner layers cannot be inferred or interpreted
 /// automatically by a given method call, or when payload layer data is literally
-/// meant to be interpreted as an opaque array of bytes. A `Raw` layer does not
+/// meant to be interpreted as an opaque array of bytes. A [`Raw`] layer does not
 /// necessarily indicate the presence of only one `Layer` in its contained
 /// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` doesn't infer `Layer` types beyond the Transport layer.
+/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
 ///
 /// [`Ipv4`]: crate::layers::ip::Ipv4
 /// [`Tcp`]: crate::layers::tcp::Tcp
