@@ -109,7 +109,7 @@ impl ToBytes for Raw {
         bytes.extend(&self.data);
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_chksummed(bytes, Some((RawRef::layer_id_static(), start))),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
         }
     }
 }

@@ -115,7 +115,7 @@ impl ToBytes for MysqlPacket {
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
         match &self.payload {
             Some(p) => {
-                p.to_bytes_chksummed(bytes, Some((MysqlPacketRef::layer_id_static(), start)))
+                p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)))
             }
             None => (),
         }
@@ -182,7 +182,7 @@ impl<'a> LayerOffset for MysqlPacketRef<'a> {
             return None;
         }
 
-        if layer_type == RawRef::layer_id_static() {
+        if layer_type == Raw::layer_id() {
             Some(4)
         } else {
             None

@@ -455,7 +455,7 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
 /// retrieving individual layer fields or payload data from a given packet. This type can be easily
 /// converted into its corresponding [`Layer`] type if desired.
 pub trait LayerRef<'a>:
-    AnyLayerRef<'a>
+    LayerIdentifier
     + BaseLayerAppend
     + Into<&'a [u8]>
     + Into<Vec<u8>>
@@ -466,7 +466,7 @@ pub trait LayerRef<'a>:
 }
 
 /// A trait for mutably indexing into sublayers of a [`LayerRef`] type.
-pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
+pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + LayerIdentifier {
     /// Retrieves a mutable reference to the first sublayer of type `T`, if such a sublayer exists.
     ///
     /// If the layer type `T` is the same type as the base layer (`self`), this method will
@@ -539,7 +539,7 @@ pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + AnyLayerMut<'a> {
 /// small changes are being made. This type can be easily converted into its corresponding
 /// [`Layer`] type if desired.
 pub trait LayerMut<'a>:
-    AnyLayerMut<'a>
+    LayerIdentifier
     + BaseLayerAppend
     + Into<&'a [u8]>
     + Into<Vec<u8>>
@@ -979,48 +979,22 @@ pub mod extras {
         }
     }
 
-    pub trait AnyLayerRef<'a>: Sized {
-        fn layer_id_static() -> LayerId;
-
-        #[inline]
-        fn layer_id(&self) -> LayerId {
-            Self::layer_id_static()
-        }
-
-        #[inline]
-        fn is_layer<T: AnyLayerRef<'a>>(&self) -> bool {
-            self.layer_id() == T::layer_id_static()
-        }
+    /// Assigns a unique identifier to the layer.
+    /// 
+    /// Each protocol layer must have the same LayerId returned by this trait across [`Layer`],
+    /// [`LayerRef`] and [`LayerMut`] types of that protocol. So, there were a protocol layer
+    /// called `Example`, then `Example::layer_id()` == `ExampleRef::layer_id()`, and likewise
+    /// `Example::layer_id()` == `ExampleMut::layer_id()`.
+    pub trait LayerIdentifier: Sized {
+        /// A unique identifier for the layer type.
+        /// 
+        /// This identifier is guaranteed to be the same across instances of [`Layer`], [`LayerRef`]
+        /// and [`LayerMut`] types of the same protocol layer.
+        fn layer_id() -> LayerId;
     }
 
-    // Casting directly to an immutable variant would introduce UB. Use Into<Self::AssociatedRef> and then cast immutably to be safe.
-    pub trait AnyLayerMut<'a>: Sized {
-        type AssociatedRef: AnyLayerRef<'a>;
-
-        /// The unique identifier associated with the given [`Layer`].
-        /// This identifier is guaranteed to be the same for [`Layer`], [`LayerRef`]
-        /// and [`LayerMut`] types implementing the same layer.
-        ///
-        /// As an example, `Tcp::layer_id_static()` will be equal to
-        /// `TcpRef::layer_id_static()` and `TcpMut::layer_id_static()`.
-        /// Additionally, any instances of these types will likewise carry
-        /// the same layer ID.
-        ///
-        /// Layer IDs
-
-        fn layer_id_static() -> LayerId;
-
-        #[inline]
-        fn layer_id(&self) -> LayerId {
-            Self::layer_id_static()
-        }
-
-        fn is_layer<T: AnyLayerMut<'a>>(&self) -> bool {
-            self.layer_id() == T::layer_id_static()
-        }
-    }
-
-    /// The default (non-custom)
+    /// The default layer offset method to be used for a layer when no [`CustomLayerSelection`] is
+    /// specified for the layer.
     pub trait LayerOffset {
         /// Gets the index of the first byte of the layer specified by `layer_type`, if such a layer exists.
         /// This will not check the current layer against `layer_type`.

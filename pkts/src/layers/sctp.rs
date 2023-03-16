@@ -365,7 +365,7 @@ impl ToBytes for Sctp {
         }
 
         for chunk in &self.payload_chunks {
-            chunk.to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
+            chunk.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)));
         }
 
         // TODO: set checksum here
@@ -7073,7 +7073,7 @@ impl ToBytes for DataChunk {
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
         self.payload
-            .to_bytes_chksummed(bytes, Some((SctpRef::layer_id_static(), start)));
+            .to_bytes_chksummed(bytes, Some((Sctp::layer_id(), start)));
         bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
     }
 }

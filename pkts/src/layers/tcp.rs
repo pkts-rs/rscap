@@ -5,6 +5,7 @@
 //! 
 //! 
 
+use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::*;
@@ -15,9 +16,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::cmp;
 use core::iter::Iterator;
 
-use super::ip::Ipv4Ref;
-use super::ip::Ipv6Ref;
-use super::ip::DATA_PROTO_TCP;
+
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpMetadata)]
@@ -236,12 +235,12 @@ impl ToBytes for Tcp {
         bytes.extend(self.urgent_ptr.to_be_bytes());
         match self.payload.as_ref() {
             None => (),
-            Some(p) => p.to_bytes_chksummed(bytes, Some((TcpRef::layer_id_static(), start))),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
         }
 
         if self.chksum.is_none() {
             if let Some((id, prev_idx)) = prev {
-                let new_chksum = if id == Ipv4Ref::layer_id_static() {
+                let new_chksum = if id == Ipv4::layer_id() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
                     let addr_chksum =
                         utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
@@ -251,7 +250,7 @@ impl ToBytes for Tcp {
                     data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
 
                     data_chksum
-                } else if id == Ipv6Ref::layer_id_static() {
+                } else if id == Ipv6::layer_id() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
                     let addr_chksum =
                         utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
@@ -430,7 +429,7 @@ impl LayerOffset for TcpRef<'_> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let tcp = TcpRef::from_bytes_unchecked(bytes);
-        if layer_type == RawRef::layer_id_static() {
+        if layer_type == Raw::layer_id() {
             Some(cmp::max(5, tcp.data_offset()) * 4)
         } else {
             None

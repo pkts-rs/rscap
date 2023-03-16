@@ -806,7 +806,7 @@ impl ToBytes for Ipv4 {
         bytes.extend(self.dst.to_be_bytes());
         self.options.to_bytes_extended(bytes);
         if let Some(payload) = self.payload.as_ref() {
-            payload.to_bytes_chksummed(bytes, Some((Ipv4Ref::layer_id_static(), start)))
+            payload.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)))
         }
 
         if self.chksum.is_none() {
@@ -1070,7 +1070,7 @@ impl LayerOffset for Ipv4Ref<'_> {
 
         match bytes.get(9).map(|b| *b) {
             Some(DATA_PROTO_TCP) => {
-                if layer_type == TcpRef::layer_id_static() {
+                if layer_type == Tcp::layer_id() {
                     Some(ihl)
                 } else {
                     TcpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
@@ -1078,7 +1078,7 @@ impl LayerOffset for Ipv4Ref<'_> {
                 }
             }
             Some(DATA_PROTO_UDP) => {
-                if layer_type == UdpRef::layer_id_static() {
+                if layer_type == Udp::layer_id() {
                     Some(ihl)
                 } else {
                     UdpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
@@ -1086,7 +1086,7 @@ impl LayerOffset for Ipv4Ref<'_> {
                 }
             }
             Some(DATA_PROTO_SCTP) => {
-                if layer_type == SctpRef::layer_id_static() {
+                if layer_type == Sctp::layer_id() {
                     Some(ihl)
                 } else {
                     SctpRef::payload_byte_index_default(&bytes[ihl..], layer_type)
@@ -1094,7 +1094,7 @@ impl LayerOffset for Ipv4Ref<'_> {
                 }
             }
             _ => {
-                if layer_type == RawRef::layer_id_static() {
+                if layer_type == Raw::layer_id() {
                     Some(ihl)
                 } else {
                     None
@@ -2562,7 +2562,7 @@ impl ToBytes for Ipv6 {
         bytes.extend(self.src.to_be_bytes());
         bytes.extend(self.dst.to_be_bytes());
         if let Some(p) = self.payload.as_ref() {
-            p.to_bytes_chksummed(bytes, Some((Ipv6Ref::layer_id_static(), start)));
+            p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)));
         }
     }
 }
@@ -2738,7 +2738,7 @@ impl LayerOffset for Ipv6Ref<'_> {
 
         match bytes.get(6).map(|b| *b) {
             Some(DATA_PROTO_TCP) => {
-                if layer_type == TcpRef::layer_id_static() {
+                if layer_type == Tcp::layer_id() {
                     Some(40)
                 } else {
                     TcpRef::payload_byte_index_default(payload, layer_type)
@@ -2746,7 +2746,7 @@ impl LayerOffset for Ipv6Ref<'_> {
                 }
             }
             Some(DATA_PROTO_UDP) => {
-                if layer_type == UdpRef::layer_id_static() {
+                if layer_type == Udp::layer_id() {
                     Some(40)
                 } else {
                     UdpRef::payload_byte_index_default(payload, layer_type)
@@ -2754,7 +2754,7 @@ impl LayerOffset for Ipv6Ref<'_> {
                 }
             }
             Some(DATA_PROTO_SCTP) => {
-                if layer_type == SctpRef::layer_id_static() {
+                if layer_type == Sctp::layer_id() {
                     Some(40)
                 } else {
                     SctpRef::payload_byte_index_default(payload, layer_type)
@@ -2762,7 +2762,7 @@ impl LayerOffset for Ipv6Ref<'_> {
                 }
             }
             _ => {
-                if layer_type == RawRef::layer_id_static() {
+                if layer_type == Raw::layer_id() {
                     Some(40)
                 } else {
                     None

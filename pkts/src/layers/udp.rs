@@ -5,7 +5,7 @@
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::layers::{Raw, RawRef};
+use crate::layers::{Raw};
 use crate::{error::*, utils};
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
@@ -13,7 +13,7 @@ use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 use core::fmt::Debug;
 use std::cmp;
 
-use super::ip::{Ipv4Ref, Ipv6Ref, DATA_PROTO_UDP};
+use super::ip::{DATA_PROTO_UDP, Ipv6, Ipv4};
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
@@ -143,12 +143,12 @@ impl ToBytes for Udp {
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_chksummed(bytes, Some((UdpRef::layer_id_static(), start))),
+            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
         }
 
         if self.chksum.is_none() {
             if let Some((id, prev_idx)) = prev {
-                let new_chksum = if id == Ipv4Ref::layer_id_static() {
+                let new_chksum = if id == Ipv4::layer_id() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
                     let addr_chksum =
                         utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
@@ -158,7 +158,7 @@ impl ToBytes for Udp {
                     data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
 
                     data_chksum
-                } else if id == Ipv6Ref::layer_id_static() {
+                } else if id == Ipv6::layer_id() {
                     let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
                     let addr_chksum =
                         utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
@@ -231,7 +231,7 @@ impl<'a> FromBytesRef<'a> for UdpRef<'a> {
 impl LayerOffset for UdpRef<'_> {
     #[inline]
     fn payload_byte_index_default(_bytes: &[u8], layer_type: LayerId) -> Option<usize> {
-        if layer_type == RawRef::layer_id_static() {
+        if layer_type == Raw::layer_id() {
             Some(8)
         } else {
             None

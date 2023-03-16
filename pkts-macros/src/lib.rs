@@ -261,6 +261,13 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         }
 
+        impl LayerIdentifier for #layer_type {
+            #[inline]
+            fn layer_id() -> LayerId {
+                 core::any::TypeId::of::<#layer_type>()               
+            }
+        }
+
         impl Layer for #layer_type { }
     }));
 
@@ -353,7 +360,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
         impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
-                if self.is_layer::<T>() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     return Some(T::from_bytes_unchecked(self.#data_field))
                 }
 
@@ -364,11 +371,11 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
                     return custom_selection
-                        .payload_byte_index(self.#data_field, &T::layer_id_static())
+                        .payload_byte_index(self.#data_field, &T::layer_id())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
 
-                match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                match Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&self.#data_field[offset..])),
                     None => None
                 }
@@ -381,7 +388,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     _ => (),
                 }
 
-                if self.is_layer::<T>() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     n -= 1
                 }
 
@@ -391,7 +398,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .as_any()
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
-                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id_static()) {
+                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id()) {
                         n -= 1;
                         if n == 0 {
                             return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
@@ -399,9 +406,9 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
                         while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
-                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
+                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id())
                             } else {
-                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
+                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id())
                             }
                         {
                             curr_offset = new_offset;
@@ -414,13 +421,13 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     return None
                 }
 
-                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     n -= 1;
                     if n == 0 {
                         return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                     }
 
-                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
+                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id()) {
                         curr_offset = new_offset;
                         n -= 1;
                         if n == 0 {
@@ -442,9 +449,17 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
+        /*
         impl<'a> AnyLayerRef<'a> for #layer_type<'a> {
             #[inline]
             fn layer_id_static() -> core::any::TypeId {
+                core::any::TypeId::of::<#owned_type>()
+            }
+        }
+        */
+        impl<'a> LayerIdentifier for #layer_type<'a> {
+            #[inline]
+            fn layer_id() -> LayerId {
                 core::any::TypeId::of::<#owned_type>()
             }
         }
@@ -619,7 +634,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
         impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
-                if <Self as AnyLayerMut>::AssociatedRef::layer_id_static() == T::layer_id_static() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     return Some(T::from_bytes_unchecked(self.#data_field))
                 }
 
@@ -630,11 +645,11 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
                     return custom_selection
-                        .payload_byte_index(self.#data_field, &T::layer_id_static())
+                        .payload_byte_index(self.#data_field, &T::layer_id())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
 
-                match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                match Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&self.#data_field[offset..])),
                     None => None
                 }
@@ -647,7 +662,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     _ => (),
                 }
 
-                if <Self as AnyLayerMut>::AssociatedRef::layer_id_static() == T::layer_id_static() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     n -= 1
                 }
 
@@ -657,7 +672,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .as_any()
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
-                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id_static()) {
+                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id()) {
                         n -= 1;
                         if n == 0 {
                             return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
@@ -665,9 +680,9 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
                         while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
-                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
+                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id())
                             } else {
-                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
+                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id())
                             }
                         {
                             curr_offset = new_offset;
@@ -680,13 +695,13 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     return None
                 }
 
-                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     n -= 1;
                     if n == 0 {
                         return Some(T::from_bytes_unchecked(&self.#data_field[curr_offset..]))
                     }
 
-                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
+                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id()) {
                         curr_offset = new_offset;
                         n -= 1;
                         if n == 0 {
@@ -701,7 +716,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
         impl<'a> LayerMutIndex<'a> for #layer_type<'a> {
             fn get_layer_mut<T: LayerMut<'a> + FromBytesMut<'a>>(&'a mut self) -> Option<T> {
-                if self.is_layer::<T>() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     return Some(T::from_bytes_unchecked(self.#data_field));
                 }
 
@@ -712,11 +727,11 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
                     return custom_selection
-                        .payload_byte_index(self.#data_field, &T::layer_id_static())
+                        .payload_byte_index(self.#data_field, &T::layer_id())
                         .map(|offset| T::from_bytes_unchecked(self.#data_field));
                 }
 
-                match Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                match Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     Some(offset) => Some(T::from_bytes_unchecked(&mut self.#data_field[offset..])),
                     None => None
                 }
@@ -729,7 +744,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     _ => (),
                 }
 
-                if self.is_layer::<T>() {
+                if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     n -= 1;
                 }
 
@@ -739,7 +754,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     .as_any()
                     .downcast_ref::<&dyn CustomLayerSelection>()
                 {
-                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id_static()) {
+                    if let Some(mut curr_offset) = custom_selection.payload_byte_index(self.#data_field, &T::layer_id()) {
                         n -= 1;
                         if n == 0 {
                             return Some(T::from_bytes_unchecked(&mut self.#data_field[curr_offset..]))
@@ -747,9 +762,9 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
                         while let Some(new_offset) =
                             if let Some(custom_selection) = T::metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
-                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id_static())
+                                custom_selection.payload_byte_index(&self.#data_field[curr_offset..], &T::layer_id())
                             } else {
-                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static())
+                                T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id())
                             }
                         {
                             curr_offset = new_offset;
@@ -762,13 +777,13 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     return None
                 }
 
-                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id_static()) {
+                if let Some(mut curr_offset) = Self::payload_byte_index_default(self.#data_field, T::layer_id()) {
                     n -= 1;
                     if n == 0 {
                         return Some(T::from_bytes_unchecked(&mut self.#data_field[curr_offset..]))
                     }
 
-                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id_static()) {
+                    while let Some(new_offset) = T::payload_byte_index_default(&self.#data_field[curr_offset..], T::layer_id()) {
                         curr_offset = new_offset;
                         n -= 1;
                         if n == 0 {
@@ -789,6 +804,13 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
         impl<'a> LayerMut<'a> for #layer_type<'a> { }
 
+        impl<'a> LayerIdentifier for #layer_type<'a> {
+            #[inline]
+            fn layer_id() -> LayerId {
+                core::any::TypeId::of::<#owned_type>()
+            }
+        }
+        /*
         impl<'a> AnyLayerMut<'a> for #layer_type<'a> {
             type AssociatedRef = #ref_type <'a>;
             #[inline]
@@ -796,6 +818,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 core::any::TypeId::of::<#owned_type>()
             }
         }
+        */
 
         impl<'a> ToSlice for #layer_type<'a> {
             fn to_slice(&self) -> &[u8] {
