@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <me@nathanielbennett.com>
+// Copyright (C) Nathaniel Bennett <me[at]nathanielbennnett[dotcom]>
 
 //! Some protocols allow for messages to be fragmented into several
 //! packets, and others additionally account for re-ordering of packets
