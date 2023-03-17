@@ -34,7 +34,7 @@ pub trait BaseLayer: ToBoxedLayer + LayerLength {
 }
 
 /// Allows the name of a protocol layer to be retrieved as a string.
-/// 
+///
 /// This trait's single associated function is effectively an object-unsafe variant of the
 /// [`BaseLayer::layer_metadata()`] method.
 pub trait LayerName {
@@ -49,7 +49,7 @@ pub trait LayerName {
 /// A trait for retrieving the current length (in bytes) of a protocol layer and its payload.
 pub trait LayerLength {
     /// The length (in bytes) of the layer.
-    /// 
+    ///
     /// This length includes the length of any sublayers (i.e. the length is equal to the layer's
     /// header plus its entire payload).
     ///
@@ -74,7 +74,7 @@ pub trait LayerLength {
 /// attempt (and fail) to change the layer structure to be `Ipv4` / `Http`.
 pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     /// Determines whether a given new layer can be appended to an existing one.
-    /// 
+    ///
     /// Some `Layer` types have restrictions on what other layers can follow it. As an example of
     /// this, the IPv4 header has a field that explicitly denotes the Transport layer in use above
     /// it; as such, layers that have a defined value for that field are permitted to be a payload
@@ -112,7 +112,7 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     }
 }
 
-impl<T: BaseLayerAppendBoxed> BaseLayerAppend for T { }
+impl<T: BaseLayerAppendBoxed> BaseLayerAppend for T {}
 
 /// Obtains a slice of bytes representing the instance.
 pub trait ToSlice {
@@ -346,7 +346,7 @@ pub trait LayerIndex: LayerObject {
     }
 }
 
-impl<T: LayerObject> LayerIndex for T { }
+impl<T: LayerObject> LayerIndex for T {}
 
 /// A trait for appending a new layer to an existing one.
 pub trait LayerAppend: BaseLayerAppend + LayerObject {
@@ -384,7 +384,7 @@ pub trait LayerAppend: BaseLayerAppend + LayerObject {
     }
 }
 
-impl<T: BaseLayerAppend + LayerObject> LayerAppend for T { }
+impl<T: BaseLayerAppend + LayerObject> LayerAppend for T {}
 
 /// Represents a distinct protocol layer that may encapsulate data and/or other layers.
 ///
@@ -393,7 +393,7 @@ impl<T: BaseLayerAppend + LayerObject> LayerAppend for T { }
 /// byte slice--all of its internal types are owned by the layer. Individual data fields can be
 /// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
 /// layers can be crafted using methods related to this type.
-pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject { }
+pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject {}
 
 /// A trait for indexing into sublayers of a [`LayerRef`] type.
 pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
@@ -558,7 +558,8 @@ pub trait LayerMut<'a>:
     + LayerMutIndex<'a>
     + LayerName
     + ToOwnedLayer
-{ }
+{
+}
 
 /// A Trait for validating a byte slice against the expected structure of a layer type.
 pub trait Validate: BaseLayer + StatelessLayer {
@@ -847,7 +848,7 @@ pub mod extras {
     }
 
     /// Utility method to convert a given type into some type implementing [`Layer`].
-    /// 
+    ///
     /// This is used for converting a type implementing [`LayerRef<'_>] or [`LayerMut<'_>`]
     /// into its corresponding owned type. For example, the [`IPv4Ref<'_>`] type implements
     /// [`IntoLayer<Output=IPv4>`]. Because of this, it can be converted into its owned
@@ -988,7 +989,7 @@ pub mod extras {
         }
     }
 
-    impl<T: BaseLayer + IntoLayer + Sized + ToOwnedLayer> BaseLayerAppendBoxed for T { }
+    impl<T: BaseLayer + IntoLayer + Sized + ToOwnedLayer> BaseLayerAppendBoxed for T {}
 
     /// Assigns a unique identifier to the layer.
     ///

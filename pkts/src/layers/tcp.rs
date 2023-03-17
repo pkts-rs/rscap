@@ -13,7 +13,6 @@ use crate::utils;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
-use core::char::MAX;
 use core::cmp;
 use core::iter::Iterator;
 
@@ -910,7 +909,6 @@ impl From<u16> for TcpFlags {
     }
 }
 
-
 const MAX_TCP_OPTIONS_LEN: usize = 40;
 
 pub struct TcpOptionsBuilder {
@@ -937,7 +935,8 @@ impl TcpOptionsBuilder {
         } else if self.is_end {
             self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
         } else if self.len + option.option_len() > MAX_TCP_OPTIONS_LEN {
-            self.err_reason = Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
+            self.err_reason =
+                Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
         } else {
             if option.option_type() == 0 {
                 self.is_end = true;
@@ -955,16 +954,18 @@ impl TcpOptionsBuilder {
         } else if self.is_end {
             self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
         } else if self.len + option.option_length() > MAX_TCP_OPTIONS_LEN {
-            self.err_reason = Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
+            self.err_reason =
+                Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
         } else {
             if option.option_type() == 0 {
                 self.is_end = true;
             }
-            
+
             self.data[self.len] = option.option_type();
             if option.option_type() > 1 {
                 self.data[self.len + 1] = option.option_length() as u8;
-                self.data[self.len + 2..self.len + option.option_length()].copy_from_slice(option.option_data());
+                self.data[self.len + 2..self.len + option.option_length()]
+                    .copy_from_slice(option.option_data());
             }
         }
 
@@ -979,15 +980,13 @@ impl TcpOptionsBuilder {
                 let padded_len = utils::padded_length::<4>(self.len);
                 let data_offset = 5 + (padded_len / 4);
 
-                if data_offset > tcp.data_offset() && data_offset - tcp.data_offset() > extra_bytes {
+                if data_offset > tcp.data_offset() && data_offset - tcp.data_offset() > extra_bytes
+                {
                     Err("insufficient bytes in TcpMut to add TCP options")
-
                 } else if data_offset == tcp.data_offset() {
                     tcp.data[20..20 + data_offset * 4].copy_from_slice(&self.data[..padded_len]);
                     Ok(())
-
                 } else {
-                    
                     Ok(())
                 }
             }

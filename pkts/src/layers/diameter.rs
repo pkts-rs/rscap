@@ -2,8 +2,8 @@
 // Copyright (C) Nathaniel Bennett <me[at]nathanielbennnett[dotcom]>
 
 //! The base Diameter protocol and its derived protocols (i.e. _Diameter Applications_).
-//! 
-//! 
+//!
+//!
 
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;

@@ -107,7 +107,7 @@ impl LayerObject for Ether {
             .downcast_ref::<&dyn EtherPayloadMetadata>()
             .is_some()
     }
-    
+
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
