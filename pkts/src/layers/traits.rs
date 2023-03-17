@@ -33,7 +33,7 @@ pub trait BaseLayer: ToBoxedLayer + LayerLength {
     fn layer_metadata(&self) -> &dyn LayerMetadata;
 }
 
-/// A trait for getting the name of a protocol layer as a string.
+/// Allows the name of a protocol layer to be retrieved as a string.
 /// 
 /// This trait's single associated function is effectively an object-unsafe variant of the
 /// [`BaseLayer::layer_metadata()`] method.
@@ -59,7 +59,7 @@ pub trait LayerLength {
     fn len(&self) -> usize;
 }
 
-/// A trait that enables protocol layers of different types to be appended to each other.
+/// Enables protocol layers of different types to be appended to each other.
 ///
 /// We define _appending_ a new layer as setting the innermost empty payload of an existing layer
 /// to the value of the new layer. This means that _appending_ a layer is different from setting
@@ -112,7 +112,11 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     }
 }
 
+impl<T: BaseLayerAppendBoxed> BaseLayerAppend for T { }
+
+/// Obtains a slice of bytes representing the instance.
 pub trait ToSlice {
+    /// Returns the protocol layer as a reference to a slice of bytes.
     fn to_slice(&self) -> &[u8];
 }
 
@@ -313,9 +317,10 @@ pub trait LayerIndex: LayerObject {
         }
 
         if self.as_any_mut().downcast_mut::<T>().is_some() {
-            n -= 1;
-            if n == 0 {
-                return self.as_any_mut().downcast_mut::<T>();
+            match n.checked_sub(1) {
+                None => return None,
+                Some(0) => return self.as_any_mut().downcast_mut::<T>(),
+                Some(n_decremented) => n = n_decremented,
             }
         }
 
@@ -327,9 +332,9 @@ pub trait LayerIndex: LayerObject {
                 Some(l) => {
                     layer = l;
                     if layer.as_any_mut().downcast_mut::<T>().is_some() {
-                        n -= 1;
-                        if n == 0 {
-                            break;
+                        match n.checked_sub(1) {
+                            None | Some(0) => break, // `None` should never occur here
+                            Some(n_decremented) => n = n_decremented,
                         }
                     }
                     next_layer = layer.get_payload_mut();
@@ -340,6 +345,8 @@ pub trait LayerIndex: LayerObject {
         layer.as_any_mut().downcast_mut::<T>()
     }
 }
+
+impl<T: LayerObject> LayerIndex for T { }
 
 /// A trait for appending a new layer to an existing one.
 pub trait LayerAppend: BaseLayerAppend + LayerObject {
@@ -377,6 +384,8 @@ pub trait LayerAppend: BaseLayerAppend + LayerObject {
     }
 }
 
+impl<T: BaseLayerAppend + LayerObject> LayerAppend for T { }
+
 /// Represents a distinct protocol layer that may encapsulate data and/or other layers.
 ///
 /// This is one of three layer trait variants: [`Layer`], [`LayerRef`], and [`LayerMut`].
@@ -384,7 +393,7 @@ pub trait LayerAppend: BaseLayerAppend + LayerObject {
 /// byte slice--all of its internal types are owned by the layer. Individual data fields can be
 /// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
 /// layers can be crafted using methods related to this type.
-pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject {}
+pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject { }
 
 /// A trait for indexing into sublayers of a [`LayerRef`] type.
 pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
@@ -549,8 +558,7 @@ pub trait LayerMut<'a>:
     + LayerMutIndex<'a>
     + LayerName
     + ToOwnedLayer
-{
-}
+{ }
 
 /// A Trait for validating a byte slice against the expected structure of a layer type.
 pub trait Validate: BaseLayer + StatelessLayer {
@@ -721,7 +729,7 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
     ///
     /// # Panics
     ///
-    /// The following function may panic if the slice of bytes doesn't form a valid packet
+    /// The following function may panic if the slice of bytes do not form a valid packet
     /// structure. If an invocation of `validate()` on the slice does not return
     /// [`ValidationErrorType::InvalidSize`], this function will not panic.
     fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self;
@@ -761,22 +769,16 @@ macro_rules! parse_layers {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
                 match $base_layer.set_payload(Box::new(new_layer)) {
-                    Ok(_) => $crate::parse_layers!(remaining_bytes; $base_layer),
+                    Ok(_) if remaining_bytes.len() == 0 => Ok($base_layer),
+                    Ok(_) => Err($crate::error::ValidationError {
+                        layer: <$curr as $crate::layers::traits::LayerName>::name(),
+                        err_type: $crate::error::ValidationErrorType::ExcessBytes($bytes.len()),
+                        reason: "parsing of bytes failed--additional bytes remaining after parsing all protocol layers"
+                    }),
                     Err(e) => Err(e),
                 }
             },
             Err(e) => Err(e),
-        }
-    }};
-    ($bytes:expr; $base_layer:ident) => {{
-        if $bytes.len() > 0 {
-            Err($crate::error::ValidationError {
-                layer: "parse_layers!()", // TODO: fix this
-                err_type: $crate::error::ValidationErrorType::ExcessBytes($bytes.len()),
-                reason: "layers could not be successfully parsed from the given buffer--additional bytes remaining after parsing"
-            })
-        } else {
-            Ok($base_layer)
         }
     }};
 }
@@ -801,11 +803,13 @@ macro_rules! parse_layers_unchecked {
         let new_layer = <$curr as $crate::layers::traits::FromBytesCurrent>::from_bytes_current_layer_unchecked($bytes);
         let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
         $base_layer.set_payload_unchecked(Some(Box::new(new_layer)));
-        $crate::parse_layers_unchecked!(remaining_bytes; $base_layer)
+        $base_layer
     }};
+    /*
     ($bytes:expr; $base_layer:ident) => {{
         $base_layer
     }};
+    */
 }
 
 // =============================================================================
@@ -816,6 +820,7 @@ pub mod extras {
     use super::*;
     use core::any;
 
+    /// An identifier unique to a protocol layer.
     pub type LayerId = any::TypeId;
 
     /// An extension to [`any::Any`]; adds methods for retrieving a `dyn Any` reference
@@ -842,6 +847,7 @@ pub mod extras {
     }
 
     /// Utility method to convert a given type into some type implementing [`Layer`].
+    /// 
     /// This is used for converting a type implementing [`LayerRef<'_>] or [`LayerMut<'_>`]
     /// into its corresponding owned type. For example, the [`IPv4Ref<'_>`] type implements
     /// [`IntoLayer<Output=IPv4>`]. Because of this, it can be converted into its owned
@@ -850,8 +856,8 @@ pub mod extras {
         type Output: LayerObject;
     }
 
-    /// A trait for creating an owned layer type [`Layer`] from an instance of a layer (a [`Layer`],
-    /// [`LayerRef`] or [`LayerMut`]).
+    /// A trait for creating an owned layer type [`Layer`] from an instance of a protocol layer
+    /// (a [`Layer`], [`LayerRef`] or [`LayerMut`]).
     pub trait ToOwnedLayer {
         type Owned: LayerObject;
 
@@ -964,7 +970,7 @@ pub mod extras {
         /// Appends the provided new layer to the existing one without check if it is an acceptable
         /// underlayer.
         ///
-        /// Note that using this method can lead to a `panic!()` later on in the lifetime of the
+        /// Note that using this method can lead to a `panic` later on in the lifetime of the
         /// layer if the provided new layer is not permitted as a payload for the innermost underlayer.
         #[inline]
         fn appended_with_boxed_unchecked(self, other: Box<dyn LayerObject>) -> Self::Output {
@@ -981,6 +987,8 @@ pub mod extras {
             base
         }
     }
+
+    impl<T: BaseLayer + IntoLayer + Sized + ToOwnedLayer> BaseLayerAppendBoxed for T { }
 
     /// Assigns a unique identifier to the layer.
     ///
@@ -1169,7 +1177,7 @@ pub mod extras {
     layer_metadata!(PsqlServerMetadata);
 
     // ===========================================
-    //           CUSTOM LAYER SELECTION
+    //           Custom Layer Selection
     // ===========================================
 
     #[cfg(feature = "custom_layer_selection")]

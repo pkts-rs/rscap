@@ -146,17 +146,6 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         .parse_args()
         .expect("metadata_type attribute must contain a struct name");
 
-    /*
-    let payload_field = match ast.data {
-        syn::Data::Struct(data_struct) => match data_struct.fields {
-            syn::Fields::Named(named) => named.named.iter().find(|field| field.attrs.iter().find(|attr| attr.path.is_ident("payload_field")).is_some())
-            .expect("payload_field inner attribute required to derive `Layer`").ident.as_ref().unwrap().clone(),
-            _ => panic!("payload_field associated field must be named"),
-        },
-        _ => panic!("Only structs are currently supported for `Layer` derive")
-    };
-    */
-
     // extern crate self as rscap;
     // TODO: use the above within the quote! to make derives stable without including layer names
     output.extend(derive_base_layer_impl(
@@ -175,6 +164,13 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         }
 
+        impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::DivAssign<RscapInternalT> for #layer_type {
+            #[inline]
+            fn div_assign(&mut self, rhs: RscapInternalT) {
+                self.append_layer(rhs).unwrap()
+            }
+        }
+
         impl From<#ref_type<'_>> for #layer_type {
             fn from(value: #ref_type<'_>) -> Self {
                 Self::from(&value)
@@ -184,44 +180,6 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         impl IntoLayer for #layer_type {
             type Output = #layer_type;
         }
-
-        impl BaseLayerAppend for #layer_type { }
-
-        impl BaseLayerAppendBoxed for #layer_type { }
-
-        /*
-        impl LayerObject for #layer_type {
-            #[inline]
-            fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
-                self.#payload_field.as_ref().map(|p| p.as_ref())
-            }
-        
-            #[inline]
-            fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-                self.#payload_field.as_mut().map(|p| p.as_mut())
-            }
-        
-            #[inline]
-            fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
-                self.#payload_field = Some(payload);
-            }
-
-            #[inline]
-            fn has_payload(&self) -> bool {
-                self.#payload_field.is_some()
-            }
-
-            #[inline]
-            fn remove_payload(&mut self) -> Box<dyn LayerObject> {
-                let mut ret = None;
-                core::mem::swap(&mut ret, &mut self.#payload_field);
-                self.#payload_field = None;
-                ret.expect(format!("remove_payload() called on {} layer when layer had no payload", self.layer_name()).as_str())
-            }
-        }
-        */
-
-        impl LayerIndex for #layer_type { }
 
         pub struct #layer_type_index {
             _zst: (), // Allows the StructIdentifier to be public but not recreatable
@@ -249,15 +207,6 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             #[inline]
             fn index_mut(&mut self, _: RscapInternalT) -> &mut Self::Output {
                 self.get_layer_mut().unwrap()
-            }
-        }
-
-        impl LayerAppend for #layer_type { }
-
-        impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::DivAssign<RscapInternalT> for #layer_type {
-            #[inline]
-            fn div_assign(&mut self, rhs: RscapInternalT) {
-                self.append_layer(rhs).unwrap()
             }
         }
 
@@ -354,10 +303,6 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
-        impl BaseLayerAppend for #layer_type<'_> { }
-
-        impl BaseLayerAppendBoxed for #layer_type<'_> { }
-
         impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
                 if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
@@ -449,14 +394,6 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
-        /*
-        impl<'a> AnyLayerRef<'a> for #layer_type<'a> {
-            #[inline]
-            fn layer_id_static() -> core::any::TypeId {
-                core::any::TypeId::of::<#owned_type>()
-            }
-        }
-        */
         impl<'a> LayerIdentifier for #layer_type<'a> {
             #[inline]
             fn layer_id() -> LayerId {
@@ -605,19 +542,6 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 r.len()
             }
         }
-
-        impl BaseLayerAppend for #layer_type<'_> { }
-
-        impl BaseLayerAppendBoxed for #layer_type<'_> { }
-
-        /*
-        impl BaseLayerAppendBoxed for #layer_type<'_> {
-            fn can_append_with_boxed(&self, other: &Box<dyn LayerObject>) -> bool {
-                let r = #ref_type::from_bytes_unchecked(&self.#data_field[..self.#data_length_field]);
-                r.can_append_with_boxed(other)
-            }
-        }
-        */
 
         impl IntoLayer for #layer_type<'_> {
             type Output = #owned_type;
@@ -810,15 +734,6 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 core::any::TypeId::of::<#owned_type>()
             }
         }
-        /*
-        impl<'a> AnyLayerMut<'a> for #layer_type<'a> {
-            type AssociatedRef = #ref_type <'a>;
-            #[inline]
-            fn layer_id_static() -> core::any::TypeId {
-                core::any::TypeId::of::<#owned_type>()
-            }
-        }
-        */
 
         impl<'a> ToSlice for #layer_type<'a> {
             fn to_slice(&self) -> &[u8] {
