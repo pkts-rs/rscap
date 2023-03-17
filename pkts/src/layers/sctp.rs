@@ -261,13 +261,6 @@ impl Sctp {
     }
 }
 
-impl CanSetPayload for Sctp {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        true // SCTP can handle arbitrary protocols
-    }
-}
-
 impl FromBytesCurrent for Sctp {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -306,6 +299,11 @@ impl LayerLength for Sctp {
 }
 
 impl LayerObject for Sctp {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        true // SCTP can handle arbitrary protocols
+    }
+
     /// Returns a reference to the first payload chunk in the [`Sctp`] packet, if such a chunk exists.
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {

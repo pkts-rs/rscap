@@ -14,12 +14,6 @@ pub struct Example {}
 
 impl Example {}
 
-impl CanSetPayload for Example {
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        todo!()
-    }
-}
-
 impl FromBytesCurrent for Example {
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -37,6 +31,10 @@ impl LayerLength for Example {
 }
 
 impl LayerObject for Example {
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        todo!()
+    }
+
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         todo!()
     }

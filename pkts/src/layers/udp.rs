@@ -126,6 +126,11 @@ impl LayerLength for Udp {
 
 impl LayerObject for Udp {
     #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        true // TODO: a TCP payload after UDP wouldn't do, would it? Because the checksum would have to be calculated with IP addresses?
+    }
+
+    #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
@@ -228,13 +233,6 @@ impl FromBytesCurrent for Udp {
             0..=8 => None,
             _ => Some(Box::new(Raw::from_bytes_unchecked(&bytes[8..]))),
         }
-    }
-}
-
-impl CanSetPayload for Udp {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        true // TODO: a TCP payload after UDP wouldn't do, would it? Because the checksum would have to be calculated with IP addresses?
     }
 }
 

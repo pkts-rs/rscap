@@ -104,13 +104,6 @@ impl PsqlClient {
     }
 }
 
-impl CanSetPayload for PsqlClient {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        false
-    }
-}
-
 impl FromBytesCurrent for PsqlClient {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
@@ -128,6 +121,11 @@ impl LayerLength for PsqlClient {
 }
 
 impl LayerObject for PsqlClient {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false
+    }
+
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         todo!()
     }
@@ -2611,12 +2609,6 @@ impl PsqlServer {
     }
 }
 
-impl CanSetPayload for PsqlServer {
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        todo!()
-    }
-}
-
 impl FromBytesCurrent for PsqlServer {
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -2634,6 +2626,11 @@ impl LayerLength for PsqlServer {
 }
 
 impl LayerObject for PsqlServer {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        false
+    }
+
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         todo!()
     }

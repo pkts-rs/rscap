@@ -103,13 +103,6 @@ impl Diameter {
     }
 }
 
-impl CanSetPayload for Diameter {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        false // The base Diameter protocol specifies no payload
-    }
-}
-
 impl FromBytesCurrent for Diameter {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
@@ -148,6 +141,11 @@ impl LayerLength for Diameter {
 }
 
 impl LayerObject for Diameter {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false // The base Diameter protocol specifies no payload
+    }
+
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
@@ -495,13 +493,6 @@ impl DiamBase {
     }
 }
 
-impl CanSetPayload for DiamBase {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        false
-    }
-}
-
 impl FromBytesCurrent for DiamBase {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
@@ -542,6 +533,11 @@ impl LayerLength for DiamBase {
 }
 
 impl LayerObject for DiamBase {
+    #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false
+    }
+
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
@@ -818,13 +814,6 @@ pub struct S6a {
     avps: Vec<u8>,
 }
 
-impl CanSetPayload for S6a {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        false // No generic payloads are relayed over the S6a protocol
-    }
-}
-
 impl FromBytesCurrent for S6a {
     fn from_bytes_payload_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -842,6 +831,11 @@ impl LayerLength for S6a {
 }
 
 impl LayerObject for S6a {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        false // No generic payloads are relayed over the S6a protocol
+    }
+
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         todo!()
     }

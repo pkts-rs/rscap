@@ -63,17 +63,6 @@ impl Ether {
     }
 }
 
-impl CanSetPayload for Ether {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        payload
-            .layer_metadata()
-            .as_any()
-            .downcast_ref::<&dyn EtherPayloadMetadata>()
-            .is_some()
-    }
-}
-
 impl FromBytesCurrent for Ether {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
@@ -110,6 +99,15 @@ impl LayerLength for Ether {
 }
 
 impl LayerObject for Ether {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn EtherPayloadMetadata>()
+            .is_some()
+    }
+    
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()

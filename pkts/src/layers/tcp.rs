@@ -13,9 +13,36 @@ use crate::utils;
 
 use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
 
+use core::char::MAX;
 use core::cmp;
 use core::iter::Iterator;
 
+/// A TCP (Transmission Control Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                        Sequence Number                        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |                     Acknowledgement Number                    |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 | Offset| Res |N|C|E|U|A|P|R|S|F|          Window Size          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 |            Checksum           |         Urgent Pointer        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 20 Z                            Options                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ?? Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(TcpMetadata)]
 #[ref_type(TcpRef)]
@@ -186,6 +213,11 @@ impl LayerLength for Tcp {
 
 impl LayerObject for Tcp {
     #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        true // any protocol may be served over TCP
+    }
+
+    #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
@@ -306,13 +338,32 @@ impl FromBytesCurrent for Tcp {
     }
 }
 
-impl CanSetPayload for Tcp {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        true // any protocol may be served over TCP
-    }
-}
-
+/// A TCP (Transmission Control Protocol) packet.
+///
+/// ## Packet Layout
+/// ```txt
+///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
+///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  0 |          Source Port          |        Destination Port       |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  4 |                        Sequence Number                        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///  8 |                     Acknowledgement Number                    |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 12 | Offset| Res |N|C|E|U|A|P|R|S|F|          Window Size          |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 16 |            Checksum           |         Urgent Pointer        |
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// 20 Z                            Options                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ?? Z                            Payload                            Z
+///    Z                                                               Z
+/// .. .                              ...                              .
+///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
 #[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Tcp)]
 #[metadata_type(TcpMetadata)]
@@ -855,6 +906,99 @@ impl From<u16> for TcpFlags {
     fn from(value: u16) -> Self {
         TcpFlags {
             data: value & 0b_0000_0001_1111_1111,
+        }
+    }
+}
+
+
+const MAX_TCP_OPTIONS_LEN: usize = 40;
+
+pub struct TcpOptionsBuilder {
+    data: [u8; MAX_TCP_OPTIONS_LEN],
+    len: usize,
+    err_reason: Option<&'static str>,
+    is_end: bool,
+}
+
+impl TcpOptionsBuilder {
+    #[inline]
+    pub fn new() -> Self {
+        TcpOptionsBuilder {
+            data: [0; MAX_TCP_OPTIONS_LEN],
+            len: 0,
+            err_reason: None,
+            is_end: false,
+        }
+    }
+
+    pub fn with_ref(mut self, option: TcpOptionRef<'_>) -> Self {
+        if self.err_reason.is_some() {
+            // pass
+        } else if self.is_end {
+            self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
+        } else if self.len + option.option_len() > MAX_TCP_OPTIONS_LEN {
+            self.err_reason = Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
+        } else {
+            if option.option_type() == 0 {
+                self.is_end = true;
+            }
+            self.data[self.len..self.len + option.option_len()].copy_from_slice(option.bytes);
+            self.len += option.option_len()
+        }
+
+        self
+    }
+
+    pub fn with(mut self, option: TcpOption) -> Self {
+        if self.err_reason.is_some() {
+            // pass
+        } else if self.is_end {
+            self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
+        } else if self.len + option.option_length() > MAX_TCP_OPTIONS_LEN {
+            self.err_reason = Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
+        } else {
+            if option.option_type() == 0 {
+                self.is_end = true;
+            }
+            
+            self.data[self.len] = option.option_type();
+            if option.option_type() > 1 {
+                self.data[self.len + 1] = option.option_length() as u8;
+                self.data[self.len + 2..self.len + option.option_length()].copy_from_slice(option.option_data());
+            }
+        }
+
+        self
+    }
+
+    pub fn build_mut(self, tcp: &mut TcpMut<'_>) -> Result<(), &'static str> {
+        match self.err_reason {
+            Some(e) => Err(e),
+            None => {
+                let extra_bytes = tcp.data.len() - tcp.len;
+                let padded_len = utils::padded_length::<4>(self.len);
+                let data_offset = 5 + (padded_len / 4);
+
+                if data_offset > tcp.data_offset() && data_offset - tcp.data_offset() > extra_bytes {
+                    Err("insufficient bytes in TcpMut to add TCP options")
+
+                } else if data_offset == tcp.data_offset() {
+                    tcp.data[20..20 + data_offset * 4].copy_from_slice(&self.data[..padded_len]);
+                    Ok(())
+
+                } else {
+                    
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn build(self) -> Result<TcpOptions, &'static str> {
+        match self.err_reason {
+            None => Ok(TcpOptions::from_bytes_unchecked(&self.data[..self.len])),
+            Some(e) => Err(e),
         }
     }
 }

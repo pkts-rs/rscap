@@ -14,7 +14,8 @@ use pkts_macros::layer_metadata;
 //                       User-Facing Traits (for `Layer`)
 // =============================================================================
 
-/// The most basic abstraction of a packet layer.
+/// An object-safe base trait for protocol layers that is extended by all `Layer` trait variants.
+///
 /// The [`BaseLayer`] trait enables packet layers of different implementations (e.g. [`Layer`],
 /// [`LayerRef`] and [`LayerMut`]) to be used interchangably for certain operations. For instance,
 /// concatenation of packets is achieved via this type in the [`BaseLayerAppend`]
@@ -32,7 +33,10 @@ pub trait BaseLayer: ToBoxedLayer + LayerLength {
     fn layer_metadata(&self) -> &dyn LayerMetadata;
 }
 
-/// A trait for getting the name of a given layer at runtime.
+/// A trait for getting the name of a protocol layer as a string.
+/// 
+/// This trait's single associated function is effectively an object-unsafe variant of the
+/// [`BaseLayer::layer_metadata()`] method.
 pub trait LayerName {
     /// The name of the layer, usually (though not guaranteed to be) the same as the name of the
     /// struct.
@@ -42,10 +46,12 @@ pub trait LayerName {
     fn name() -> &'static str;
 }
 
-/// A trait for retrieving the current length in bytes of a given layer.
+/// A trait for retrieving the current length (in bytes) of a protocol layer and its payload.
 pub trait LayerLength {
-    /// The length in bytes of the layer. This length includes the length of any sublayers (i.e.
-    /// the length is equal to the layer's header plus its entire payload).
+    /// The length (in bytes) of the layer.
+    /// 
+    /// This length includes the length of any sublayers (i.e. the length is equal to the layer's
+    /// header plus its entire payload).
     ///
     /// The length of a [`Layer`] or [`LayerMut`] may change when certain operations are performed,
     /// such as when a new layer is appended to an existing one or when a variable-length field is
@@ -53,22 +59,22 @@ pub trait LayerLength {
     fn len(&self) -> usize;
 }
 
-/// A trait for appending one layer to another and returning an owned instance of the parent layer.
+/// A trait that enables protocol layers of different types to be appended to each other.
 ///
 /// We define _appending_ a new layer as setting the innermost empty payload of an existing layer
 /// to the value of the new layer. This means that _appending_ a layer is different from setting
 /// a layer's payload. While the `set_payload()` family of methods replace whatever underlayer(s)
-/// existed before with the new layer, appending a layer involves traversing through each underlayer
-/// until one with an empty payload is reached, and then replacing the empty payload with the new
-/// layer.
+/// existed before with the new protocol layer, appending a layer involves traversing through each
+/// underlayer until one with an empty payload is reached, and then replacing the empty payload
+/// with the new layer.
 ///
-/// For instance, if one had an `Ipv4` layer that had a structure of `Ipv4` / `Tcp` (with the `Tcp`
-/// layer having no payload), then appending a `Smtp` layer to it would result in a structure of
-/// `Ipv4` / `Tcp` / `Smtp`. This is different from `set_payload()`, which would attempt (and fail)
-/// to change the layer structure to be `Ipv4` / `Smtp`.
+/// For instance, if one had an [`Ipv4`] layer that had a structure of `Ipv4` / `Tcp` (with the
+/// [`Tcp`] layer having no payload), then appending a [`Http`] layer to it would result in a
+/// structure of `Ipv4` / `Tcp` / `Http`. This is different from `set_payload()`, which would
+/// attempt (and fail) to change the layer structure to be `Ipv4` / `Http`.
 pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     /// Determines whether a given new layer can be appended to an existing one.
-    ///
+    /// 
     /// Some `Layer` types have restrictions on what other layers can follow it. As an example of
     /// this, the IPv4 header has a field that explicitly denotes the Transport layer in use above
     /// it; as such, layers that have a defined value for that field are permitted to be a payload
@@ -83,8 +89,8 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
         self.can_append_with_boxed(other.to_boxed_layer().as_ref())
     }
 
-    /// Append the given layer to the existing packet layer, returning an error if the given layer
-    /// is not permitted as a payload for the innermose underlayer.
+    /// Append the layer to the existing packet, returning an error if the layer is not permitted as
+    /// a payload.
     #[inline]
     fn appended_with<T: BaseLayer + IntoLayer>(
         self,
@@ -94,7 +100,7 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     }
 
     /// Appends the provided new layer to the existing one without checking whether it is a
-    /// permitted underlayer.
+    /// permitted layer type.
     ///
     /// # Panics
     ///
@@ -104,31 +110,6 @@ pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     fn appended_with_unchecked<T: BaseLayer + IntoLayer>(self, other: T) -> Self::Output {
         self.appended_with_boxed_unchecked(other.into_boxed_layer())
     }
-}
-
-/// A trait for checking whether the payload of a layer can be set.
-pub trait CanSetPayload: BaseLayer {
-    /// Determines whether the given new payload can be used as a payload for the layer.
-    #[inline]
-    fn can_set_payload(&self, payload: &dyn LayerObject) -> bool {
-        #[cfg(feature = "custom_layer_selection")]
-        if let Some(&custom_selection) = self
-            .layer_metadata()
-            .as_any()
-            .downcast_ref::<&dyn CustomLayerSelection>()
-        {
-            return custom_selection.can_set_payload(payload);
-        }
-
-        self.can_set_payload_default(payload)
-    }
-
-    /// Determines whether the given new payload can be used as a payload for the layer.
-    /// This method is unaffected by custom layer selection (see [`CustomLayerSelection`]),
-    /// and should only be used in cases where custom layer validation is enabled but
-    /// the developer still wants to run the built-in default layer validation. If you're
-    /// uncertain what all this means, just use `can_set_payload()`.
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool;
 }
 
 pub trait ToSlice {
@@ -163,7 +144,29 @@ pub trait ToBytes {
 
 /// An object-safe subtrait of [`Layer`], suitable for internal operations involving
 /// generic layer payloads.
-pub trait LayerObject: AsAny + BaseLayer + CanSetPayload + fmt::Debug + ToBytes {
+pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
+    /// Determines whether the given new payload can be used as a payload for the layer.
+    #[inline]
+    fn can_set_payload(&self, payload: &dyn LayerObject) -> bool {
+        #[cfg(feature = "custom_layer_selection")]
+        if let Some(&custom_selection) = self
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn CustomLayerSelection>()
+        {
+            return custom_selection.can_set_payload(payload);
+        }
+
+        self.can_set_payload_default(payload)
+    }
+
+    /// Determines whether the given new payload can be used as a payload for the layer.
+    /// This method is unaffected by custom layer selection (see [`CustomLayerSelection`]),
+    /// and should only be used in cases where custom layer validation is enabled but
+    /// the developer still wants to run the built-in default layer validation. If you're
+    /// uncertain what all this means, just use `can_set_payload()`.
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool;
+
     /// Returns an immutable reference to the current layer's payload, or `None` if the layer has no payload.
     fn get_payload_ref(&self) -> Option<&dyn LayerObject>;
 
@@ -381,7 +384,7 @@ pub trait LayerAppend: BaseLayerAppend + LayerObject {
 /// byte slice--all of its internal types are owned by the layer. Individual data fields can be
 /// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
 /// layers can be crafted using methods related to this type.
-pub trait Layer: LayerObject + IntoLayer + LayerAppend + LayerIndex {}
+pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject {}
 
 /// A trait for indexing into sublayers of a [`LayerRef`] type.
 pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {

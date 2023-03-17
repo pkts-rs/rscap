@@ -76,6 +76,11 @@ impl LayerLength for Raw {
 
 impl LayerObject for Raw {
     #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false
+    }
+
+    #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
@@ -126,13 +131,6 @@ impl FromBytesCurrent for Raw {
             data: Vec::from(bytes),
             payload: None,
         }
-    }
-}
-
-impl CanSetPayload for Raw {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        false
     }
 }
 

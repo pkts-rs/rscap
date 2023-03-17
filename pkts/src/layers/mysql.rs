@@ -80,6 +80,12 @@ impl LayerLength for MysqlPacket {
 
 impl LayerObject for MysqlPacket {
     #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        // payload.as_any().downcast_ref::<&MysqlClient>().is_some()
+        todo!()
+    }
+
+    #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
@@ -118,14 +124,6 @@ impl ToBytes for MysqlPacket {
             Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
             None => (),
         }
-    }
-}
-
-impl CanSetPayload for MysqlPacket {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        // payload.as_any().downcast_ref::<&MysqlClient>().is_some()
-        todo!()
     }
 }
 
@@ -242,6 +240,11 @@ impl LayerLength for MysqlClient {
 
 impl LayerObject for MysqlClient {
     #[inline]
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+        false
+    }
+
+    #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
@@ -273,13 +276,6 @@ impl LayerObject for MysqlClient {
 impl ToBytes for MysqlClient {
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         todo!()
-    }
-}
-
-impl CanSetPayload for MysqlClient {
-    #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        false
     }
 }
 

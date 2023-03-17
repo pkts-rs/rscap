@@ -692,17 +692,6 @@ impl Ipv4 {
     }
 }
 
-impl CanSetPayload for Ipv4 {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        payload
-            .layer_metadata()
-            .as_any()
-            .downcast_ref::<&dyn Ipv4PayloadMetadata>()
-            .is_some()
-    }
-}
-
 impl FromBytesCurrent for Ipv4 {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -751,6 +740,15 @@ impl LayerLength for Ipv4 {
 }
 
 impl LayerObject for Ipv4 {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn Ipv4PayloadMetadata>()
+            .is_some()
+    }
+
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
@@ -2453,17 +2451,6 @@ impl Ipv6 {
     }
 }
 
-impl CanSetPayload for Ipv6 {
-    #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
-        payload
-            .layer_metadata()
-            .as_any()
-            .downcast_ref::<&dyn Ipv6PayloadMetadata>()
-            .is_some()
-    }
-}
-
 impl FromBytesCurrent for Ipv6 {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -2504,6 +2491,15 @@ impl LayerLength for Ipv6 {
 }
 
 impl LayerObject for Ipv6 {
+    #[inline]
+    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload
+            .layer_metadata()
+            .as_any()
+            .downcast_ref::<&dyn Ipv6PayloadMetadata>()
+            .is_some()
+    }
+
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
