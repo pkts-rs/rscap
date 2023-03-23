@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <me[at]nathanielbennnett[dotcom]>
+// Copyright 2022 Nathaniel Bennett <me[at]nathanielbennett[dotcom]>
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
 
 pub fn decode_once(data: &[u8]) {
     todo!()

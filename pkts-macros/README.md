@@ -1,13 +1,11 @@
 # pkts-macros 
 
-[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![pkts-macros: rustc 1.65+]][Rust 1.65] [![License Information]][GPLv2]
+[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![pkts-macros: rustc 1.65+]][Rust 1.65]
 
 [Latest Version]: https://img.shields.io/crates/v/pkts-macros.svg
 [crates.io]: https://crates.io/crates/pkts-macros
 [pkts-macros: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-blue.svg
 [Rust 1.65]: https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html
-[License Information]: https://img.shields.io/crates/l/pkts-macros.svg
-[GPLv2]: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 [Documentation]: https://docs.rs/pkts-macros/badge.svg
 [docs.rs]: https://docs.rs/pkts-macros/
 
@@ -30,6 +28,5 @@ More information about the library can be found in the [`rscap`](https://crates.
 
 ## License
 
-The source code of this project is made available under the [GNU General Public License, version 2][GPLv2].
+The source code of this project is licensed under either the MIT License or the Apache 2.0 License, at your option.
 
-Any further inquiries regarding licensing can be made to me[at]nathanielbennett[dotcom].

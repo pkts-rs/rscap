@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
-// Copyright (C) Nathaniel Bennett <me[at]nathanielbennnett[dotcom]>
+// Copyright 2022 Nathaniel Bennett <me[at]nathanielbennett[dotcom]>
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
 
 //! The Transmission Control Protocol (TCP) and related data structures.
 //!
@@ -50,7 +55,6 @@ pub struct Tcp {
     dport: u16,
     seq: u32,
     ack: u32,
-    reserved: u8,
     flags: TcpFlags,
     window: u16,
     chksum: Option<u16>,
@@ -60,77 +64,84 @@ pub struct Tcp {
 }
 
 impl Tcp {
+    /// The source port of the TCP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
         self.sport
     }
 
+    /// Sets the source port of the TCP packet.
     #[inline]
     pub fn set_sport(&mut self, sport: u16) {
         self.sport = sport;
     }
 
+    /// The destination port of the TCP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
         self.dport
     }
 
+    /// Sets the destination port of the TCP packet.
     #[inline]
     pub fn set_dport(&mut self, dport: u16) {
         self.dport = dport;
     }
 
+    /// The Sequence number of the TCP packet.
     #[inline]
     pub fn seq(&self) -> u32 {
         self.seq
     }
 
+    /// Sets the Sequence number of the TCP packet.
     #[inline]
     pub fn set_seq(&mut self, seq: u32) {
         self.seq = seq;
     }
 
+    /// The Acknowledgement number of the TCP packet.
     #[inline]
     pub fn ack(&self) -> u32 {
         self.ack
     }
 
+    /// Sets the Acknowledgement number of the TCP packet.
     #[inline]
     pub fn set_ack(&mut self, ack: u32) {
         self.ack = ack;
     }
 
+    /// Indicates the first byte of the data payload for the TCP packet.
+    ///
+    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
+    /// correspond to a 20-byte data offset.
     #[inline]
     pub fn data_offset(&self) -> usize {
         let options_len = self.options.byte_len();
         5 + (options_len / 4) // TODO: error condition here
     }
 
-    #[inline]
-    pub fn reserved(&self) -> u8 {
-        self.reserved
-    }
-
-    #[inline]
-    pub fn set_reserved(&mut self, reserved: u8) {
-        self.reserved = (reserved & 0b_0000_1110) >> 1;
-    }
-
+    /// The flags of the TCP packet (includes the reserved portion of the TCP header).
     #[inline]
     pub fn flags(&self) -> TcpFlags {
         self.flags
     }
 
+    /// Sets the flags of the TCP packet (includes the reserved portion of the TCP header).
     #[inline]
     pub fn set_flags(&mut self, flags: TcpFlags) {
         self.flags = flags;
     }
 
+    // TODO: is this a receive window?? (rwnd)
+    /// The congestion window (cwnd) advertised by the TCP packet.
     #[inline]
     pub fn window(&self) -> u16 {
         self.window
     }
 
+    /// Sets the congestion window (cwnd) advertised by the TCP packet.
     #[inline]
     pub fn set_window(&mut self, window: u16) {
         self.window = window;
@@ -178,21 +189,25 @@ impl Tcp {
         self.chksum = None;
     }
 
+    /// A pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn urgent_ptr(&self) -> u16 {
         self.urgent_ptr
     }
 
+    /// Sets the pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn set_urgent_ptr(&mut self, urgent_ptr: u16) {
         self.urgent_ptr = urgent_ptr;
     }
 
+    /// The optional parameters, or TCP Options, of the TCP packet.
     #[inline]
     pub fn options(&self) -> &TcpOptions {
         &self.options
     }
 
+    /// A mutable reference to the optional parameters, or TCP Options, of the TCP packet.
     #[inline]
     pub fn options_mut(&mut self) -> &mut TcpOptions {
         &mut self.options
@@ -253,11 +268,7 @@ impl ToBytes for Tcp {
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(self.seq.to_be_bytes());
         bytes.extend(self.ack.to_be_bytes());
-        bytes.push(
-            ((self.data_offset() as u8) << 4)
-                | (self.reserved << 1)
-                | ((self.flags.data >> 8) as u8),
-        );
+        bytes.push(((self.data_offset() as u8) << 4) | ((self.flags.data >> 8) as u8));
         bytes.push((self.flags.data & 0x00FF) as u8);
         bytes.extend(self.window.to_be_bytes());
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
@@ -315,7 +326,6 @@ impl FromBytesCurrent for Tcp {
             dport: tcp.dport(),
             seq: tcp.seq(),
             ack: tcp.ack(),
-            reserved: tcp.reserved(),
             flags: tcp.flags(),
             window: tcp.window(),
             chksum: None,
@@ -372,6 +382,7 @@ pub struct TcpRef<'a> {
 }
 
 impl<'a> TcpRef<'a> {
+    /// The source port of the TCP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
         u16::from_be_bytes(
@@ -380,6 +391,7 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// The destination port of the TCP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
         u16::from_be_bytes(
@@ -388,6 +400,7 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// The sequence number of the TCP packet.
     #[inline]
     pub fn seq(&self) -> u32 {
         u32::from_be_bytes(
@@ -396,6 +409,7 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// The acknowledgement number of the TCP packet.
     #[inline]
     pub fn ack(&self) -> u32 {
         u32::from_be_bytes(
@@ -404,6 +418,10 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// Indicates the first byte of the data payload for the TCP packet.
+    ///
+    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
+    /// correspond to a 20-byte data offset.
     #[inline]
     pub fn data_offset(&self) -> usize {
         (self
@@ -413,16 +431,7 @@ impl<'a> TcpRef<'a> {
             >> 4) as usize
     }
 
-    #[inline]
-    pub fn reserved(&self) -> u8 {
-        (self
-            .data
-            .get(12)
-            .expect("insufficient bytes in TCP layer to retrieve Reserved field")
-            & 0b_0000_1110)
-            >> 1
-    }
-
+    /// The flags of the TCP packet.
     #[inline]
     pub fn flags(&self) -> TcpFlags {
         TcpFlags::from(u16::from_be_bytes(
@@ -431,6 +440,7 @@ impl<'a> TcpRef<'a> {
         ))
     }
 
+    /// The congestion window (cwnd) advertised by the TCP packet.
     #[inline]
     pub fn window(&self) -> u16 {
         u16::from_be_bytes(
@@ -439,6 +449,8 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// The checksum of the packet, calculated across the entirity of the packet's header and
+    /// payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(
@@ -447,6 +459,7 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// A pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn urgent_ptr(&self) -> u16 {
         u16::from_be_bytes(
@@ -455,6 +468,7 @@ impl<'a> TcpRef<'a> {
         )
     }
 
+    /// The optional parameters, or TCP Options, of the TCP packet.
     #[inline]
     pub fn options(&self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
@@ -550,6 +564,7 @@ pub struct TcpMut<'a> {
 }
 
 impl<'a> TcpMut<'a> {
+    /// The source port of the TCP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
         u16::from_be_bytes(
@@ -558,6 +573,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the source port of the TCP packet.
     #[inline]
     pub fn set_sport(&mut self, sport: u16) {
         let arr = utils::get_mut_array(self.data, 0)
@@ -565,6 +581,7 @@ impl<'a> TcpMut<'a> {
         *arr = sport.to_be_bytes()
     }
 
+    /// The destination port of the TCP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
         u16::from_be_bytes(
@@ -573,6 +590,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the destination port of the TCP packet.
     #[inline]
     pub fn set_dport(&mut self, dport: u16) {
         let arr = utils::get_mut_array(self.data, 2)
@@ -580,6 +598,7 @@ impl<'a> TcpMut<'a> {
         *arr = dport.to_be_bytes()
     }
 
+    /// The sequence number of the TCP packet.
     #[inline]
     pub fn seq(&self) -> u32 {
         u32::from_be_bytes(
@@ -588,6 +607,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the sequence number of the TCP packet
     #[inline]
     pub fn set_seq(&mut self, seq: u32) {
         let arr = utils::get_mut_array(self.data, 4)
@@ -595,6 +615,7 @@ impl<'a> TcpMut<'a> {
         *arr = seq.to_be_bytes()
     }
 
+    /// The acknowledgement number of the TCP packet.
     #[inline]
     pub fn ack(&self) -> u32 {
         u32::from_be_bytes(
@@ -603,6 +624,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the acknowledgement number of the TCP packet.
     #[inline]
     pub fn set_ack(&mut self, ack: u32) {
         let arr = utils::get_mut_array(self.data, 8)
@@ -610,6 +632,10 @@ impl<'a> TcpMut<'a> {
         *arr = ack.to_be_bytes()
     }
 
+    /// Indicates the first byte of the data payload for the TCP packet.
+    ///
+    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
+    /// correspond to a 20-byte data offset.
     #[inline]
     pub fn data_offset(&self) -> usize {
         (self
@@ -619,6 +645,10 @@ impl<'a> TcpMut<'a> {
             >> 4) as usize
     }
 
+    /// Sets the data offset (the first byte of data payload) of the TCP packet.
+    ///
+    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
+    /// correspond to a 20-byte data offset.
     #[inline]
     pub fn set_data_offset(&mut self, offset: u8) {
         debug_assert!(offset <= 0b_0000_1111);
@@ -630,27 +660,7 @@ impl<'a> TcpMut<'a> {
         *off_ref |= offset << 4;
     }
 
-    #[inline]
-    pub fn reserved(&self) -> u8 {
-        (self
-            .data
-            .get(12)
-            .expect("insufficient bytes in TcpMut to retrieve Reserved field")
-            & 0b_0000_1110)
-            >> 1
-    }
-
-    #[inline]
-    pub fn set_reserved(&mut self, reserved: u8) {
-        debug_assert!(reserved <= 0b_0000_0111);
-        let off_ref = self
-            .data
-            .get_mut(12)
-            .expect("insufficient bytes in TcpMut to set Reserved field");
-        *off_ref &= 0b_1111_0001;
-        *off_ref |= reserved << 1;
-    }
-
+    /// The flags of the TCP packet.
     #[inline]
     pub fn flags(&self) -> TcpFlags {
         TcpFlags::from(u16::from_be_bytes(
@@ -659,6 +669,7 @@ impl<'a> TcpMut<'a> {
         ))
     }
 
+    /// Sets the flags of the TCP packet.
     #[inline]
     pub fn set_flags(&mut self, flags: TcpFlags) {
         let arr = utils::get_mut_array::<2>(self.data, 4)
@@ -668,6 +679,7 @@ impl<'a> TcpMut<'a> {
         arr[1] = (flags.data & 0x00FF) as u8;
     }
 
+    /// The congestion window of the TCP packet.
     #[inline]
     pub fn window(&self) -> u16 {
         u16::from_be_bytes(
@@ -676,6 +688,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the congestion window of the TCP packet.
     #[inline]
     pub fn set_window(&mut self, window: u16) {
         let arr = utils::get_mut_array(self.data, 4)
@@ -683,6 +696,8 @@ impl<'a> TcpMut<'a> {
         *arr = window.to_be_bytes()
     }
 
+    /// The checksum of the packet, calculated across the entirity of the packet's header and
+    /// payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
         u16::from_be_bytes(
@@ -706,6 +721,7 @@ impl<'a> TcpMut<'a> {
         *arr = chksum.to_be_bytes()
     }
 
+    /// A pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn urgent_ptr(&self) -> u16 {
         u16::from_be_bytes(
@@ -714,6 +730,7 @@ impl<'a> TcpMut<'a> {
         )
     }
 
+    /// Sets the pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn set_urgent_ptr(&mut self, urgent_ptr: u16) {
         let arr = utils::get_mut_array(self.data, 8)
@@ -721,6 +738,7 @@ impl<'a> TcpMut<'a> {
         *arr = urgent_ptr.to_be_bytes()
     }
 
+    /// The optional parameters, or TCP Options, of the TCP packet.
     #[inline]
     pub fn options(&'a self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
@@ -730,13 +748,6 @@ impl<'a> TcpMut<'a> {
                 .expect("insufficient bytes in TcpMut to retrieve TCP Options"),
         )
     }
-
-    /*
-    #[inline]
-    pub fn set_options(&mut self, options: TcpOptionsRef<'_>) {
-        todo!()
-    }
-    */
 }
 
 impl<'a> FromBytesMut<'a> for TcpMut<'a> {
@@ -753,11 +764,9 @@ impl<'a> FromBytesMut<'a> for TcpMut<'a> {
 //                         Inner Field Data Structures
 // =============================================================================
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TcpFlags {
-    data: u16,
-}
-
+const R1_BIT: u16 = 0b_0000_1000_0000_0000;
+const R2_BIT: u16 = 0b_0000_0100_0000_0000;
+const R3_BIT: u16 = 0b_0000_0010_0000_0000;
 const NS_BIT: u16 = 0b_0000_0001_0000_0000;
 const CWR_BIT: u16 = 0b_0000_0000_1000_0000;
 const ECE_BIT: u16 = 0b_0000_0000_0100_0000;
@@ -768,10 +777,64 @@ const RST_BIT: u16 = 0b_0000_0000_0000_0100;
 const SYN_BIT: u16 = 0b_0000_0000_0000_0010;
 const FIN_BIT: u16 = 0b_0000_0000_0000_0001;
 
+/// The flags of a TCP packet.
+/// 
+/// This field includes the following:
+/// ```txt
+/// | Res |N|C|E|U|A|P|R|S|F|
+/// ```
+/// 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TcpFlags {
+    data: u16,
+}
+
 impl TcpFlags {
     #[inline]
     pub fn new() -> Self {
         TcpFlags::default()
+    }
+
+    #[inline]
+    pub fn reserved_1(&self) -> bool {
+        self.data & R1_BIT > 0
+    }
+
+    #[inline]
+    pub fn set_reserved_1(&mut self, r1: bool) {
+        if r1 {
+            self.data |= R1_BIT;
+        } else {
+            self.data &= !R1_BIT;
+        }
+    }
+
+    #[inline]
+    pub fn reserved_2(&self) -> bool {
+        self.data & R2_BIT > 0
+    }
+
+    #[inline]
+    pub fn set_reserved_2(&mut self, r1: bool) {
+        if r1 {
+            self.data |= R2_BIT;
+        } else {
+            self.data &= !R2_BIT;
+        }
+    }
+
+    #[inline]
+    pub fn reserved_3(&self) -> bool {
+        self.data & R3_BIT > 0
+    }
+
+    #[inline]
+    pub fn set_reserved_3(&mut self, r1: bool) {
+        if r1 {
+            self.data |= R3_BIT;
+        } else {
+            self.data &= !R3_BIT;
+        }
     }
 
     #[inline]
