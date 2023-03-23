@@ -1,5 +1,10 @@
 # Release History:
 
+* 0.1.3
+  - Switched license to MIT/Apache 2.0
+  - Additional documentation
+  - Rounded out TCP/UDP layers
+
 * 0.1.2
   - Consolidated AnyRef/AnyMut traits into LayerIdentity
   - Added documentation for checksums
