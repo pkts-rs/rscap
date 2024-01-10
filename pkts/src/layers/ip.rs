@@ -697,6 +697,7 @@ impl Ipv4 {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for Ipv4 {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -1064,6 +1065,7 @@ impl<'a> FromBytesRef<'a> for Ipv4Ref<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for Ipv4Ref<'_> {
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let ihl = match bytes.first() {
@@ -1114,7 +1116,7 @@ impl Validate for Ipv4Ref<'_> {
             match curr_layer.first() {
                 None => return Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -1128,7 +1130,7 @@ impl Validate for Ipv4Ref<'_> {
             None => {
                 return Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing length field bytes in Ipv4 header",
                 })
@@ -1139,7 +1141,7 @@ impl Validate for Ipv4Ref<'_> {
         if total_length > curr_layer.len() {
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "total packet length reported in Ipv4 header exceeded the available bytes",
             });
         }
@@ -1149,7 +1151,7 @@ impl Validate for Ipv4Ref<'_> {
             // Version number not 4 (required for Ipv4)
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "version number of Ipv4 header was not equal to 0x04",
             });
         }
@@ -1158,7 +1160,7 @@ impl Validate for Ipv4Ref<'_> {
             // Header length field must be at least 5 (so that corresponding header length is min required 20 bytes)
             return Err(ValidationError {
                 layer: Ipv4Ref::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Ipv4 header length value (IHL must be a value of 5 or more)",
             });
         }
@@ -1172,18 +1174,18 @@ impl Validate for Ipv4Ref<'_> {
                 _ => match remaining_header.get(1) {
                     None => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "length field missing from Ipv4 Option",
                     }),
                     Some(0..=1) => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid value in Ipv4 Option length field (must be at least 2)",
                     }),
                     Some(&l) => remaining_header = match remaining_header.get(l as usize..) {
                         None => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length field in Ipv4 Option--insufficient option bytes available for specified length",
                         }),
                         Some(r) => r,
@@ -1196,7 +1198,7 @@ impl Validate for Ipv4Ref<'_> {
         if total_length < curr_layer.len() {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),
-                err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - total_length),
+                class: ValidationErrorClass::ExcessBytes(curr_layer.len() - total_length),
                 reason:
                     "invalid length field in Ipv4 header--extra bytes remaining at end of packet",
             })
@@ -1205,6 +1207,7 @@ impl Validate for Ipv4Ref<'_> {
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let ihl =
@@ -1212,7 +1215,7 @@ impl Validate for Ipv4Ref<'_> {
                 Some(l) => (l & 0x0F) as usize * 4,
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -1223,7 +1226,7 @@ impl Validate for Ipv4Ref<'_> {
                 Some(l) => l,
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv4 frame--insufficient bytes available for header",
                 }),
@@ -1871,7 +1874,7 @@ impl<'a> Ipv4OptionsRef<'a> {
         if bytes.len() % 4 != 0 {
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "Ipv4 Options data length must be a multiple of 4",
             });
         }
@@ -1883,7 +1886,7 @@ impl<'a> Ipv4OptionsRef<'a> {
                 _ => match bytes.get(1) {
                     Some(0..=1) => return Err(ValidationError {
                         layer: Ipv4::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "IPv4 option length field contained too small a value",
                     }),
                     Some(&len) => {
@@ -1891,14 +1894,14 @@ impl<'a> Ipv4OptionsRef<'a> {
                             Some(remaining) => bytes = remaining,
                             None => return Err(ValidationError {
                                 layer: Ipv4::name(),
-                                err_type: ValidationErrorType::InvalidValue,
+                                class: ValidationErrorClass::InvalidValue,
                                 reason: "truncated IPv4 option field in options--missing part of option data",
                             }),
                         }
                     }
                     None => return Err(ValidationError {
                         layer: Ipv4::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "truncated IPv4 option found in options--missing option length field",
                     }),
                 },
@@ -2208,7 +2211,7 @@ impl<'a> Ipv4OptionRef<'a> {
             } else {
                 Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::ExcessBytes(bytes.len() - 1),
+                    class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
                     reason: "excess bytes at end of single-byte IPv4 option"
                 })
             },
@@ -2217,24 +2220,24 @@ impl<'a> Ipv4OptionRef<'a> {
                     Some(0) => Ok(()),
                     Some(remaining) => Err(ValidationError {
                         layer: Ipv4::name(),
-                        err_type: ValidationErrorType::ExcessBytes(remaining),
+                        class: ValidationErrorClass::ExcessBytes(remaining),
                         reason: "excess bytes at end of sized IPv4 option",
                     }),
                     None => Err(ValidationError {
                         layer: Ipv4::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "length of IPv4 Option data exceeded available bytes"
                     }),
                 },
                 _ => Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "insufficient bytes available to read IPv4 Option--missing length byte field"
                 }),
             },
             None => Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "insufficient bytes available to read IPv4 Option--missing option_type byte field",
             })
         }
@@ -2456,6 +2459,7 @@ impl Ipv6 {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for Ipv6 {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -2730,6 +2734,7 @@ impl<'a> FromBytesRef<'a> for Ipv6Ref<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for Ipv6Ref<'_> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
@@ -2784,7 +2789,7 @@ impl Validate for Ipv6Ref<'_> {
                 ),
                 _ => return Err(ValidationError {
                     layer: Ipv4::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
                 }),
@@ -2794,7 +2799,7 @@ impl Validate for Ipv6Ref<'_> {
         if 40 + data_len > curr_layer.len() {
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "total data length reported in Ipv6 header exceeded the available bytes",
             });
         }
@@ -2804,7 +2809,7 @@ impl Validate for Ipv6Ref<'_> {
             // Version number not 4 (required for Ipv4)
             return Err(ValidationError {
                 layer: Ipv4::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "version number of Ipv6 header was not equal to 0x04",
             });
         }
@@ -2813,7 +2818,7 @@ impl Validate for Ipv6Ref<'_> {
         if 40 + data_len < curr_layer.len() {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),
-                err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - (data_len + 40)),
+                class: ValidationErrorClass::ExcessBytes(curr_layer.len() - (data_len + 40)),
                 reason:
                     "invalid Data Length field in Ipv6 header--extra bytes remain at end of packet",
             })
@@ -2822,6 +2827,7 @@ impl Validate for Ipv6Ref<'_> {
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let next_header_type =
@@ -2829,7 +2835,7 @@ impl Validate for Ipv6Ref<'_> {
                 Some(&t) => t,
                 None => return Err(ValidationError {
                     layer: Self::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
                 }),
@@ -2839,7 +2845,7 @@ impl Validate for Ipv6Ref<'_> {
             Some(l) => l,
             None => return Err(ValidationError {
                 layer: Self::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "packet too short for Ipv6 frame--insufficient bytes available for Ipv6 header",
             }),

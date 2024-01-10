@@ -73,6 +73,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                     #ref_type::validate_current_layer(curr_layer)
                 }
 
+                #[doc(hidden)]
                 #[inline]
                 fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_payload_default(curr_layer)
@@ -119,6 +120,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                     #ref_type::validate_current_layer(curr_layer)
                 }
 
+                #[doc(hidden)]
                 #[inline]
                 fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
                     #ref_type::validate_payload_default(curr_layer)
@@ -130,7 +132,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
     output
 }
 
-#[proc_macro_derive(Layer, attributes(ref_type, metadata_type/*, payload_field*/))]
+#[proc_macro_derive(Layer, attributes(ref_type, metadata_type))]
 pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let mut output = proc_macro::TokenStream::new();
@@ -160,18 +162,18 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         &metadata_type,
     ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
-        impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::Div<RscapInternalT> for #layer_type {
+        impl<T: BaseLayer + IntoLayer> core::ops::Div<T> for #layer_type {
             type Output = #layer_type;
 
             #[inline]
-            fn div(mut self, rhs: RscapInternalT) -> Self::Output {
+            fn div(mut self, rhs: T) -> Self::Output {
                 self.appended_with(rhs).unwrap() // TODO: change to expect()
             }
         }
 
-        impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::DivAssign<RscapInternalT> for #layer_type {
+        impl<T: BaseLayer + IntoLayer> core::ops::DivAssign<T> for #layer_type {
             #[inline]
-            fn div_assign(&mut self, rhs: RscapInternalT) {
+            fn div_assign(&mut self, rhs: T) {
                 self.append_layer(rhs).unwrap()
             }
         }
@@ -199,22 +201,23 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         #[allow(non_upper_case_globals)]
         pub const #layer_type: #layer_type_index = #layer_type_index { _zst: () };
 
-        impl<RscapInternalT: LayerIndexSingleton> core::ops::Index<RscapInternalT> for #layer_type {
-            type Output = RscapInternalT::LayerType;
+        impl<T: LayerIndexSingleton> core::ops::Index<T> for #layer_type {
+            type Output = T::LayerType;
 
             #[inline]
-            fn index(&self, _: RscapInternalT) -> &Self::Output {
+            fn index(&self, _: T) -> &Self::Output {
                 self.get_layer().unwrap()
             }
         }
 
-        impl<RscapInternalT: LayerIndexSingleton> core::ops::IndexMut<RscapInternalT> for #layer_type {
+        impl<T: LayerIndexSingleton> core::ops::IndexMut<T> for #layer_type {
             #[inline]
-            fn index_mut(&mut self, _: RscapInternalT) -> &mut Self::Output {
+            fn index_mut(&mut self, _: T) -> &mut Self::Output {
                 self.get_layer_mut().unwrap()
             }
         }
 
+        #[doc(hidden)]
         impl LayerIdentifier for #layer_type {
             #[inline]
             fn layer_id() -> LayerId {
@@ -390,11 +393,11 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
-        impl<RscapInternalT: BaseLayer + IntoLayer> core::ops::Div<RscapInternalT> for #layer_type<'_> {
+        impl<T: BaseLayer + IntoLayer> core::ops::Div<T> for #layer_type<'_> {
             type Output = #owned_type;
 
             #[inline]
-            fn div(mut self, rhs: RscapInternalT) -> Self::Output {
+            fn div(mut self, rhs: T) -> Self::Output {
                 self.appended_with(rhs).unwrap()
             }
         }
@@ -725,6 +728,7 @@ pub fn derive_layer_mut(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
+        #[doc(hidden)]
         impl LayerOffset for #layer_type<'_> {
             fn payload_byte_index_default(bytes: &[u8], layer_type: core::any::TypeId) -> Option<usize> {
                 #ref_type::payload_byte_index_default(bytes, layer_type)
@@ -758,6 +762,7 @@ fn derive_base_layer_impl(
 ) -> proc_macro::TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let expanded = quote::quote! {
+        #[doc(hidden)]
         impl #impl_generics BaseLayer for #layer_type #ty_generics #where_clause {
             #[inline]
             fn layer_name(&self) -> &'static str {
@@ -770,6 +775,7 @@ fn derive_base_layer_impl(
             }
         }
 
+        #[doc(hidden)]
         impl #impl_generics BaseLayerMetadata for #layer_type #ty_generics #where_clause {
             #[inline]
             fn metadata() -> &'static dyn LayerMetadata {
@@ -777,6 +783,7 @@ fn derive_base_layer_impl(
             }
         }
 
+        #[doc(hidden)]
         impl #impl_generics LayerName for #layer_type #ty_generics #where_clause {
             #[inline]
             fn name() -> &'static str {

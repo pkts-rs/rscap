@@ -59,6 +59,7 @@ impl MysqlPacket {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for MysqlPacket {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
@@ -198,7 +199,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         if curr_layer.len() < 4 {
             return Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes for MySQL Packet header (4 bytes required)",
             });
         }
@@ -210,12 +211,12 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         match curr_layer[4..].len().cmp(&payload_len) {
             Ordering::Less => Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes for packet length advertised by MySQL header",
             }),
             Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
-                err_type: ValidationErrorType::ExcessBytes(curr_layer[4..].len() - payload_len),
+                class: ValidationErrorClass::ExcessBytes(curr_layer[4..].len() - payload_len),
                 reason:
                     "more bytes in packet than advertised by the MySQL Packet header Length field",
             }),
@@ -223,6 +224,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         Ok(()) // Payload always defaults to `Raw`

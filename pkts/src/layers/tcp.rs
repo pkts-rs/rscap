@@ -317,6 +317,7 @@ impl ToBytes for Tcp {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for Tcp {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -487,6 +488,7 @@ impl<'a> FromBytesRef<'a> for TcpRef<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for TcpRef<'_> {
     #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
@@ -506,7 +508,7 @@ impl Validate for TcpRef<'_> {
             None => {
                 return Err(ValidationError {
                     layer: Tcp::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "packet too short for TCP frame--missing Data Offset byte in TCP header",
                 })
@@ -517,7 +519,7 @@ impl Validate for TcpRef<'_> {
         if curr_layer.len() < header_len {
             return Err(ValidationError {
                 layer: Tcp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes for TCP packet header",
             });
         }
@@ -526,7 +528,7 @@ impl Validate for TcpRef<'_> {
             // Header length field must be at least 5 (so that corresponding header length is min required 20 bytes)
             return Err(ValidationError {
                 layer: Tcp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "invalid TCP header length value (Data Offset must be a value of 5 or more)",
             });
@@ -778,12 +780,12 @@ const SYN_BIT: u16 = 0b_0000_0000_0000_0010;
 const FIN_BIT: u16 = 0b_0000_0000_0000_0001;
 
 /// The flags of a TCP packet.
-/// 
+///
 /// This field includes the following:
 /// ```txt
 /// | Res |N|C|E|U|A|P|R|S|F|
 /// ```
-/// 
+///
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TcpFlags {
     data: u16,
@@ -1193,7 +1195,7 @@ impl<'a> TcpOptionsRef<'a> {
         if bytes.len() % 4 != 0 {
             return Err(ValidationError {
                 layer: Tcp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "TCP Options data length must be a multiple of 4",
             });
         }
@@ -1206,7 +1208,7 @@ impl<'a> TcpOptionsRef<'a> {
                     Some(0..=1) => {
                         return Err(ValidationError {
                             layer: Tcp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "TCP option length field contained too small a value",
                         })
                     }
@@ -1214,7 +1216,7 @@ impl<'a> TcpOptionsRef<'a> {
                         Some(remaining) => bytes = remaining,
                         None => return Err(ValidationError {
                             layer: Tcp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason:
                                 "truncated TCP option field in options--missing part of option data",
                         }),
@@ -1222,7 +1224,7 @@ impl<'a> TcpOptionsRef<'a> {
                     None => {
                         return Err(ValidationError {
                             layer: Tcp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason:
                                 "truncated TCP option found in options--missing option length field",
                         })
@@ -1402,7 +1404,7 @@ impl<'a> TcpOptionRef<'a> {
             } else {
                 Err(ValidationError {
                     layer: Tcp::name(),
-                    err_type: ValidationErrorType::ExcessBytes(bytes.len() - 1),
+                    class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
                     reason: "excess bytes at end of single-byte TCP option"
                 })
             },
@@ -1411,24 +1413,24 @@ impl<'a> TcpOptionRef<'a> {
                     Some(0) => Ok(()),
                     Some(remaining) => Err(ValidationError {
                         layer: Tcp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(remaining),
+                        class: ValidationErrorClass::ExcessBytes(remaining),
                         reason: "excess bytes at end of sized TCP option",
                     }),
                     None => Err(ValidationError {
                         layer: Tcp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "length of TCP Option data exceeded available bytes"
                     }),
                 },
                 _ => Err(ValidationError {
                     layer: Tcp::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "insufficient bytes available to read TCP Option--missing length byte field"
                 }),
             },
             None => Err(ValidationError {
                 layer: Tcp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "insufficient bytes available to read TCP Option--missing option_type byte field",
             })
         }

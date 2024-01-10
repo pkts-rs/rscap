@@ -191,6 +191,7 @@ impl<'a> FromBytesRef<'a> for RawRef<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for RawRef<'_> {
     #[inline]
     fn payload_byte_index_default(_bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
@@ -204,6 +205,7 @@ impl Validate for RawRef<'_> {
         Ok(())
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         Ok(())

@@ -266,6 +266,7 @@ impl Sctp {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for Sctp {
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
@@ -499,6 +500,7 @@ impl<'a> FromBytesRef<'a> for SctpRef<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for SctpRef<'_> {
     #[inline]
     fn payload_byte_index_default(_bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
@@ -515,7 +517,7 @@ impl Validate for SctpRef<'_> {
             None => {
                 return Err(ValidationError {
                     layer: Sctp::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason: "insufficient bytes in SCTP packet for Common Header",
                 })
             }
@@ -536,7 +538,7 @@ impl Validate for SctpRef<'_> {
                 _ if data_reached => {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP Control Chunk not allowed after DATA Chunk in Chunks field",
                     })
                 }
@@ -572,7 +574,7 @@ impl Validate for SctpRef<'_> {
 
             match chunk_validation {
                 Err(e) => {
-                    if let ValidationErrorType::ExcessBytes(l) = e.err_type {
+                    if let ValidationErrorClass::ExcessBytes(l) = e.class {
                         remaining = &remaining[remaining.len() - l..];
                     } else {
                         return Err(e);
@@ -585,7 +587,7 @@ impl Validate for SctpRef<'_> {
         if single_chunk && chunk_cnt > 1 {
             return Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "multiple chunks bundled in one SCTP message where only one was allowed (chunk types INIT, INIT_ACK and SHUTDOWN_COMPLETE cannot be bundled with other chunks)",
             });
         }
@@ -593,7 +595,7 @@ impl Validate for SctpRef<'_> {
         if shutdown && data_reached {
             return Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "SCTP SHUTDOWN/SHUTDOWN_ACK Chunk cannot be bundled with DATA (Payload) Chunks",
             });
@@ -602,6 +604,7 @@ impl Validate for SctpRef<'_> {
         Ok(()) // No optional data was found
     }
 
+    #[inline]
     #[inline]
     fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         Ok(()) // Payload is always assumed to be Raw
@@ -1210,7 +1213,7 @@ impl<'a> InitChunkRef<'a> {
                 if bytes.len() < cmp::max(len, 20) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP INIT chunk for header and optional parameters",
                     });
                 }
@@ -1218,7 +1221,7 @@ impl<'a> InitChunkRef<'a> {
                 if len % 4 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP INIT chunk length was not a multiple of 4",
                     });
                 }
@@ -1226,7 +1229,7 @@ impl<'a> InitChunkRef<'a> {
                 if len < 20 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "length field of SCTP INIT chunk was too short to cover entire header",
                     });
@@ -1236,12 +1239,12 @@ impl<'a> InitChunkRef<'a> {
                 while !options.is_empty() {
                     match InitOption::validate(options) {
                         Err(e) => {
-                            if let ValidationErrorType::ExcessBytes(extra) = e.err_type {
+                            if let ValidationErrorClass::ExcessBytes(extra) = e.class {
                                 options = &options[options.len() - extra..];
                             } else {
                                 return Err(ValidationError {
                                     layer: Sctp::name(),
-                                    err_type: ValidationErrorType::InvalidValue,
+                                    class: ValidationErrorClass::InvalidValue,
                                     reason: e.reason,
                                 });
                             }
@@ -1253,7 +1256,7 @@ impl<'a> InitChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT chunk",
                     })
                 } else {
@@ -1262,7 +1265,7 @@ impl<'a> InitChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP INIT chunk for header Length field",
             }),
         }
@@ -1576,7 +1579,7 @@ impl<'a> InitOptionRef<'a> {
                 if bytes.len() < len {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason:
                             "insufficient bytes in SCTP INIT option for payload + padding bytes",
                     });
@@ -1593,7 +1596,7 @@ impl<'a> InitOptionRef<'a> {
                     if unpadded_len != e_len {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "SCTP INIT option Length field didn't match expected length based on Option Type",
                         });
                     }
@@ -1602,7 +1605,7 @@ impl<'a> InitOptionRef<'a> {
                 if opt_type == INIT_OPT_SUPP_ADDR_TYPES && unpadded_len % 2 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP INIT option payload had missing or trailing byte for Supported Address Types option",
                     });
                 }
@@ -1610,7 +1613,7 @@ impl<'a> InitOptionRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT option",
                     })
                 } else {
@@ -1619,7 +1622,7 @@ impl<'a> InitOptionRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP INIT option for header",
             }),
         }
@@ -1851,7 +1854,7 @@ impl<'a> InitAckChunkRef<'a> {
                 if bytes.len() < cmp::max(len, 20) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP INIT ACK chunk for header and optional parameters",
                     });
                 }
@@ -1859,7 +1862,7 @@ impl<'a> InitAckChunkRef<'a> {
                 if len % 4 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP INIT ACK chunk length was not a multiple of 4",
                     });
                 }
@@ -1867,7 +1870,7 @@ impl<'a> InitAckChunkRef<'a> {
                 if len < 20 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "length field of SCTP INIT ACK chunk was too short for header",
                     });
                 }
@@ -1876,7 +1879,7 @@ impl<'a> InitAckChunkRef<'a> {
                 while !options.is_empty() {
                     match InitAckOption::validate(options) {
                         Err(e) => {
-                            if let ValidationErrorType::ExcessBytes(extra) = e.err_type {
+                            if let ValidationErrorClass::ExcessBytes(extra) = e.class {
                                 options = &options[options.len() - extra..];
                             } else {
                                 return Err(e);
@@ -1889,7 +1892,7 @@ impl<'a> InitAckChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT ACK chunk",
                     })
                 } else {
@@ -1898,7 +1901,7 @@ impl<'a> InitAckChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP INIT ACK chunk for header Length field",
             }),
         }
@@ -2187,7 +2190,7 @@ impl<'a> InitAckOptionRef<'a> {
                 if bytes.len() < cmp::max(len, 4) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason:
                             "insufficient bytes in SCTP INIT ACK option for payload + padding bytes",
                     });
@@ -2203,14 +2206,14 @@ impl<'a> InitAckOptionRef<'a> {
                     if unpadded_len != e_len {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "SCTP INIT ACK option Length field didn't match expected length based on Option Type",
                         });
                     }
                 } else if unpadded_len < 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP INIT ACK option Length field too short to cover header",
                     });
                 }
@@ -2221,7 +2224,7 @@ impl<'a> InitAckOptionRef<'a> {
                         Ok(_) => (),
                         Err(_) => return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "SCTP INIT ACK Unrecognized Parameter Option had malformed INIT parameter in its payload",
                         })
                     };
@@ -2230,7 +2233,7 @@ impl<'a> InitAckOptionRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP INIT ACK Option",
                     })
                 } else {
@@ -2239,7 +2242,7 @@ impl<'a> InitAckOptionRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP INIT ACK Option for header",
             }),
         }
@@ -2457,7 +2460,7 @@ impl<'a> SackChunkRef<'a> {
                 if bytes.len() < cmp::max(len, 16) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP SACK chunk for header and optional parameters",
                     });
                 }
@@ -2465,7 +2468,7 @@ impl<'a> SackChunkRef<'a> {
                 if len % 4 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP SACK chunk length must be a multiple of 4",
                     });
                 }
@@ -2473,7 +2476,7 @@ impl<'a> SackChunkRef<'a> {
                 if len < 16 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "length field of SCTP SACK chunk was too short for header",
                     });
                 }
@@ -2482,7 +2485,7 @@ impl<'a> SackChunkRef<'a> {
                     (Some(gap_ack_cnt_arr), Some(dup_tsn_cnt_arr)) => (u16::from_be_bytes(gap_ack_cnt_arr) as usize, u16::from_be_bytes(dup_tsn_cnt_arr) as usize),
                     _ => return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP SACK chunk for Number of Duplicate TSNs field"
                     })
                 };
@@ -2490,7 +2493,7 @@ impl<'a> SackChunkRef<'a> {
                 if 16 + (gap_ack_cnt * 4) + (dup_tsn_cnt * 4) != len {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP SACK chunk Length field did not match the total length of header + Gap Ack Blocks + Duplicate TSNs"
                     });
                 }
@@ -2498,7 +2501,7 @@ impl<'a> SackChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP SACK chunk",
                     })
                 } else {
@@ -2507,7 +2510,7 @@ impl<'a> SackChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP SACK chunk for header Length field",
             }),
         }
@@ -2763,7 +2766,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                 if bytes.len() < cmp::max(len, 8) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP HEARTBEAT chunk for header + Heartbeat Info option",
                     });
                 }
@@ -2771,7 +2774,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                 if let Err(e) = HeartbeatInfoRef::validate(&bytes[4..len]) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: e.reason,
                     });
                 }
@@ -2780,7 +2783,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid nonzero padding values at end of SCTP HEARTBEAT chunk",
                         });
                     }
@@ -2789,7 +2792,7 @@ impl<'a> HeartbeatChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT chunk",
                     })
                 } else {
@@ -2798,7 +2801,7 @@ impl<'a> HeartbeatChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP HEARTBEAT chunk for header",
             }),
         }
@@ -2866,7 +2869,7 @@ impl<'a> HeartbeatInfoRef<'a> {
                 if len > bytes.len() {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP HEARTBEAT chunk Heartbeat Info option for Heartbeat field + padding bytes",
                     });
                 }
@@ -2874,7 +2877,7 @@ impl<'a> HeartbeatInfoRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT chunk Heartbeat Info option",
                     })
                 } else {
@@ -2883,7 +2886,7 @@ impl<'a> HeartbeatInfoRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in SCTP HEARTBEAT chunk Heartbeat Info option for header",
             }),
@@ -3035,7 +3038,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
                 if len > bytes.len() {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP HEARTBEAT ACK chunk for header + Heartbeat field",
                     });
                 }
@@ -3043,7 +3046,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
                 if len % 4 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "SCTP HEARTBEAT ACK chunk length was not a multiple of 4",
                     });
                 }
@@ -3053,7 +3056,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
                 if len < bytes.len() {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP HEARTBEAT ACK chunk",
                     })
                 } else {
@@ -3062,7 +3065,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP HEARTBEAT ACK chunk for header",
             }),
         }
@@ -3223,7 +3226,7 @@ impl<'a> AbortChunkRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason:
                             "insufficient bytes in SCTP ABORT chunk for header + Error Cause fields",
                     });
@@ -3232,7 +3235,7 @@ impl<'a> AbortChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_ABORT {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid Chunk Type field in SCTP ABORT chunk (must be equal to 6)",
                     });
                 }
@@ -3240,7 +3243,7 @@ impl<'a> AbortChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP ABORT chunk",
                     })
                 } else {
@@ -3249,7 +3252,7 @@ impl<'a> AbortChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP ABORT chunk for header",
             }),
         }
@@ -3608,7 +3611,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if len != 4 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid length in SCTP Error Cause (must be equal to 4)",
                         });
                     }
@@ -3616,7 +3619,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if bytes.len() > 4 {
                         Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
+                            class: ValidationErrorClass::ExcessBytes(bytes.len() - 4),
                             reason: "extra bytes remain at end of SCTP 4-byte Error Cause",
                         })
                     } else {
@@ -3625,7 +3628,7 @@ impl<'a> ErrorCauseRef<'a> {
                 }
                 _ => Err(ValidationError {
                     layer: Sctp::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason: "insufficient bytes in SCTP 4-byte Error Cause for header",
                 }),
             },
@@ -3637,7 +3640,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if bytes.len() < cmp::max(8, len) {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InsufficientBytes,
+                            class: ValidationErrorClass::InsufficientBytes,
                             reason: "insufficient bytes in SCTP <unknown> Error Cause for header and data field",
                         });
                     }
@@ -3645,7 +3648,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if unpadded_len < 8 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid length in SCTP <unknown> Error Cause (must be at least 8 bytes)",
                         });
                     }
@@ -3653,7 +3656,7 @@ impl<'a> ErrorCauseRef<'a> {
                     if bytes.len() > len {
                         Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                            class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                             reason: "extra bytes remain at end of SCTP <unknown> Error Cause",
                         })
                     } else {
@@ -3662,7 +3665,7 @@ impl<'a> ErrorCauseRef<'a> {
                 }
                 _ => Err(ValidationError {
                     layer: Sctp::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason: "insufficient bytes in SCTP <unknown> Error Cause for header",
                 }),
             },
@@ -3776,7 +3779,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
                 if bytes.len() < 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Invalid Stream Identifier option for header + Explanation field",
                     });
                 }
@@ -3784,7 +3787,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
                 if cause_code != ERR_CODE_INVALID_STREAM_ID {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Invalid Stream Identifier Option (must be equal to 1)",
                     });
                 }
@@ -3792,7 +3795,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
                 if len != 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Invalid Stream Identifier Option (must be equal to 8)",
                     });
                 }
@@ -3800,7 +3803,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 8),
                         reason:
                             "extra bytes remain at end of SCTP Invalid Stream Identifier option",
                     })
@@ -3810,7 +3813,7 @@ impl<'a> StreamIdentifierErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Invalid Stream Identifier option for header",
             }),
         }
@@ -3954,7 +3957,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if bytes.len() < cmp::max(8, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Missing Mandatory Parameter option for header + Missing Parameter fields",
                     });
                 }
@@ -3962,7 +3965,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if cause_code != ERR_CODE_MISSING_MAND_PARAM {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Missing Mandatory Parameter option (must be equal to 2)",
                     });
                 }
@@ -3970,7 +3973,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if unpadded_len < 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Missing Mandatory Parameter option (must be at least 8 bytes long)",
                     });
                 }
@@ -3978,7 +3981,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if unpadded_len % 2 != 0 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Missing Mandatory Parameter option (must be a multiple of 2)",
                     });
                 }
@@ -3987,7 +3990,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid nonzero padding values at end of SCTP Missing Mandatory Parameter Option",
                         });
                     }
@@ -3996,7 +3999,7 @@ impl<'a> MissingParameterErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of Missing Mandatory Parameter option",
                     })
                 } else {
@@ -4005,7 +4008,7 @@ impl<'a> MissingParameterErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Missing Mandatory Parameter option for header",
             }),
         }
@@ -4154,7 +4157,7 @@ impl<'a> StaleCookieErrorRef<'a> {
                 if bytes.len() < 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Stale Cookie option for header + Measure of Staleness field",
                     });
                 }
@@ -4162,7 +4165,7 @@ impl<'a> StaleCookieErrorRef<'a> {
                 if cause_code != ERR_CODE_STALE_COOKIE {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid cause code in SCTP Stale Cookie option (must be equal to 3)",
                     });
@@ -4171,7 +4174,7 @@ impl<'a> StaleCookieErrorRef<'a> {
                 if len != 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Stale Cookie option (must be equal to 8)",
                     });
                 }
@@ -4179,7 +4182,7 @@ impl<'a> StaleCookieErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP Stale Cookie option",
                     })
                 } else {
@@ -4188,7 +4191,7 @@ impl<'a> StaleCookieErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Stale Cookie option for header",
             }),
         }
@@ -4325,7 +4328,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Unresolvable Address option for header + Unresolvable Address field",
                     });
                 }
@@ -4333,7 +4336,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                 if cause_code != ERR_CODE_UNRESOLVABLE_ADDRESS {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Unresolvable Address option (must be equal to 5)",
                     });
                 }
@@ -4341,7 +4344,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                 if unpadded_len < 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Unresolvable Address option (must be at least 4 bytes long)",
                     });
                 }
@@ -4350,7 +4353,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid nonzero padding values at end of SCTP Unresolvable Address 4ption",
                         });
                     }
@@ -4359,7 +4362,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unresolvable Address option",
                     })
                 } else {
@@ -4368,7 +4371,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Unresolvable Address option for header",
             }),
         }
@@ -4497,7 +4500,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
                 if bytes.len() < cmp::max(8, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Unrecognized Chunk option for header + Unrecognized Chunk field",
                     });
                 }
@@ -4505,7 +4508,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
                 if cause_code != ERR_CODE_UNRECOGNIZED_CHUNK {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Unrecognized Chunk option (must be equal to 6)",
                     });
                 }
@@ -4513,7 +4516,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unrecognized Chunk option",
                     })
                 } else {
@@ -4522,7 +4525,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Unrecognized Chunk option for header",
             }),
         }
@@ -4659,7 +4662,7 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Unrecognized Parameters Option for header and Unrecognized Chunk field",
                     });
                 }
@@ -4667,7 +4670,7 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
                 if cause_code != ERR_CODE_UNRECOGNIZED_PARAMS {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Unrecognized Parameters option (must be equal to 8)",
                     });
                 }
@@ -4675,7 +4678,7 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Unrecognized Parameters option",
                     })
                 } else {
@@ -4684,7 +4687,7 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Unrecognized Parameters option for header",
             }),
         }
@@ -4839,7 +4842,7 @@ impl<'a> NoUserDataErrorRef<'a> {
                 if bytes.len() < 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP No User Data option for header and explanation field",
                     });
                 }
@@ -4847,7 +4850,7 @@ impl<'a> NoUserDataErrorRef<'a> {
                 if cause_code != ERR_CODE_NO_USER_DATA {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid cause code in SCTP No User Data option (must be equal to 9)",
                     });
@@ -4856,7 +4859,7 @@ impl<'a> NoUserDataErrorRef<'a> {
                 if len != 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP No User Data option (must be equal to 8)",
                     });
                 }
@@ -4864,7 +4867,7 @@ impl<'a> NoUserDataErrorRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP No User Data option",
                     })
                 } else {
@@ -4873,7 +4876,7 @@ impl<'a> NoUserDataErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP No User Data option for header",
             }),
         }
@@ -5014,7 +5017,7 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Restart of Association with New Address option for header + New Address TLVs field",
                     })
                 }
@@ -5022,7 +5025,7 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
                 if cause_code != ERR_CODE_RESTART_ASSOC_NEW_ADDR {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Restart of Association with New Address option (must be equal to 11)",
                     })
                 }
@@ -5030,7 +5033,7 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Restart of Association with New Address option",
                     })
                 } else {
@@ -5039,7 +5042,7 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
             },
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Restart of Association with New Address option for header"
             })
         }
@@ -5171,7 +5174,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP User-Initiated Abort option for header + Reason field",
                     });
                 }
@@ -5179,7 +5182,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
                 if cause_code != ERR_CODE_USER_INITIATED_ABORT {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP User-Initiated Abort option (must be equal to 12)",
                     });
                 }
@@ -5187,7 +5190,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP User-Initiated Abort option",
                     })
                 } else {
@@ -5196,7 +5199,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP User-Initiated Abort option for header",
             }),
         }
@@ -5326,7 +5329,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
                 if bytes.len() < cmp::max(8, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Protocol Violation option for header + Additional Information field",
                     });
                 }
@@ -5334,7 +5337,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
                 if cause_code != ERR_CODE_PROTOCOL_VIOLATION {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid cause code in SCTP Protocol Violation option (must be equal to 13)",
                     });
                 }
@@ -5342,7 +5345,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Protocol Violation option",
                     })
                 } else {
@@ -5351,7 +5354,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Protocol Violation option for header",
             }),
         }
@@ -5521,7 +5524,7 @@ impl<'a> GenericParamRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP Parameter for header + Value field",
                     });
                 }
@@ -5529,7 +5532,7 @@ impl<'a> GenericParamRef<'a> {
                 if unpadded_len < 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP Parameter (must be at least 4 bytes long)",
                     });
                 }
@@ -5538,7 +5541,7 @@ impl<'a> GenericParamRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid nonzero padding values at end of SCTP Parameter",
                         });
                     }
@@ -5547,7 +5550,7 @@ impl<'a> GenericParamRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP Parameter",
                     })
                 } else {
@@ -5556,7 +5559,7 @@ impl<'a> GenericParamRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP Parameter for header",
             }),
         }
@@ -5734,7 +5737,7 @@ impl<'a> ShutdownChunkRef<'a> {
                 if bytes.len() < 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP SHUTDOWN chunk for header + Cumulative TSN Ack field",
                     });
                 }
@@ -5742,7 +5745,7 @@ impl<'a> ShutdownChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_SHUTDOWN {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid Chunk Type field in SCTP SHUTDOWN chunk (must be equal to 7)",
                     });
@@ -5751,7 +5754,7 @@ impl<'a> ShutdownChunkRef<'a> {
                 if len != 8 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP SHUTDOWN chunk (must be equal to 8)",
                     });
                 }
@@ -5759,7 +5762,7 @@ impl<'a> ShutdownChunkRef<'a> {
                 if bytes.len() > 8 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 8),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 8),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN chunk",
                     })
                 } else {
@@ -5768,7 +5771,7 @@ impl<'a> ShutdownChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP SHUTDOWN chunk for header",
             }),
         }
@@ -5902,7 +5905,7 @@ impl<'a> ShutdownAckChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_SHUTDOWN_ACK {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid Chunk Type field in SCTP SHUTDOWN ACK chunk (must be equal to 8)",
                     });
                 }
@@ -5910,7 +5913,7 @@ impl<'a> ShutdownAckChunkRef<'a> {
                 if len != 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP SHUTDOWN ACK chunk (must be equal to 4)",
                     });
                 }
@@ -5918,7 +5921,7 @@ impl<'a> ShutdownAckChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN ACK chunk",
                     })
                 } else {
@@ -5927,7 +5930,7 @@ impl<'a> ShutdownAckChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP SHUTDOWN ACK chunk for header",
             }),
         }
@@ -6081,7 +6084,7 @@ impl<'a> ErrorChunkRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason:
                             "insufficient bytes in SCTP ERROR chunk for header + Error Causes field",
                     });
@@ -6090,7 +6093,7 @@ impl<'a> ErrorChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_ERROR {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid Chunk Type field in SCTP ERROR chunk (must be equal to 9)",
                     });
                 }
@@ -6098,7 +6101,7 @@ impl<'a> ErrorChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP ERROR chunk",
                     })
                 } else {
@@ -6107,7 +6110,7 @@ impl<'a> ErrorChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP ERROR chunk for header",
             }),
         }
@@ -6265,7 +6268,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason:
                             "insufficient bytes in SCTP COOKIE ECHO chunk for header + Cookie field",
                     });
@@ -6274,7 +6277,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                 if unpadded_len < 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP COOKIE ECHO chunk (must be at least 4 octets long)",
                     });
                 }
@@ -6282,7 +6285,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_COOKIE_ECHO {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid Chunk Type field in SCTP COOKIE ECHO chunk (must be equal to 10)",
                     });
                 }
@@ -6291,7 +6294,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason:
                                 "invalid nonzero padding values at end of SCTP COOKIE ECHO chunk",
                         });
@@ -6301,7 +6304,7 @@ impl<'a> CookieEchoChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP COOKIE ECHO hunk",
                     })
                 } else {
@@ -6310,7 +6313,7 @@ impl<'a> CookieEchoChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP COOKIE ECHO chunk for header",
             }),
         }
@@ -6444,7 +6447,7 @@ impl<'a> CookieAckChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_COOKIE_ACK {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid Chunk Type field in SCTP COOKIE ACK chunk (must be equal to 11)",
                     });
@@ -6453,7 +6456,7 @@ impl<'a> CookieAckChunkRef<'a> {
                 if len != 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid length in SCTP COOKIE_ACK chunk (must be equal to 4)",
                     });
                 }
@@ -6461,7 +6464,7 @@ impl<'a> CookieAckChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP COOKIE ACK chunk",
                     })
                 } else {
@@ -6470,7 +6473,7 @@ impl<'a> CookieAckChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP COOKIE ACK chunk for header",
             }),
         }
@@ -6597,7 +6600,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
                 if chunk_type != CHUNK_TYPE_SHUTDOWN_COMPLETE {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason: "invalid Chunk Type field in SCTP SHUTDOWN COMPLETE chunk (must be equal to 14)",
                     });
                 }
@@ -6605,7 +6608,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
                 if len != 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid length in SCTP SHUTDOWN COMPLETE chunk (must be equal to 4)",
                     });
@@ -6614,7 +6617,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
                 if bytes.len() > 4 {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - 4),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - 4),
                         reason: "extra bytes remain at end of SCTP SHUTDOWN COMPLETE chunk",
                     })
                 } else {
@@ -6623,7 +6626,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP SHUTDOWN COMPLETE chunk for header",
             }),
         }
@@ -6831,7 +6834,7 @@ impl<'a> UnknownChunkRef<'a> {
                 if bytes.len() < cmp::max(4, len) {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes in SCTP <unknown> chunk for header/Value field",
                     });
                 }
@@ -6839,7 +6842,7 @@ impl<'a> UnknownChunkRef<'a> {
                 if unpadded_len < 4 {
                     return Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::InvalidValue,
+                        class: ValidationErrorClass::InvalidValue,
                         reason:
                             "invalid length in SCTP <unknown> chunk (must be at least 4 bytes long)",
                     });
@@ -6849,7 +6852,7 @@ impl<'a> UnknownChunkRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Sctp::name(),
-                            err_type: ValidationErrorType::InvalidValue,
+                            class: ValidationErrorClass::InvalidValue,
                             reason: "invalid nonzero padding values at end of SCTP <unknown> chunk",
                         });
                     }
@@ -6858,7 +6861,7 @@ impl<'a> UnknownChunkRef<'a> {
                 if bytes.len() > len {
                     Err(ValidationError {
                         layer: Sctp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                        class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                         reason: "extra bytes remain at end of SCTP <unknown> chunk",
                     })
                 } else {
@@ -6867,7 +6870,7 @@ impl<'a> UnknownChunkRef<'a> {
             }
             _ => Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in SCTP <unknown> chunk for header",
             }),
         }
@@ -7156,7 +7159,7 @@ impl<'a> DataChunkRef<'a> {
             None => {
                 return Err(ValidationError {
                     layer: Sctp::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason: "SCTP DATA chunk must have a minimum of 16 bytes for its header",
                 })
             }
@@ -7167,7 +7170,7 @@ impl<'a> DataChunkRef<'a> {
         if padded_len > bytes.len() {
             return Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes for User Data portion of SCTP DATA chunk",
             });
         }
@@ -7176,7 +7179,7 @@ impl<'a> DataChunkRef<'a> {
         if payload_type != 0 {
             return Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Chunk Type field in SCTP DATA chunk (must be equal to 0)",
             });
         }
@@ -7184,7 +7187,7 @@ impl<'a> DataChunkRef<'a> {
         if len < 20 {
             return Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "packet length field had invalid value (insufficient length to cover packet header, at least one byte of data and padding) for SCTP DATA chunk",
             });
         }
@@ -7195,7 +7198,7 @@ impl<'a> DataChunkRef<'a> {
             if *b != 0 {
                 return Err(ValidationError {
                     layer: Sctp::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "padding at end of SCTP DATA chunk had a non-zero value",
                 });
             }
@@ -7204,7 +7207,7 @@ impl<'a> DataChunkRef<'a> {
         if padded_len < bytes.len() {
             Err(ValidationError {
                 layer: Sctp::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - len),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
                 reason: "SCTP DATA chunk had additional trailing bytes at the end of its data",
             })
         } else {

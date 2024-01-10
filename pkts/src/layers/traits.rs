@@ -42,6 +42,7 @@ pub trait BaseLayer: ToBoxedLayer + LayerLength {
 ///
 /// This trait's single associated function is effectively an object-unsafe variant of the
 /// [`BaseLayer::layer_metadata()`] method.
+#[doc(hidden)]
 pub trait LayerName {
     /// The name of the layer, usually (though not guaranteed to be) the same as the name of the
     /// struct.
@@ -188,7 +189,7 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
         if !self.can_set_payload(payload.as_ref()) {
             Err(ValidationError {
                 layer: self.layer_name(),
-                err_type: ValidationErrorType::InvalidPayloadLayer,
+                class: ValidationErrorClass::InvalidPayloadLayer,
                 reason: "", // TODO: fixme
             })
         } else {
@@ -261,18 +262,18 @@ pub trait LayerIndex: LayerObject {
         }
 
         if let Some(t) = self.as_any().downcast_ref::<T>() {
-            n -= 1;
-            if n == 0 {
-                return Some(t);
+            match n.checked_sub(1) {
+                Some(0) | None => return Some(t),
+                Some(new_n) => n = new_n,
             }
         };
 
         let mut next_layer = self.get_payload_ref();
         while let Some(layer) = next_layer {
             if let Some(t) = layer.as_any().downcast_ref::<T>() {
-                n -= 1;
-                if n == 0 {
-                    return Some(t);
+                match n.checked_sub(1) {
+                    Some(0) | None => return Some(t),
+                    Some(new_n) => n = new_n,
                 }
             }
             next_layer = layer.get_payload_ref()
@@ -609,7 +610,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let curr_valid = Self::validate_current_layer(bytes);
         match curr_valid {
-            Err(e) if e.err_type == ValidationErrorType::InsufficientBytes => return curr_valid,
+            Err(e) if e.class == ValidationErrorClass::InsufficientBytes => return curr_valid,
             _ => (),
         }
 
@@ -617,12 +618,12 @@ pub trait Validate: BaseLayer + StatelessLayer {
         match (curr_valid, next_valid) {
             // THIS ORDER MATTERS
             // TODO: review this order to ensure correctness
-            (_, Err(e)) if e.err_type == ValidationErrorType::InsufficientBytes => next_valid,
-            (Err(e), _) if e.err_type == ValidationErrorType::InvalidValue => curr_valid,
-            (_, Err(e)) if e.err_type == ValidationErrorType::InvalidValue => next_valid,
+            (_, Err(e)) if e.class == ValidationErrorClass::InsufficientBytes => next_valid,
+            (Err(e), _) if e.class == ValidationErrorClass::InvalidValue => curr_valid,
+            (_, Err(e)) if e.class == ValidationErrorClass::InvalidValue => next_valid,
             (_, Err(e)) => Err(ValidationError {
                 layer: e.layer,
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: e.reason,
             }),
             (Err(_), _) => curr_valid, // ValidationErrorType::ExcessBytes(_)
@@ -632,10 +633,12 @@ pub trait Validate: BaseLayer + StatelessLayer {
 
     /// Validates the given layer without validating any of its underlayers. Has the same
     /// error ordering properties as `validate()`.
+    #[doc(hidden)]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError>;
 
     /// Validates the payload (underlayers) of the given layer without validating the layer itself.
     /// Has the same error ordering properties as `validate()`.
+    #[doc(hidden)]
     fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
         #[cfg(feature = "custom_layer_selection")]
         if let Some(&custom_selection) = TcpMetadata::instance()
@@ -650,6 +653,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
 
     /// Default method for validating payload when custom layer selection is enabled. In general,
     /// `validate_payload()` should be used instead of this.
+    #[doc(hidden)]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError>;
 }
 
@@ -709,11 +713,10 @@ pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
     fn from_bytes_trailing(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
         match Self::validate(bytes) {
             Ok(_) => Ok(Self::from_bytes_unchecked(bytes)),
-            Err(e) => match e.err_type {
-                ValidationErrorType::ExcessBytes(extra) => Ok(Self::from_bytes_trailing_unchecked(
-                    bytes,
-                    bytes.len() - extra,
-                )),
+            Err(e) => match e.class {
+                ValidationErrorClass::ExcessBytes(extra) => Ok(
+                    Self::from_bytes_trailing_unchecked(bytes, bytes.len() - extra),
+                ),
                 _ => Err(e),
             },
         }
@@ -778,7 +781,7 @@ macro_rules! parse_layers {
                     Ok(_) if remaining_bytes.len() == 0 => Ok($base_layer),
                     Ok(_) => Err($crate::error::ValidationError {
                         layer: <$curr as $crate::layers::traits::LayerName>::name(),
-                        err_type: $crate::error::ValidationErrorType::ExcessBytes($bytes.len()),
+                        class: $crate::error::ValidationErrorClass::ExcessBytes($bytes.len()),
                         reason: "parsing of bytes failed--additional bytes remaining after parsing all protocol layers"
                     }),
                     Err(e) => Err(e),
@@ -858,6 +861,7 @@ pub mod extras {
     /// into its corresponding owned type. For example, the [`IPv4Ref<'_>`] type implements
     /// [`IntoLayer<Output=IPv4>`]. Because of this, it can be converted into its owned
     /// variant, the [`IPv4`] type.
+    #[doc(hidden)]
     pub trait IntoLayer: Into<Self::Output> {
         type Output: LayerObject;
     }

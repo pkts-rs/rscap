@@ -365,9 +365,9 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         if let Some(sb) = streambuf {
             loop {
                 if let Err(e) = validate(sb.as_slice()) {
-                    match e.err_type {
-                        ValidationErrorType::InsufficientBytes => break,
-                        ValidationErrorType::ExcessBytes(num_trailing) => {
+                    match e.class {
+                        ValidationErrorClass::InsufficientBytes => break,
+                        ValidationErrorClass::ExcessBytes(num_trailing) => {
                             let pkt_size = sb.len() - num_trailing;
                             upper.put_unchecked(&sb.as_slice()[..pkt_size]);
                             pkts_moved = true;

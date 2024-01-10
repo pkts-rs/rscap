@@ -19,6 +19,7 @@ pub struct Example {}
 
 impl Example {}
 
+#[doc(hidden)]
 impl FromBytesCurrent for Example {
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -94,6 +95,8 @@ impl<'a> Validate for ExampleRef<'a> {
         todo!()
     }
 
+    #[doc(hidden)]
+    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }

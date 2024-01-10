@@ -8,13 +8,15 @@
 
 #[derive(Copy, Clone, Debug)]
 pub struct ValidationError {
+    /// The layer in which the validation error occurred
     pub layer: &'static str,
-    pub err_type: ValidationErrorType,
+    /// The general class of error that occurred
+    pub class: ValidationErrorClass,
     pub reason: &'static str,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ValidationErrorType {
+pub enum ValidationErrorClass {
     InvalidPayloadLayer,
     InsufficientBytes, // Packet needs more bytes to be well-formed
     InvalidSize, // A size field in a packet conflicts with the actual composition of its contents; or two size fields conflict

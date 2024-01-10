@@ -272,6 +272,7 @@ impl<'a> FromBytesRef<'a> for UdpRef<'a> {
     }
 }
 
+#[doc(hidden)]
 impl LayerOffset for UdpRef<'_> {
     #[inline]
     fn payload_byte_index_default(_bytes: &[u8], layer_type: LayerId) -> Option<usize> {
@@ -352,12 +353,12 @@ impl Validate for UdpRef<'_> {
                 match length.cmp(&curr_layer.len()) {
                     cmp::Ordering::Greater => Err(ValidationError {
                         layer: Udp::name(),
-                        err_type: ValidationErrorType::InsufficientBytes,
+                        class: ValidationErrorClass::InsufficientBytes,
                         reason: "insufficient bytes for payload length advertised by UDP header",
                     }),
                     cmp::Ordering::Less => Err(ValidationError {
                         layer: Udp::name(),
-                        err_type: ValidationErrorType::ExcessBytes(curr_layer.len() - length),
+                        class: ValidationErrorClass::ExcessBytes(curr_layer.len() - length),
                         reason:
                             "more bytes in packet than advertised by the UDP header length field",
                     }),
@@ -366,12 +367,13 @@ impl Validate for UdpRef<'_> {
             }
             None => Err(ValidationError {
                 layer: Udp::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in UDP header (8 bytes required)",
             }),
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         // We always consider the next layer after UDP to be `Raw`

@@ -109,6 +109,7 @@ impl PsqlClient {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for PsqlClient {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
@@ -1093,6 +1094,8 @@ impl<'a> Validate for PsqlClientRef<'a> {
         todo!()
     }
 
+    #[doc(hidden)]
+    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
@@ -1419,7 +1422,7 @@ impl<'a> CancelRequestRef<'a> {
             (Some(m), Some(c)) if bytes.len() >= 16 => (i32::from_be_bytes(*m), i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Cancel Request packet to extract Message fields",
             })
         };
@@ -1427,7 +1430,7 @@ impl<'a> CancelRequestRef<'a> {
         if msg_length != 16 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "Length field in PsqlClient Cancel Request packet did not match expected (must be equal to 16)",
             });
         }
@@ -1435,7 +1438,7 @@ impl<'a> CancelRequestRef<'a> {
         if cancel_req_code != CLIENT_STARTUP_CANCEL_REQ {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "Cancel Request Code field in PsqlClient Cancel Request packet did not match expected (must be equal to 0x12345678)",
             });
         }
@@ -1443,7 +1446,7 @@ impl<'a> CancelRequestRef<'a> {
         if bytes.len() > 16 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 16),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - 16),
                 reason: "extra bytes remained at end of PsqlClient Cancel Request packet",
             });
         } else {
@@ -1524,7 +1527,7 @@ impl<'a> ClosePortalRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Close Portal packet to extract message fields",
             }),
@@ -1541,7 +1544,7 @@ impl<'a> ClosePortalRef<'a> {
             None => {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "insufficient bytes in PsqlClient Close Portal packet for Portal Name field",
                 })
@@ -1551,7 +1554,7 @@ impl<'a> ClosePortalRef<'a> {
         if msg_type != CLIENT_MSG_CLOSE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "wrong Message Type field in PsqlClient Close Portal packet (expected 0x43)",
             });
@@ -1560,7 +1563,7 @@ impl<'a> ClosePortalRef<'a> {
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "invalid Length field in PsqlClient Close Portal packet (must be at least 7)",
             });
@@ -1569,7 +1572,7 @@ impl<'a> ClosePortalRef<'a> {
         if close_type != b'P' {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Close Type field in PsqlClient Close Portal packet (expected 0x50)",
             });
         }
@@ -1578,13 +1581,13 @@ impl<'a> ClosePortalRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Close Portal packet Portal Name field",
                 })
             },
             Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Close Portal packet Portal Name field",
             }),
         }
@@ -1592,7 +1595,7 @@ impl<'a> ClosePortalRef<'a> {
         if *null_term != 0 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Portal packet Portal Name field",
             });
         }
@@ -1600,7 +1603,7 @@ impl<'a> ClosePortalRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Portal packet",
             })
         } else {
@@ -1664,7 +1667,7 @@ impl<'a> ClosePreparedRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Prepared Statement packet to extract message fields",
             })
         };
@@ -1675,7 +1678,7 @@ impl<'a> ClosePreparedRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Close Prepared Statement packet for Prepared Statement Name field",
             })
         };
@@ -1683,7 +1686,7 @@ impl<'a> ClosePreparedRef<'a> {
         if msg_type != CLIENT_MSG_CLOSE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Close Prepared Statement packet (expected 0x43)",
             });
         }
@@ -1691,7 +1694,7 @@ impl<'a> ClosePreparedRef<'a> {
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Length field in PsqlClient Close Prepared Statement packet (must be at least 7)",
             });
         }
@@ -1699,7 +1702,7 @@ impl<'a> ClosePreparedRef<'a> {
         if close_type != b'S' {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Close Type field in PsqlClient Close Prepared Statement packet (expected 0x53)",
             });
         }
@@ -1708,13 +1711,13 @@ impl<'a> ClosePreparedRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Close Prepared Statement packet Prepared Statement Name field",
                 })
             },
             Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Close Prepared Statement packet Prepared Statement Name field",
             }),
         }
@@ -1722,7 +1725,7 @@ impl<'a> ClosePreparedRef<'a> {
         if *null_term != 0 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Prepared Statement packet Prepared Statement Name field",
             });
         }
@@ -1730,7 +1733,7 @@ impl<'a> ClosePreparedRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -1791,7 +1794,7 @@ impl<'a> CopyDataRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Copy Data packet to extract message fields",
             }),
@@ -1801,7 +1804,7 @@ impl<'a> CopyDataRef<'a> {
         if bytes.len() < msg_length {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Copy Data packet to extract Data Stream field",
             });
@@ -1810,7 +1813,7 @@ impl<'a> CopyDataRef<'a> {
         if msg_type != CLIENT_MSG_COPY_DATA {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Data packet (expected 0x43)",
             });
         }
@@ -1818,7 +1821,7 @@ impl<'a> CopyDataRef<'a> {
         if msg_length < 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Data packet (too short--must be >= 5)",
             });
         }
@@ -1826,7 +1829,7 @@ impl<'a> CopyDataRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Copy Data packet",
             })
         } else {
@@ -1879,7 +1882,7 @@ impl<'a> CopyDoneRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Copy Done packet to extract message header fields",
             })
         };
@@ -1887,7 +1890,7 @@ impl<'a> CopyDoneRef<'a> {
         if msg_type != CLIENT_MSG_COPY_DONE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Done packet (expected 0x63)",
             });
         }
@@ -1895,7 +1898,7 @@ impl<'a> CopyDoneRef<'a> {
         if msg_length != 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "invalid Message Length field in PsqlClient Copy Done packet (must be equal to 5)",
             });
         }
@@ -1903,7 +1906,7 @@ impl<'a> CopyDoneRef<'a> {
         if bytes.len() > 5 {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 5),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - 5),
                 reason: "trailing bytes found at end of PsqlClient Copy Done packet",
             })
         } else {
@@ -1971,7 +1974,7 @@ impl<'a> CopyFailRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Copy Fail packet to extract message fields",
             }),
@@ -1988,7 +1991,7 @@ impl<'a> CopyFailRef<'a> {
                 Some(t) => t,
                 None => return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason:
                         "insufficient bytes in PsqlClient Copy Fail packet for Error Message field",
                 }),
@@ -1997,7 +2000,7 @@ impl<'a> CopyFailRef<'a> {
         if msg_type != CLIENT_MSG_COPY_FAIL {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Copy Fail packet (expected 0x66)",
             });
         }
@@ -2005,7 +2008,7 @@ impl<'a> CopyFailRef<'a> {
         if msg_length < 6 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Length field in PsqlClient Copy Fail packet (must be at least 6)",
             });
         }
@@ -2014,13 +2017,13 @@ impl<'a> CopyFailRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Copy Fail packet Error Message field",
                 })
             },
             Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Copy Fail packet Error Message field",
             }),
         }
@@ -2028,7 +2031,7 @@ impl<'a> CopyFailRef<'a> {
         if *null_term != 0 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Copy Fail packet Prepared Statement Name field",
             });
         }
@@ -2036,7 +2039,7 @@ impl<'a> CopyFailRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Copy Fail packet",
             })
         } else {
@@ -2109,7 +2112,7 @@ impl<'a> DescribePortalRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Portal packet to extract message fields",
             })
         };
@@ -2124,7 +2127,7 @@ impl<'a> DescribePortalRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Describe Portal packet for Portal Name field",
             }),
@@ -2133,7 +2136,7 @@ impl<'a> DescribePortalRef<'a> {
         if msg_type != CLIENT_MSG_DESCRIBE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "wrong Message Type field in PsqlClient Describe Portal packet (expected 0x44)",
             });
@@ -2142,7 +2145,7 @@ impl<'a> DescribePortalRef<'a> {
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "invalid Length field in PsqlClient Describe Portal packet (must be at least 7)",
             });
@@ -2151,7 +2154,7 @@ impl<'a> DescribePortalRef<'a> {
         if describe_type != b'P' {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason:
                     "wrong Describe Type field in PsqlClient Describe Portal packet (expected 0x50)",
             });
@@ -2161,13 +2164,13 @@ impl<'a> DescribePortalRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Describe Portal packet Portal Name field",
                 })
             },
             Err(e) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Describe Portal packet Portal Name field",
             }),
         }
@@ -2175,7 +2178,7 @@ impl<'a> DescribePortalRef<'a> {
         if *null_term != 0 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Describe Portal packet Portal Name field",
             });
         }
@@ -2183,7 +2186,7 @@ impl<'a> DescribePortalRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Describe Portal packet",
             })
         } else {
@@ -2246,7 +2249,7 @@ impl<'a> DescribePreparedRef<'a> {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Prepared Statement packet to extract message fields",
             })
         };
@@ -2257,7 +2260,7 @@ impl<'a> DescribePreparedRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Describe Prepared Statement packet for Prepared Statement Name field",
             })
         };
@@ -2265,7 +2268,7 @@ impl<'a> DescribePreparedRef<'a> {
         if msg_type != CLIENT_MSG_DESCRIBE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Describe Prepared Statement packet (expected 0x44)",
             });
         }
@@ -2273,7 +2276,7 @@ impl<'a> DescribePreparedRef<'a> {
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Length field in PsqlClient Describe Prepared Statement packet (must be at least 7)",
             });
         }
@@ -2281,7 +2284,7 @@ impl<'a> DescribePreparedRef<'a> {
         if describe_type != b'S' {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Describe Type field in PsqlClient Describe Prepared Statement packet (expected 0x53)",
             });
         }
@@ -2290,13 +2293,13 @@ impl<'a> DescribePreparedRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Describe Prepared Statement packet Prepared Statement Name field",
                 })
             },
             Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Describe Prepared Statement packet Prepared Statement Name field",
             }),
         }
@@ -2304,7 +2307,7 @@ impl<'a> DescribePreparedRef<'a> {
         if *null_term != 0 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "missing null terminating byte at end of PsqlClient Close Prepared Statement packet Prepared Statement Name field",
             });
         }
@@ -2312,7 +2315,7 @@ impl<'a> DescribePreparedRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -2398,7 +2401,7 @@ impl<'a> ExecuteRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in PsqlClient Execute packet to extract message header fields",
             })
         };
@@ -2410,7 +2413,7 @@ impl<'a> ExecuteRef<'a> {
             None => {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InsufficientBytes,
+                    class: ValidationErrorClass::InsufficientBytes,
                     reason: "insufficient bytes in PsqlClient Execute packet for Portal Name field",
                 })
             }
@@ -2420,7 +2423,7 @@ impl<'a> ExecuteRef<'a> {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "missing null terminating byte in PsqlClient Execute packet for Portal Name field"
             })
         };
@@ -2428,7 +2431,7 @@ impl<'a> ExecuteRef<'a> {
         if msg_type != CLIENT_MSG_DESCRIBE {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Describe Prepared Statement packet (expected 0x44)",
             });
         }
@@ -2436,7 +2439,7 @@ impl<'a> ExecuteRef<'a> {
         if msg_length < 7 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Length field in PsqlClient Describe Prepared Statement packet (must be at least 7)",
             });
         }
@@ -2445,13 +2448,13 @@ impl<'a> ExecuteRef<'a> {
             Ok(s) => if s.find("\x00").is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
-                    err_type: ValidationErrorType::InvalidValue,
+                    class: ValidationErrorClass::InvalidValue,
                     reason: "null character found before end of string in PsqlClient Describe Prepared Statement packet Prepared Statement Name field",
                 })
             },
             Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Describe Prepared Statement packet Prepared Statement Name field",
             }),
         }
@@ -2459,7 +2462,7 @@ impl<'a> ExecuteRef<'a> {
         if bytes.len() > msg_length {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - msg_length),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - msg_length),
                 reason: "trailing bytes found at end of PsqlClient Close Prepared Statement packet",
             })
         } else {
@@ -2511,7 +2514,7 @@ impl<'a> FlushRef<'a> {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "insufficient bytes in PsqlClient Flush packet to extract message header fields",
             }),
@@ -2520,7 +2523,7 @@ impl<'a> FlushRef<'a> {
         if msg_type != CLIENT_MSG_FLUSH {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InvalidValue,
+                class: ValidationErrorClass::InvalidValue,
                 reason: "wrong Message Type field in PsqlClient Flush packet (expected 0x48)",
             });
         }
@@ -2528,7 +2531,7 @@ impl<'a> FlushRef<'a> {
         if msg_length != 5 {
             return Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason:
                     "invalid Message Length field in PsqlClient Flush packet (must be equal to 5)",
             });
@@ -2537,7 +2540,7 @@ impl<'a> FlushRef<'a> {
         if bytes.len() > 5 {
             Err(ValidationError {
                 layer: PsqlClient::name(),
-                err_type: ValidationErrorType::ExcessBytes(bytes.len() - 5),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - 5),
                 reason: "trailing bytes found at end of PsqlClient Flush packet",
             })
         } else {
@@ -2614,6 +2617,7 @@ impl PsqlServer {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for PsqlServer {
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -2788,6 +2792,8 @@ impl<'a> Validate for PsqlServerRef<'a> {
         todo!()
     }
 
+    #[doc(hidden)]
+    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }

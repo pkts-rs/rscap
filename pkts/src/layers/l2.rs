@@ -68,6 +68,7 @@ impl Ether {
     }
 }
 
+#[doc(hidden)]
 impl FromBytesCurrent for Ether {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
@@ -265,7 +266,7 @@ impl<'a> Validate for EtherRef<'a> {
         if curr_layer.len() < 14 {
             Err(ValidationError {
                 layer: Ether::name(),
-                err_type: ValidationErrorType::InsufficientBytes,
+                class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes in Ether layer for header fields",
             })
         } else {
@@ -273,6 +274,7 @@ impl<'a> Validate for EtherRef<'a> {
         }
     }
 
+    #[doc(hidden)]
     #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() == 14 {
