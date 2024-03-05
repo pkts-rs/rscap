@@ -16,7 +16,7 @@ use crate::layers::*;
 use crate::utils;
 use core::iter::Iterator;
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::{cmp, iter};
 
@@ -605,17 +605,8 @@ impl Validate for SctpRef<'_> {
     }
 
     #[inline]
-    #[inline]
     fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         Ok(()) // Payload is always assumed to be Raw
-    }
-}
-
-impl<'a> From<&'a SctpMut<'a>> for SctpRef<'a> {
-    fn from(value: &'a SctpMut<'a>) -> Self {
-        SctpRef {
-            data: &value.data[..value.len],
-        }
     }
 }
 
@@ -702,48 +693,6 @@ impl<'a> Iterator for ChunksIterRef<'a> {
             _ => {
                 panic!("insufficient bytes for ChunkRef in iterator.");
             }
-        }
-    }
-}
-
-/// An SCTP (Stream Control Transmission Protocol) packet.
-///
-/// ## Packet Layout
-/// ```txt
-///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
-///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  0 |          Source Port          |        Destination Port       |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  4 |                        Verification Tag                       |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  8 |                            Checksum                           |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-/// 12 Z                             Chunks                            Z
-///    Z                                                               Z
-/// .. .                              ...                              .
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-/// ```
-#[derive(Debug, LayerMut, StatelessLayer)]
-#[ref_type(SctpRef)]
-#[owned_type(Sctp)]
-#[metadata_type(SctpMetadata)]
-pub struct SctpMut<'a> {
-    #[data_field]
-    data: &'a mut [u8],
-    #[data_length_field]
-    len: usize,
-}
-
-impl<'a> SctpMut<'a> {
-    // TODO: implement
-}
-
-impl<'a> FromBytesMut<'a> for SctpMut<'a> {
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
-        SctpMut {
-            data: bytes,
-            len: length,
         }
     }
 }

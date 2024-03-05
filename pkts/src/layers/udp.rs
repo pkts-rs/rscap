@@ -9,16 +9,21 @@
 //! The User Datagram Protocol (UDP) layer and related data structures.
 //!
 //! UDP is a Transport Layer protocol that allows for unreliable transfer of datagrams over an IP
-//! network. It provides weak guarantees of data correctness through a 16-bit one's complement
-//! checksum and preserves message boundaries, but does not guarantee delivery or provide any
-//! built-in mechanism for packet acknowledgement/retransmission.
-
+//! network. It provides weak assurance of data correctness via a 16-bit one's complement checksum
+//! and preserves message boundaries, but does not guarantee delivery or provide any built-in
+//! mechanism for packet acknowledgement or retransmission.
+//! 
+//! A UDP layer can be represented directly with [`Udp`], or referenced from a byte array with
+//! [`UdpRef`]. UDP packets can be constructed from scratch using either [`Udp::new`] (which 
+//! may use heap allocations) or [`UdpBuilder`], which constructs a UDP packet entirely within
+//! a stack-allocated byte array.
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 use crate::layers::Raw;
+use crate::Buffer;
 use crate::{error::*, utils};
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
 use std::cmp;
@@ -52,6 +57,20 @@ pub struct Udp {
 }
 
 impl Udp {
+    /// Construct a new UDP packet.
+    /// 
+    /// The default UDP packet contains a source and destination port of 0, no set checksum, and no
+    /// payload.
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            sport: 0,
+            dport: 0,
+            chksum: None,
+            payload: None,
+        }
+    }
+
     /// The source port of the UDP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
@@ -381,175 +400,243 @@ impl Validate for UdpRef<'_> {
     }
 }
 
-impl<'a> From<&'a UdpMut<'a>> for UdpRef<'a> {
-    #[inline]
-    fn from(value: &'a UdpMut<'a>) -> Self {
-        UdpRef {
-            data: &value.data[..value.len],
-        }
-    }
-}
+// =============================================================================
+//                                 UDP Builder
+// =============================================================================
 
-/// A UDP (User Datagram Protocol) packet.
-///
-/// ## Packet Layout
-/// ```txt
-///    .    Octet 0    .    Octet 1    .    Octet 2    .    Octet 3    .
-///    |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  0 |          Source Port          |        Destination Port       |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  4 |             Length            |            Checksum           |
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-///  8 Z                            Payload                            Z
-///    Z                                                               Z
-/// .. .                              ...                              .
-///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#[doc(hidden)]
+pub trait UdpBuildPhase { }
+
+#[doc(hidden)]
+pub struct UdpBuildSrcPort;
+
+impl UdpBuildPhase for UdpBuildSrcPort { }
+
+#[doc(hidden)]
+pub struct UdpBuildDstPort;
+
+impl UdpBuildPhase for UdpBuildDstPort { }
+
+#[doc(hidden)]
+pub struct UdpBuildChksum;
+
+impl UdpBuildPhase for UdpBuildChksum { }
+
+#[doc(hidden)]
+pub struct UdpBuildPayload;
+
+impl UdpBuildPhase for UdpBuildPayload { }
+
+#[doc(hidden)]
+pub struct UdpBuildFinal;
+
+impl UdpBuildPhase for UdpBuildFinal { }
+
+/// A Builder type for UDP packets, with configurable maximum bytearray size.
+/// 
+/// This struct employs a type-enforced Builder pattern, meaning that each step of building the
+/// UDP packet is represented by a distinct type in the generic type `T`. In practical terms,
+/// this simply means that you can build a UDP packet one field at a time without having to
+/// worry about getting ordering wrong or missing fields--any errors of this kind will be caught
+/// by the compiler.
+/// 
+/// # Example
+/// 
 /// ```
-#[derive(Debug, LayerMut, StatelessLayer)]
-#[metadata_type(UdpMetadata)]
-#[owned_type(Udp)]
-#[ref_type(UdpRef)]
-pub struct UdpMut<'a> {
-    #[data_field]
-    data: &'a mut [u8],
-    #[data_length_field]
-    len: usize,
+/// use pkts::prelude::*;
+/// use pkts::layers::udp::UdpBuilder;
+/// 
+/// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+/// 
+/// let udp_builder = UdpBuilder::new()
+///     .sport(65321)
+///     .dport(443)
+///     .chksum(0)
+///     .payload_raw(&payload);
+///
+/// let udp_packet: Buffer<65536> = match udp_builder.build().unwrap();
+/// ```
+///
+pub struct UdpBuilder<T: UdpBuildPhase, const N: usize> {
+    data: Buffer<N>,
+    layer_start: usize,
+    error: Option<ValidationError>,
+    phase: T,
 }
 
-impl UdpMut<'_> {
-    /// The source port of the UDP packet.
+impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
     #[inline]
-    pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(0..2)
-                .expect("insufficient bytes in UDP packet to retrieve Source Port field")
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// Sets the source port of the UDP packet.
-    #[inline]
-    pub fn set_sport(&mut self, src_port: u16) {
-        let src_port_field: &mut [u8; 2] = self
-            .data
-            .get_mut(0..2)
-            .expect("insufficient bytes in UDP packet to set Source Port field")
-            .try_into()
-            .unwrap();
-        *src_port_field = src_port.to_be_bytes();
-    }
-
-    /// The destination port of the UDP packet.
-    #[inline]
-    pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(2..4)
-                .expect("insufficient bytes in UDP packet to retrieve Destination Port field")
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// Sets the destination port of the UDP packet.
-    #[inline]
-    pub fn set_dport(&mut self, dst_port: u16) {
-        let dst_port_field: &mut [u8; 2] = self
-            .data
-            .get_mut(2..4)
-            .expect("insufficient bytes in UDP packet to set Destination Port field")
-            .try_into()
-            .unwrap();
-        *dst_port_field = dst_port.to_be_bytes();
-    }
-
-    /// The combined length (in bytes) of the UDP header and payload.
-    #[inline]
-    pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(4..6)
-                .expect("insufficient bytes in UDP packet to retrieve Packet Length field")
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// Sets the combined length (in bytes) of the UDP header and payload.
-    #[inline]
-    pub fn set_packet_length(&mut self, len: u16) {
-        let pkt_length_field: &mut [u8; 2] = self
-            .data
-            .get_mut(4..6)
-            .expect("insufficient bytes in UDP packet to set Packet Length field")
-            .try_into()
-            .unwrap();
-        *pkt_length_field = len.to_be_bytes();
-    }
-
-    /// The one's complement Checksum field of the packet.
-    #[inline]
-    pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(6..8)
-                .expect("insufficient bytes in UDP packet to retrieve Checksum field")
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    /// Sets the one's complement checksum to be used for the packet.
-    ///
-    /// Checksums are _not_ automatically generated for [`UdpMut`] instances,
-    /// so any changes in a UDP packet's contents--including source or destination
-    /// IP address or IP protocol type--should be followed by a corresponding change
-    /// in the checksum as well. Checksums _are_ automatically generated for [`Udp`]
-    /// instances, so consider using it instead of this interface if ease of use is
-    /// more of a priority than raw speed and performance.
-    #[inline]
-    pub fn set_chksum(&mut self, chksum: u16) {
-        let chksum_field: &mut [u8; 2] = self
-            .data
-            .get_mut(6..8)
-            .expect("insufficient bytes in UDP packet to set Checksum field")
-            .try_into()
-            .unwrap();
-        *chksum_field = chksum.to_be_bytes();
-    }
-
-    /// The payload data of the UDP packet.
-    #[inline]
-    pub fn payload(&self) -> &[u8] {
-        &self
-            .data
-            .get(8..self.len)
-            .expect("insufficient bytes in UDP packet to retrieve payload data")
-    }
-
-    /// Sets the payload data of the udp packet.
-    #[inline]
-    pub fn set_payload_unchecked(&mut self, payload: &[u8]) {
-        let payload_location = self
-            .data
-            .get_mut(8..8 + payload.len())
-            .expect("insufficient bytes in UdpMut buffer to set payload");
-        for (&src, dst) in payload.iter().zip(payload_location) {
-            *dst = src;
+    pub fn new() -> Self {
+        Self {
+            layer_start: 0,
+            data: Buffer::new(),
+            error: None,
+            phase: UdpBuildSrcPort,
         }
-        self.len = 8 + payload.len();
+    }
+
+    #[inline]
+    pub fn from_buffer(buffer: Buffer<N>) -> Self {
+        Self {
+            layer_start: buffer.len(),
+            data: buffer,
+            error: None,
+            phase: UdpBuildSrcPort,
+        }
+    }
+
+    #[inline]
+    pub fn sport(mut self, sport: u16) -> UdpBuilder<UdpBuildDstPort, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= 2 {
+                self.data.append(&sport.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Udp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "UDP Source Port serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        UdpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: UdpBuildDstPort,
+        }
     }
 }
 
-impl<'a> FromBytesMut<'a> for UdpMut<'a> {
+impl<const N: usize> UdpBuilder<UdpBuildDstPort, N> {
     #[inline]
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
-        UdpMut {
-            len: length,
-            data: bytes,
+    pub fn dport(mut self, dport: u16) -> UdpBuilder<UdpBuildChksum, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= 2 {
+                self.data.append(&dport.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Udp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "UDP Destination Port serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        UdpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: UdpBuildChksum,
+        }
+    }
+}
+
+impl<const N: usize> UdpBuilder<UdpBuildChksum, N> {
+    #[inline]
+    pub fn chksum(mut self, chksum: u16) -> UdpBuilder<UdpBuildPayload, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= 4 {
+                // Pad `length` field with 0s for now--it is filled later
+                self.data.append(&[0u8; 2]);
+                self.data.append(&chksum.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Udp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "UDP Checksum serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        UdpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: UdpBuildPayload,
+        }
+    }
+}
+
+impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
+    /// Add a payload consisting of raw bytes to the UDP packet.
+    #[inline]
+    pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<UdpBuildFinal, N> {
+        'insert_data: {
+            if self.error.is_some() {
+                break 'insert_data
+            }
+
+            if self.data.remaining() < data.len() {
+                self.error = Some(ValidationError {
+                    layer: Udp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "UDP Payload serialization exceeded available buffer size",
+                });
+                break 'insert_data
+            }
+
+            let Ok(data_len) = u16::try_from(data.len() + 8) else {
+                self.error = Some(ValidationError {
+                    layer: Udp::name(),
+                    class: ValidationErrorClass::InvalidSize,
+                    reason: "UDP Payload serialization exceeded UDP maximum possible length",
+                });
+                break 'insert_data
+            };
+
+            let len_start = self.layer_start + 4;
+            let len_end = self.layer_start + 6;
+
+            // Set data length field
+            self.data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
+
+            // Set data
+            self.data.append(data);
+        }
+
+        UdpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: UdpBuildFinal,
+        }
+    }
+
+    /// Add a payload to the UDP packet.
+    /// 
+    /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
+    /// several consecutive layers can be constructed at once using these closures in a nested
+    /// manner.
+    #[inline]
+    pub fn payload(self, payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>) -> Result<Buffer<N>, ValidationError> {
+        if let Some(error) = self.error {
+            return Err(error)
+        }
+        let mut data = payload_build_fn(self.data)?;
+        let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
+            return Err(ValidationError {
+                layer: Udp::name(),
+                class: ValidationErrorClass::InvalidSize,
+                reason: "UDP Payload serialization exceeded UDP maximum possible length",
+            })
+        };
+
+        let len_start = self.layer_start + 4;
+        let len_end = self.layer_start + 6;
+
+        // Set data length field
+        data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
+        Ok(data)
+    }
+}
+
+impl<const N: usize> UdpBuilder<UdpBuildFinal, N> {
+    #[inline]
+    pub fn build(self) -> Result<Buffer<N>, ValidationError> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.data),
         }
     }
 }

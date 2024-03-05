@@ -8,17 +8,18 @@
 
 //! The Transmission Control Protocol (TCP) and related data structures.
 //!
+//! 
 //!
 
 use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::layers::*;
+use crate::{layers::*, Buffer};
 use crate::utils;
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use core::cmp;
+use core::{cmp, mem};
 use core::iter::Iterator;
 
 /// A TCP (Transmission Control Protocol) packet.
@@ -545,219 +546,386 @@ impl Validate for TcpRef<'_> {
     }
 }
 
-impl<'a> From<&'a TcpMut<'a>> for TcpRef<'a> {
+// =============================================================================
+//                                 TCP Builder
+// =============================================================================
+
+#[doc(hidden)]
+pub trait TcpBuildPhase { }
+
+#[doc(hidden)]
+pub struct TcpBuildSrcPort;
+
+impl TcpBuildPhase for TcpBuildSrcPort { }
+
+#[doc(hidden)]
+pub struct TcpBuildDstPort;
+
+impl TcpBuildPhase for TcpBuildDstPort { }
+
+#[doc(hidden)]
+pub struct TcpBuildSeq;
+
+impl TcpBuildPhase for TcpBuildSeq { }
+
+#[doc(hidden)]
+pub struct TcpBuildAck;
+
+impl TcpBuildPhase for TcpBuildAck { }
+
+#[doc(hidden)]
+pub struct TcpBuildFlags;
+
+impl TcpBuildPhase for TcpBuildFlags { }
+
+#[doc(hidden)]
+pub struct TcpBuildWindowSize;
+
+impl TcpBuildPhase for TcpBuildWindowSize { }
+
+#[doc(hidden)]
+pub struct TcpBuildChksum;
+
+impl TcpBuildPhase for TcpBuildChksum { }
+
+#[doc(hidden)]
+pub struct TcpBuildUrgentPtr;
+
+impl TcpBuildPhase for TcpBuildUrgentPtr { }
+
+#[doc(hidden)]
+pub struct TcpBuildOptsPayload;
+
+impl TcpBuildPhase for TcpBuildOptsPayload { }
+
+#[doc(hidden)]
+pub struct TcpBuildFinal;
+
+impl TcpBuildPhase for TcpBuildFinal { }
+
+/// A Builder type for TCP packets, with configurable maximum bytearray size.
+/// 
+/// This struct employs a type-enforced Builder pattern, meaning that each step of building the
+/// TCP packet is represented by a distinct type in the generic type `T`. In practical terms,
+/// this simply means that you can build a TCP packet one field at a time without having to
+/// worry about getting ordering wrong or missing fields--any errors of this kind will be caught
+/// by the compiler.
+/// 
+/// # Example
+/// 
+/// ```
+/// use pkts::prelude::*;
+/// use pkts::layers::tcp::TcpBuilder;
+/// 
+/// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+/// 
+/// let tcp_builder = TcpBuilder::new()
+///     .sport(65321)
+///     .dport(443)
+///     .chksum(0)
+///     .data(&payload);
+///
+/// let tcp_packet: Buffer<65536> = match tcp_builder.build().unwrap();
+/// ```
+///
+pub struct TcpBuilder<T: TcpBuildPhase, const N: usize> {
+    data: Buffer<N>,
+    layer_start: usize,
+    error: Option<ValidationError>,
+    phase: T,
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
     #[inline]
-    fn from(value: &'a TcpMut<'a>) -> Self {
-        TcpRef {
-            data: &value.data[..value.len],
+    pub fn new() -> Self {
+        Self {
+            layer_start: 0,
+            data: Buffer::new(),
+            error: None,
+            phase: TcpBuildSrcPort,
+        }
+    }
+
+    #[inline]
+    pub fn from_buffer(buffer: Buffer<N>) -> Self {
+        Self {
+            layer_start: buffer.len(),
+            data: buffer,
+            error: None,
+            phase: TcpBuildSrcPort,
+        }
+    }
+
+    #[inline]
+    pub fn sport(mut self, sport: u16) -> TcpBuilder<TcpBuildDstPort, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u16>() {
+                self.data.append(&sport.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Source Port serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildDstPort,
         }
     }
 }
 
-#[derive(Debug, LayerMut, StatelessLayer)]
-#[ref_type(TcpRef)]
-#[owned_type(Tcp)]
-#[metadata_type(TcpMetadata)]
-pub struct TcpMut<'a> {
-    #[data_field]
-    data: &'a mut [u8],
-    #[data_length_field]
-    len: usize,
-}
-
-impl<'a> TcpMut<'a> {
-    /// The source port of the TCP packet.
+impl<const N: usize> TcpBuilder<TcpBuildDstPort, N> {
     #[inline]
-    pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in TcpMut to retrieve Source Port field"),
-        )
-    }
+    pub fn dport(mut self, dport: u16) -> TcpBuilder<TcpBuildSeq, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u16>() {
+                self.data.append(&dport.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Destination Port serialization exceeded available buffer size",
+                });
+            }
+        }
 
-    /// Sets the source port of the TCP packet.
-    #[inline]
-    pub fn set_sport(&mut self, sport: u16) {
-        let arr = utils::get_mut_array(self.data, 0)
-            .expect("insufficient bytes in TcpMut to set Source Port field");
-        *arr = sport.to_be_bytes()
-    }
-
-    /// The destination port of the TCP packet.
-    #[inline]
-    pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in TcpMut to retrieve Destination Port field"),
-        )
-    }
-
-    /// Sets the destination port of the TCP packet.
-    #[inline]
-    pub fn set_dport(&mut self, dport: u16) {
-        let arr = utils::get_mut_array(self.data, 2)
-            .expect("insufficient bytes in TcpMut to set Destination Port field");
-        *arr = dport.to_be_bytes()
-    }
-
-    /// The sequence number of the TCP packet.
-    #[inline]
-    pub fn seq(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TcpMut to retrieve Sequence Number field"),
-        )
-    }
-
-    /// Sets the sequence number of the TCP packet
-    #[inline]
-    pub fn set_seq(&mut self, seq: u32) {
-        let arr = utils::get_mut_array(self.data, 4)
-            .expect("insufficient bytes in TcpMut to set Destination Port field");
-        *arr = seq.to_be_bytes()
-    }
-
-    /// The acknowledgement number of the TCP packet.
-    #[inline]
-    pub fn ack(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TcpMut to retrieve Acknowledgement Number field"),
-        )
-    }
-
-    /// Sets the acknowledgement number of the TCP packet.
-    #[inline]
-    pub fn set_ack(&mut self, ack: u32) {
-        let arr = utils::get_mut_array(self.data, 8)
-            .expect("insufficient bytes in TcpMut to set Destination Port field");
-        *arr = ack.to_be_bytes()
-    }
-
-    /// Indicates the first byte of the data payload for the TCP packet.
-    ///
-    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
-    /// correspond to a 20-byte data offset.
-    #[inline]
-    pub fn data_offset(&self) -> usize {
-        (self
-            .data
-            .get(12)
-            .expect("insufficient bytes in TcpMut to retrieve Data Offset field")
-            >> 4) as usize
-    }
-
-    /// Sets the data offset (the first byte of data payload) of the TCP packet.
-    ///
-    /// Note that this offset is a multiple of 4 bytes, meaning that a data offset value of 5 would
-    /// correspond to a 20-byte data offset.
-    #[inline]
-    pub fn set_data_offset(&mut self, offset: u8) {
-        debug_assert!(offset <= 0b_0000_1111);
-        let off_ref = self
-            .data
-            .get_mut(12)
-            .expect("insufficient bytes in TcpMut to set Data Offset field");
-        *off_ref &= 0b_0000_1111;
-        *off_ref |= offset << 4;
-    }
-
-    /// The flags of the TCP packet.
-    #[inline]
-    pub fn flags(&self) -> TcpFlags {
-        TcpFlags::from(u16::from_be_bytes(
-            utils::to_array(self.data, 12)
-                .expect("insufficient bytes in TcpMut to retrieve TCP Flags"),
-        ))
-    }
-
-    /// Sets the flags of the TCP packet.
-    #[inline]
-    pub fn set_flags(&mut self, flags: TcpFlags) {
-        let arr = utils::get_mut_array::<2>(self.data, 4)
-            .expect("insufficient bytes in TcpMut to set TCP Flags");
-        arr[0] &= 0b_1111_1110;
-        arr[0] |= ((flags.data >> 8) as u8) & 0b_0000_0001;
-        arr[1] = (flags.data & 0x00FF) as u8;
-    }
-
-    /// The congestion window of the TCP packet.
-    #[inline]
-    pub fn window(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 14)
-                .expect("insufficient bytes in TcpMut to retrieve Window Size field"),
-        )
-    }
-
-    /// Sets the congestion window of the TCP packet.
-    #[inline]
-    pub fn set_window(&mut self, window: u16) {
-        let arr = utils::get_mut_array(self.data, 4)
-            .expect("insufficient bytes in TcpMut to set Window Size field");
-        *arr = window.to_be_bytes()
-    }
-
-    /// The checksum of the packet, calculated across the entirity of the packet's header and
-    /// payload data.
-    #[inline]
-    pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TcpMut to retrieve Checksum field"),
-        )
-    }
-
-    /// Sets the one's complement checksum to be used for the packet.
-    ///
-    /// Checksums are _not_ automatically generated for [`TcpMut`] instances,
-    /// so any changes in a TCP packet's contents--including source or destination
-    /// IP address or IP protocol type--should be followed by a corresponding change
-    /// in the checksum as well. Checksums _are_ automatically generated for [`Tcp`]
-    /// instances, so consider using it instead of this interface if ease of use is
-    /// more of a priority than raw speed and performance.
-    #[inline]
-    pub fn set_chksum(&mut self, chksum: u16) {
-        let arr = utils::get_mut_array(self.data, 8)
-            .expect("insufficient bytes in TcpMut to set Checksum field");
-        *arr = chksum.to_be_bytes()
-    }
-
-    /// A pointer to the offset of data considered to be urgent within the packet.
-    #[inline]
-    pub fn urgent_ptr(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TcpMut to retrieve Urgent Pointer field"),
-        )
-    }
-
-    /// Sets the pointer to the offset of data considered to be urgent within the packet.
-    #[inline]
-    pub fn set_urgent_ptr(&mut self, urgent_ptr: u16) {
-        let arr = utils::get_mut_array(self.data, 8)
-            .expect("insufficient bytes in TcpMut to set Urgent Pointer field");
-        *arr = urgent_ptr.to_be_bytes()
-    }
-
-    /// The optional parameters, or TCP Options, of the TCP packet.
-    #[inline]
-    pub fn options(&'a self) -> TcpOptionsRef<'a> {
-        let end = cmp::max(self.data_offset(), 5) * 4;
-        TcpOptionsRef::from_bytes_unchecked(
-            self.data
-                .get(20..end)
-                .expect("insufficient bytes in TcpMut to retrieve TCP Options"),
-        )
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildSeq,
+        }
     }
 }
 
-impl<'a> FromBytesMut<'a> for TcpMut<'a> {
+impl<const N: usize> TcpBuilder<TcpBuildSeq, N> {
     #[inline]
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
-        TcpMut {
-            len: length,
-            data: bytes,
+    pub fn seq(mut self, seq: u32) -> TcpBuilder<TcpBuildAck, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u32>() {
+                self.data.append(&seq.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Sequence Number serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildAck,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildAck, N> {
+    #[inline]
+    pub fn ack(mut self, ack: u32) -> TcpBuilder<TcpBuildFlags, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u32>() {
+                self.data.append(&ack.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Sequence Number serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildFlags,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
+    #[inline]
+    pub fn flags(mut self, flags: TcpFlags) -> TcpBuilder<TcpBuildFlags, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u32>() {
+                self.data.append(&flags.data.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Acknowledgement Number serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildFlags,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildWindowSize, N> {
+    #[inline]
+    pub fn chksum(mut self, window: u16) -> TcpBuilder<TcpBuildChksum, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u16>() {
+                self.data.append(&window.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Window Size serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildChksum,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
+    #[inline]
+    pub fn chksum(mut self, chksum: u16) -> TcpBuilder<TcpBuildOptsPayload, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u16>() {
+                self.data.append(&chksum.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Checksum serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildOptsPayload,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
+    #[inline]
+    pub fn option(mut self, option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
+        if self.error.is_none() {
+            if self.data.remaining() >= mem::size_of::<u16>() {
+//                self.data.append(&chksum.to_be_bytes());
+            } else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Options serialization exceeded available buffer size",
+                });
+            }
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildOptsPayload,
+        }
+    }
+}
+
+impl<const N: usize> TcpBuilder<TcpBuildPayload, N> {
+    /// Add a payload consisting of raw bytes to the TCP packet.
+    #[inline]
+    pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<TcpBuildFinal, N> {
+        'insert_data: {
+            if self.error.is_some() {
+                break 'insert_data
+            }
+
+            if self.data.remaining() < data.len() {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "TCP Payload serialization exceeded available buffer size",
+                });
+                break 'insert_data
+            }
+
+            let Ok(data_len) = u16::try_from(data.len() + 8) else {
+                self.error = Some(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InvalidSize,
+                    reason: "TCP Payload serialization exceeded UDP maximum possible length",
+                });
+                break 'insert_data
+            };
+
+            let len_start = self.layer_start + 4;
+            let len_end = self.layer_start + 6;
+
+            // Set data length field
+            self.data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
+
+            // Set data
+            self.data.append(data);
+        }
+
+        TcpBuilder {
+            layer_start: self.layer_start,
+            data: self.data,
+            error: self.error,
+            phase: TcpBuildFinal,
+        }
+    }
+
+    /// Add a payload to the UDP packet.
+    /// 
+    /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
+    /// several consecutive layers can be constructed at once using these closures in a nested
+    /// manner.
+    #[inline]
+    pub fn payload(self, payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>) -> Result<Buffer<N>, ValidationError> {
+        if let Some(error) = self.error {
+            return Err(error)
+        }
+        let mut data = payload_build_fn(self.data)?;
+        let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
+            return Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InvalidSize,
+                reason: "TCP Payload serialization exceeded UDP maximum possible length",
+            })
+        };
+
+        let len_start = self.layer_start + 4;
+        let len_end = self.layer_start + 6;
+
+        // Set data length field
+        data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
+        Ok(data)
+    }
+}
+
+impl<const N: usize> UdpBuilder<UdpBuildFinal, N> {
+    #[inline]
+    pub fn build(self) -> Result<Buffer<N>, ValidationError> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.data),
         }
     }
 }
@@ -975,97 +1143,6 @@ impl From<u16> for TcpFlags {
 }
 
 const MAX_TCP_OPTIONS_LEN: usize = 40;
-
-pub struct TcpOptionsBuilder {
-    data: [u8; MAX_TCP_OPTIONS_LEN],
-    len: usize,
-    err_reason: Option<&'static str>,
-    is_end: bool,
-}
-
-impl TcpOptionsBuilder {
-    #[inline]
-    pub fn new() -> Self {
-        TcpOptionsBuilder {
-            data: [0; MAX_TCP_OPTIONS_LEN],
-            len: 0,
-            err_reason: None,
-            is_end: false,
-        }
-    }
-
-    pub fn with_ref(mut self, option: TcpOptionRef<'_>) -> Self {
-        if self.err_reason.is_some() {
-            // pass
-        } else if self.is_end {
-            self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
-        } else if self.len + option.option_len() > MAX_TCP_OPTIONS_LEN {
-            self.err_reason =
-                Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
-        } else {
-            if option.option_type() == 0 {
-                self.is_end = true;
-            }
-            self.data[self.len..self.len + option.option_len()].copy_from_slice(option.bytes);
-            self.len += option.option_len()
-        }
-
-        self
-    }
-
-    pub fn with(mut self, option: TcpOption) -> Self {
-        if self.err_reason.is_some() {
-            // pass
-        } else if self.is_end {
-            self.err_reason = Some("TCP option added after Eool (End of Options List) marker");
-        } else if self.len + option.option_length() > MAX_TCP_OPTIONS_LEN {
-            self.err_reason =
-                Some("TCP options would take too many bytes to represent (maximum 40 bytes)");
-        } else {
-            if option.option_type() == 0 {
-                self.is_end = true;
-            }
-
-            self.data[self.len] = option.option_type();
-            if option.option_type() > 1 {
-                self.data[self.len + 1] = option.option_length() as u8;
-                self.data[self.len + 2..self.len + option.option_length()]
-                    .copy_from_slice(option.option_data());
-            }
-        }
-
-        self
-    }
-
-    pub fn build_mut(self, tcp: &mut TcpMut<'_>) -> Result<(), &'static str> {
-        match self.err_reason {
-            Some(e) => Err(e),
-            None => {
-                let extra_bytes = tcp.data.len() - tcp.len;
-                let padded_len = utils::padded_length::<4>(self.len);
-                let data_offset = 5 + (padded_len / 4);
-
-                if data_offset > tcp.data_offset() && data_offset - tcp.data_offset() > extra_bytes
-                {
-                    Err("insufficient bytes in TcpMut to add TCP options")
-                } else if data_offset == tcp.data_offset() {
-                    tcp.data[20..20 + data_offset * 4].copy_from_slice(&self.data[..padded_len]);
-                    Ok(())
-                } else {
-                    Ok(())
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub fn build(self) -> Result<TcpOptions, &'static str> {
-        match self.err_reason {
-            None => Ok(TcpOptions::from_bytes_unchecked(&self.data[..self.len])),
-            Some(e) => Err(e),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct TcpOptions {
@@ -1286,37 +1363,149 @@ impl<'a> Iterator for TcpOptionsIterRef<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct TcpOption {
-    option_type: u8,
-    value: Option<Vec<u8>>,
+const TCP_OPT_KIND_EOOL: u8 = 0;
+const TCP_OPT_KIND_NOP: u8 = 1;
+const TCP_OPT_KIND_MSS: u8 = 2;
+const TCP_OPT_KIND_WSCALE: u8 = 3;
+const TCP_OPT_KIND_SACK_PERMITTED: u8 = 4;
+const TCP_OPT_KIND_SACK: u8 = 5;
+const TCP_OPT_KIND_TIMESTAMP: u8 = 8;
+const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
+const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
+const TCP_OPT_KIND_MPTCP: u8 = 29;
+
+
+
+pub enum TcpOption {
+    /// End of Options List.
+    /// 
+    /// This option marks the final option in the list of TCP options; any leftover bytes following
+    /// this option are considered to be padding. This value is not necessary if the final TCP
+    /// option consumes all remaining bytes in the TCP options field.
+    Eool,
+    /// No operation.
+    /// 
+    /// This may be used to align option fields on 32-bit boundaries to improve performance.
+    Nop,
+    /// Maximum Segment Size.
+    /// 
+    /// The MSS is the maximum amount of data (in bytes) that the sender of this option will accept
+    /// within a single IP segment. Note that this value only represents the MSS of the sender, not
+    /// that of intermediate routers between the sender and recipient, so large MSS values may lead
+    /// to IP fragmentation.
+    Mss(TcpOptionMss),
+    /// Window Scaling.
+    /// 
+    /// Scales the `window` value in the TCP packet by a factor of 2^`wscale`. This option enables
+    /// window sizes as large as 1 gigabyte, thereby facilitating higher bandwidth traffic over TCP.
+    /// This option is only used in the SYN segment of each peer during a TCP 3-way handshake.
+    Wscale(TcpOptionWscale),
+    /// Selective Acknowledgement Permitted.
+    /// 
+    /// Indicates that the sender of the TCP option supports Selective Acknowledgement. This option
+    /// is only used in the SYN segment of each peer during a TCP 3-way handshake, and selective
+    /// acknowledgement is only enabled if both sides indicate support for it.
+    SackPermitted,
+    /// Selective Acknowledgement.
+    /// 
+    /// Indicates chunks of data that are acknowledged as being received by the peer.
+    Sack(TcpOptionSack),
+    /// TCP Timestamp.
+    /// 
+    /// Indicates when a packet was sent relative to other recieved packets. The time value is not
+    /// guaranteed to be aligned to the system clock.
+    Timestamp(TcpOptionTimestamp),
+    /// User Timeout option.
+    /// 
+    /// Controls how long transmitted data may be left unacknowledged before a connection is
+    /// dropped. See [RFC 5482](https://datatracker.ietf.org/doc/html/rfc5482) for details.
+    UserTimeout(TcpOptionUserTimeout),
+    /// TCP Authentication Option (TCP-AO).
+    /// 
+    /// For additional details, see [RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925).
+    TcpAo(TcpOptionAuthentication),
+    /// Multipath TCP (MPTCP).
+    /// 
+    /// TODO fill out
+    Mptcp(TcpOptionMultipath),
+    /// Padding bytes following Eool.
+    /// 
+    /// This is NOT an actual TCP option; rather, it is used only after [`TcpOpt::Eool`] to align
+    /// TCP options to a 4-byte word boundary.
+    Padding(TcpOptionPadding),
+    /// A TCP option with an unknown `kind` (i.e. different from listed above).
+    Unknown(TcpOptionUnknown),
 }
 
+pub struct TcpOptionMss(pub u16);
+
+pub struct TcpOptionWscale(pub u8);
+
+pub struct TcpOptionSack {
+    /// The list of blocks being selectively acknowledged. Each tuple represents (begin, end)
+    /// pointers to a block of data that has been acknowledged.
+    pub blocks_acked: [(u32, u32); 4],
+    /// The number of blocks present in `blocks_acked` (1-4).
+    pub blocks_acked_cnt: usize,
+}
+
+pub struct TcpOptionTimestamp {
+    pub ts: u32,
+    pub prev_ts: u32,
+}
+
+pub struct TcpOptionUserTimeout {
+    granularity: UserTimeoutGranularity,
+    timeout: u16,
+}
+
+impl TcpOptionUserTimeout {
+    #[inline]
+    pub fn granularity(&self) -> UserTimeoutGranularity {
+        self.granularity
+    }
+
+    #[inline]
+    pub fn timeout(&self) -> u16 {
+        self.timeout
+    }
+
+    #[inline]
+    pub fn set_granularity(&mut self, granularity: UserTimeoutGranularity) {
+        self.granularity = granularity;
+    }
+
+    #[inline]
+    pub fn set_timeout(&self, timeout: u16) {
+        self.timeout = cmp::min(timeout, u16::MAX >> 1); // Saturate at 15-bit maximum value
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UserTimeoutGranularity {
+    Minute,
+    Second,
+}
+
+pub struct TcpOptionAuthentication {
+    pub opt_len: usize,
+}
+
+pub struct TcpOptionMultipath {
+    pub opt_len: usize,
+}
+
+pub struct TcpOptionUnknown {
+    pub kind: u8,
+    pub value: Buffer<38>, // 40 bytes maximum in options, minus 2 for `kind` and `length`
+}
+
+pub struct TcpOptionPadding {
+    pub padding: Buffer<39>, // 40 bytes maximum in options, minus 1 for `Eool`
+}
+
+
 impl TcpOption {
-    #[inline]
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
-        Self::validate(bytes)?;
-        Ok(Self::from_bytes_unchecked(bytes))
-    }
-
-    #[inline]
-    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
-        TcpOption {
-            option_type: bytes[0],
-            value: if bytes[0] == TcpOptionType::Eool as u8 || bytes[0] == TcpOptionType::Noop as u8
-            {
-                None
-            } else {
-                Some(Vec::from(&bytes[2..(bytes[1] as usize)]))
-            },
-        }
-    }
-
-    #[inline]
-    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        TcpOptionRef::validate(bytes)
-    }
-
     #[inline]
     pub fn byte_len(&self) -> usize {
         match self.option_type {
@@ -1326,16 +1515,36 @@ impl TcpOption {
     }
 
     #[inline]
-    pub fn option_type(&self) -> u8 {
-        self.option_type
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
+        Self::validate(bytes)?;
+        Ok(Self::from_bytes_unchecked(bytes))
     }
 
     #[inline]
-    pub fn option_length(&self) -> usize {
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        match bytes[0] {
+            0 => TcpOption::Eool,
+            1 => TcpOption::Nop,
+            2 => {
+                let mss = TcpOptionMss(u16::from_be_bytes(bytes[2]));
+
+                TcpOption::Mss(mss)
+            }
+        }
+    }
+
+    /// The length (in bytes) of the encoded TCP option.
+    #[inline]
+    pub fn len(&self) -> usize {
         match self.option_type {
             0 | 1 => 1,
             _ => self.value.as_ref().unwrap().len() + 2,
         }
+    }
+
+    #[inline]
+    pub fn option_type(&self) -> u8 {
+        self.option_type
     }
 
     #[inline]
@@ -1360,6 +1569,111 @@ impl TcpOption {
             },
         }
     }
+
+    #[inline]
+    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
+        if let Some(TCP_OPT_KIND_EOOL | TCP_OPT_KIND_NOP) = bytes.first() {
+            return if bytes.len() == 1 {
+                Ok(())
+            } else {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
+                    reason: "excess bytes at end of single-byte TCP Option"
+                })
+            }
+        }
+
+        let (Some(kind), Some(length)) = (bytes.get(0), bytes.get(1)) else {
+            Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InsufficientBytes,
+                reason: "insufficient bytes in TCP Option for Kind/Length fields"
+            })
+        };
+
+        let Some(value) = bytes.get(2..2 + length) else {
+            return Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InsufficientBytes,
+                reason: "insufficient bytes for TCP option value"
+            })
+        };
+
+        if bytes.len() != 2 + length {
+            return Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::ExcessBytes(bytes.len() - length - 2),
+                reason: "excess bytes at end of TCP Option"
+            })
+        };
+
+        match kind {
+            TCP_OPT_KIND_MSS => if length == 2 {
+                Ok(TcpOption::Mss(TcpOptionMss(u16::from_be_bytes(value.try_into().uwnrap()))))
+            } else {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InvalidValue,
+                    reason: "unexpected number of bytes for Maximum Segment Size TCP Option"
+                })
+            }
+            TCP_OPT_KIND_WSCALE => if length == 1 {
+                Ok(TcpOption::Wscale(TcpOptionWscale(value[0])))
+            } else {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InvalidValue,
+                    reason: "unexpected number of bytes for Window Scale TCP Option"
+                })
+            }
+            TCP_OPT_KIND_SACK_PERMITTED => if length == 0 {
+                Ok(TcpOption::SackPermitted)
+            } else {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InvalidValue,
+                    reason: "unexpected number of bytes for Sack Permitted TCP Option"
+                })
+            }
+            TCP_OPT_KIND_SACK => if length % 8 == 0 && length > 0 && length <= 32 {
+                for _ in 0..length / 8 {
+                    
+                }
+            }
+
+const TCP_OPT_KIND_TIMESTAMP: u8 = 8;
+const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
+const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
+const TCP_OPT_KIND_MPTCP: u8 = 29;
+
+            Some(_) => match bytes.get(1) {
+                Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.len().checked_sub(len as usize) {
+                    Some(0) => Ok(()),
+                    Some(remaining) => Err(ValidationError {
+                        layer: Tcp::name(),
+                        class: ValidationErrorClass::ExcessBytes(remaining),
+                        reason: "excess bytes at end of sized TCP option",
+                    }),
+                    None => Err(ValidationError {
+                        layer: Tcp::name(),
+                        class: ValidationErrorClass::InvalidValue,
+                        reason: "length of TCP Option data exceeded available bytes"
+                    }),
+                },
+                _ => Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::InvalidValue,
+                    reason: "insufficient bytes available to read TCP Option--missing length byte field"
+                }),
+            },
+            None => Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InvalidValue,
+                reason: "insufficient bytes available to read TCP Option--missing option_type byte field",
+            })
+        }
+    }
 }
 
 impl From<&TcpOptionRef<'_>> for TcpOption {
@@ -1380,22 +1694,7 @@ impl From<TcpOptionRef<'_>> for TcpOption {
     }
 }
 
-pub struct TcpOptionRef<'a> {
-    bytes: &'a [u8],
-}
-
-impl<'a> TcpOptionRef<'a> {
-    #[inline]
-    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
-        Self::validate(bytes)?;
-        Ok(Self::from_bytes_unchecked(bytes))
-    }
-
-    #[inline]
-    pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        TcpOptionRef { bytes }
-    }
-
+/*
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match bytes.first() {
@@ -1435,34 +1734,4 @@ impl<'a> TcpOptionRef<'a> {
             })
         }
     }
-
-    #[inline]
-    pub fn option_len(&self) -> usize {
-        self.bytes.len()
-    }
-
-    #[inline]
-    pub fn option_type(&self) -> u8 {
-        self.bytes[0]
-    }
-
-    #[inline]
-    pub fn option_data(&self) -> &[u8] {
-        match &self.bytes[0] {
-            0 | 1 => &[],
-            _ => &self.bytes[2..self.bytes[1] as usize],
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum TcpOptionType {
-    Eool = 0,
-    Noop = 1,
-    Mss = 2,
-    Wscale = 3,
-    SackPermitted = 4,
-    Sack = 5,
-    Timestamp = 8,
-}
+*/

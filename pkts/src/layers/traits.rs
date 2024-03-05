@@ -22,15 +22,15 @@ use pkts_macros::layer_metadata;
 /// An object-safe base trait for protocol layers that is extended by all `Layer` trait variants.
 ///
 /// The [`BaseLayer`] trait enables packet layers of different implementations (e.g. [`Layer`],
-/// [`LayerRef`] and [`LayerMut`]) to be used interchangably for certain operations. For instance,
+/// [`LayerRef`]) to be used interchangably for certain operations. For instance,
 /// concatenation of packets is achieved via this type in the [`BaseLayerAppend`]
 /// and [`core::ops::Div`] traits.
 pub trait BaseLayer: ToBoxedLayer + LayerLength {
     /// The name of the layer, usually (though not guaranteed to be) the same as the name of the
     /// struct.
     ///
-    /// For [`LayerRef`] and [`LayerMut`] types, this will return the name of the layer without
-    /// 'Ref' or 'Mut' appended to it (i.e. the same as their associated [`Layer`] type).
+    /// For [`LayerRef`] types, this will return the name of the layer without 'Ref' appended to
+    /// it (i.e. the same as their associated [`Layer`] type).
     fn layer_name(&self) -> &'static str;
 
     /// Static metadata associated with the given layer. This method is normally only used
@@ -47,8 +47,8 @@ pub trait LayerName {
     /// The name of the layer, usually (though not guaranteed to be) the same as the name of the
     /// struct.
     ///
-    /// For [`LayerRef`] and [`LayerMut`] types, this will return the name of the layer without
-    /// 'Ref' or 'Mut' appended to it (i.e. the same as their associated [`Layer`] type).
+    /// For [`LayerRef`] types, this will return the name of the layer without 'Ref' appended to
+    /// it (i.e. the same as their associated [`Layer`] type).
     fn name() -> &'static str;
 }
 
@@ -59,9 +59,9 @@ pub trait LayerLength {
     /// This length includes the length of any sublayers (i.e. the length is equal to the layer's
     /// header plus its entire payload).
     ///
-    /// The length of a [`Layer`] or [`LayerMut`] may change when certain operations are performed,
-    /// such as when a new layer is appended to an existing one or when a variable-length field is
-    /// modified. The length of a [`LayerRef`] always remains constant.
+    /// The length of a [`Layer`] may change when certain operations are performed, such as when a
+    /// new layer is appended to an existing one or when a variable-length field is modified. The
+    /// length of a [`LayerRef`] always remains constant.
     fn len(&self) -> usize;
 }
 
@@ -394,7 +394,7 @@ impl<T: BaseLayerAppend + LayerObject> LayerAppend for T {}
 
 /// Represents a distinct protocol layer that may encapsulate data and/or other layers.
 ///
-/// This is one of three layer trait variants: [`Layer`], [`LayerRef`], and [`LayerMut`].
+/// This is one of two layer trait variants: [`Layer`] and [`LayerRef`].
 /// This general layer type is distinct from the others in that it does not reference an external
 /// byte slice--all of its internal types are owned by the layer. Individual data fields can be
 /// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
@@ -468,7 +468,7 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
 
 /// Represents a distinct protocol layer that may encapsulate data and/or other layers.
 ///
-/// This is one of three layer trait variants: [`Layer`], [`LayerRef`], and [`LayerMut`].
+/// This is one of two layer trait variants: [`Layer`] and [`LayerRef`].
 /// This general layer type references an immutable byte slice, and is best suited for efficiently
 /// retrieving individual layer fields or payload data from a given packet. This type can be easily
 /// converted into its corresponding [`Layer`] type if desired.
@@ -479,90 +479,6 @@ pub trait LayerRef<'a>:
     + Into<Vec<u8>>
     + LayerName
     + LayerRefIndex<'a>
-    + ToOwnedLayer
-{
-}
-
-/// A trait for mutably indexing into sublayers of a [`LayerRef`] type.
-pub trait LayerMutIndex<'a>: LayerRefIndex<'a> + LayerIdentifier {
-    /// Retrieves a mutable reference to the first sublayer of type `T`, if such a sublayer exists.
-    ///
-    /// If the layer type `T` is the same type as the base layer (`self`), this method will
-    /// return a reference to the base layer. For cases where a sublayer of the same type as
-    /// the base layer needs to be indexed into, refer to `get_nth_layer()`.
-    fn get_layer_mut<T: LayerMut<'a> + FromBytesMut<'a>>(&'a mut self) -> Option<T>;
-
-    /// Retrieves a mutable reference to the `n`th sublayer of type `T`, if such a sublayer exists.
-    ///
-    /// The `n` parameter is one-indexed, so a method call of `pkt.get_nth_layer<L>(1)`
-    /// is functionally equivalent to `pkt.get_layer<L>()`. Passing in an index of 0 will
-    /// lead to `None` being returned.
-    ///
-    /// Note that the base layer counts towards the index if it is of type `T`.
-    fn get_nth_layer_mut<T: LayerMut<'a> + FromBytesMut<'a> + BaseLayerMetadata>(
-        &'a mut self,
-        n: usize,
-    ) -> Option<T>;
-
-    /// Retrieves a mutable reference to the first sublayer of type `T`.
-    ///
-    /// If the layer type `T` is the same type as the base layer (`self`), this method will
-    /// return a reference to the base layer. For cases where a sublayer of the same type as
-    /// the base layer needs to be indexed into, refer to `get_nth_layer()`.
-    ///
-    /// # Panics
-    ///
-    /// If no layer of the given type exists within the sublayers, this method will panic.
-    #[inline]
-    fn index_layer_mut<T: LayerMut<'a> + FromBytesMut<'a>>(&'a mut self) -> T {
-        let layer_name = self.layer_name();
-        self.get_layer_mut().unwrap_or_else(|| {
-            panic!(
-                "layer {} not found in instance of {} when index_layer() called",
-                T::name(),
-                layer_name
-            )
-        })
-    }
-
-    /// Retrieves a mutable reference to the `n`th sublayer of type `T`.
-    ///
-    /// The `n` parameter is one-indexed, so a method call of `pkt.get_nth_layer<L>(1)`
-    /// is functionally equivalent to `pkt.get_layer<L>()`. Passing in an index of 0 will
-    /// lead to `None` being returned.
-    ///
-    /// # Panics
-    ///
-    /// If no layer of the given type exists within the sublayers, this method will panic.
-    #[inline]
-    fn index_nth_layer_mut<T: LayerRef<'a> + FromBytesRef<'a> + BaseLayerMetadata>(
-        &'a self,
-        n: usize,
-    ) -> T {
-        self.get_nth_layer(n).unwrap_or_else(|| {
-            panic!(
-                "{} layer not found in instance of {} when index_nth_layer_mut() called",
-                T::name(),
-                self.layer_name()
-            )
-        })
-    }
-}
-
-/// Represents a distinct protocol layer that may encapsulate data and/or other layers.
-///
-/// This is one of three layer trait variants: [`Layer`], [`LayerRef`], and [`LayerMut`].
-/// This general layer type references a mutable byte slice, and is best suited for efficiently
-/// accessing and modifying individual layer fields or payload data from a given packet when only
-/// small changes are being made. This type can be easily converted into its corresponding
-/// [`Layer`] type if desired.
-pub trait LayerMut<'a>:
-    LayerIdentifier
-    + BaseLayerAppend
-    + Into<&'a [u8]>
-    + Into<Vec<u8>>
-    + LayerMutIndex<'a>
-    + LayerName
     + ToOwnedLayer
 {
 }

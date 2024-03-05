@@ -10,7 +10,7 @@
 //!
 //!
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
 use crate::layers::traits::extras::*;
@@ -288,108 +288,6 @@ impl<'a> Validate for EtherRef<'a> {
                 _ => RawRef::validate(&curr_layer[14..]), // Add new IP protocols here
             },
             _ => RawRef::validate(&curr_layer[14..]), // Add new L3 protocols here
-        }
-    }
-}
-
-/// A mutable reference to the basic 802.3 Ethernet frame, which consists
-/// of source and destination Ethernet addresses, Ether Type and payload.
-/// This `Layer` matches the structure of "cooked" L2 frames in Linux,
-/// as well as that of general 802.3 Ethernet packets, provided they do
-/// not contain an 802.1Q VLAN within the header or a checksum at the
-/// end of the payload.
-#[derive(Debug, LayerMut, StatelessLayer)]
-#[owned_type(Ether)]
-#[ref_type(EtherRef)]
-#[metadata_type(EtherMetadata)]
-pub struct EtherMut<'a> {
-    #[data_field]
-    data: &'a mut [u8],
-    #[data_length_field]
-    length: usize,
-}
-
-impl<'a> EtherMut<'a> {
-    /// The source MAC address contained within the Ethernet frame.
-    #[inline]
-    pub fn src_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 0)
-            .expect("insufficient bytes in Ether layer to extract Source MAC Address field")
-    }
-
-    /// Sets the source MAC address contained within the Ethernet frame
-    /// to the provided value.
-    #[inline]
-    pub fn set_src_mac(&mut self, src_mac: [u8; 6]) {
-        self.data
-            .get_mut(0..6)
-            .expect("insufficient bytes in Ether layer to replace Source MAC Address field")
-            .copy_from_slice(src_mac.as_slice());
-    }
-
-    /// The destination MAC address contained within the Ethernet frame.
-    #[inline]
-    pub fn dst_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 6)
-            .expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
-    }
-
-    /// Sets the destination MAC address contained within the Ethernet frame
-    /// to the provided value.
-    #[inline]
-    pub fn set_dst_mac(&mut self, dst_mac: [u8; 6]) {
-        self.data
-            .get_mut(6..12)
-            .expect("insufficient bytes in Ether layer to replace Destination MAC Address field")
-            .copy_from_slice(dst_mac.as_slice());
-    }
-
-    /// The Ether Type contained within the Ethernet frame.
-    ///
-    /// This field determines the type and structure of the Ethernet's
-    /// payload.
-    #[inline]
-    pub fn eth_type(&self) -> u16 {
-        u16::from_be_bytes(
-            *utils::get_array(self.data, 12)
-                .expect("insufficient bytes in Ether layer to extract EtherType field"),
-        )
-    }
-
-    /// Sets the Ether Type contained within the Ethernet frame.
-    ///
-    /// This field determines the type and structure of the Ethernet's
-    /// payload.
-    #[inline]
-    pub fn set_eth_type(&mut self, eth_type: u16) {
-        self.data
-            .get_mut(12..14)
-            .expect("insufficient bytes in Ether layer to replace Ether Type field")
-            .copy_from_slice(eth_type.to_be_bytes().as_slice());
-    }
-
-    /// The payload bytes of the Ethernet frame.
-    #[inline]
-    pub fn payload_raw(&self) -> &[u8] {
-        self.data
-            .get(14..self.length)
-            .expect("insufficient bytes in Ether layer to extract payload")
-    }
-
-    /// A mutable reference to the payload bytes of the Ethernet frame.
-    #[inline]
-    pub fn payload_mut_raw(&mut self) -> &mut [u8] {
-        self.data
-            .get_mut(14..self.length)
-            .expect("insufficient bytes in Ether layer to extract payload")
-    }
-}
-
-impl<'a> From<&'a EtherMut<'a>> for EtherRef<'a> {
-    #[inline]
-    fn from(value: &'a EtherMut<'a>) -> Self {
-        EtherRef {
-            data: &value.data[..value.length],
         }
     }
 }

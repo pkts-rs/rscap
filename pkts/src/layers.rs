@@ -40,7 +40,7 @@ use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
 
-use pkts_macros::{Layer, LayerMut, LayerRef, StatelessLayer};
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
 
@@ -209,64 +209,5 @@ impl Validate for RawRef<'_> {
     #[inline]
     fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         Ok(())
-    }
-}
-
-/// A mutable reference to a raw [`Layer`] composed of unstructured bytes.
-///
-/// This type is primarily used when inner layers cannot be inferred or interpreted
-/// automatically by a given method call, or when payload layer data is literally
-/// meant to be interpreted as an opaque array of bytes. A [`Raw`] layer does not
-/// necessarily indicate the presence of only one `Layer` in its contained
-/// bytes; there may be multiple encapsulated sublayers within a `Raw` payload,
-/// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
-/// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
-/// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
-///
-/// [`Ipv4`]: crate::layers::ip::Ipv4
-/// [`Tcp`]: crate::layers::tcp::Tcp
-/// [`Udp`]: crate::layers::udp::Udp
-#[derive(Debug, LayerMut, StatelessLayer)]
-#[owned_type(Raw)]
-#[ref_type(RawRef)]
-#[metadata_type(RawMetadata)]
-pub struct RawMut<'a> {
-    #[data_field]
-    data: &'a mut [u8],
-    #[data_length_field]
-    len: usize,
-}
-
-impl RawMut<'_> {
-    /// A slice of the entire contents of the `Raw` layer.
-    #[inline]
-    pub fn data(&self) -> &[u8] {
-        &self.data[..self.len]
-    }
-
-    /// A mutable slice of the entire contents of the `Raw` layer.
-    #[inline]
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.data[..self.len]
-    }
-}
-
-impl<'a> FromBytesMut<'a> for RawMut<'a> {
-    #[inline]
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self {
-        RawMut {
-            len: length,
-            data: bytes,
-        }
-    }
-}
-
-impl<'a> From<&'a RawMut<'a>> for RawRef<'a> {
-    #[inline]
-    fn from(value: &'a RawMut<'a>) -> Self {
-        RawRef {
-            data: &value.data[..value.len],
-        }
     }
 }

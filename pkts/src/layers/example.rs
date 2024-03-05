@@ -20,6 +20,7 @@ pub struct Example {}
 impl Example {}
 
 #[doc(hidden)]
+#[allow(unused_variables)]
 impl FromBytesCurrent for Example {
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         todo!()
@@ -36,6 +37,8 @@ impl LayerLength for Example {
     }
 }
 
+
+#[allow(unused_variables)]
 impl LayerObject for Example {
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
         todo!()
@@ -62,6 +65,7 @@ impl LayerObject for Example {
     }
 }
 
+#[allow(unused_variables)]
 impl ToBytes for Example {
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         todo!()
@@ -78,18 +82,21 @@ pub struct ExampleRef<'a> {
 
 impl<'a> ExampleRef<'a> {}
 
+#[allow(unused_variables)]
 impl<'a> FromBytesRef<'a> for ExampleRef<'a> {
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
         todo!()
     }
 }
 
+#[allow(unused_variables)]
 impl<'a> LayerOffset for ExampleRef<'a> {
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         todo!()
     }
 }
 
+#[allow(unused_variables)]
 impl<'a> Validate for ExampleRef<'a> {
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
