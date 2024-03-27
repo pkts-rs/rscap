@@ -254,11 +254,7 @@ pub struct PacketTxFrameIter<'a> {
 impl<'a> PacketTxFrameIter<'a> {
     #[inline]
     pub fn next_frame(&'a mut self) -> Option<TxFrameVariant<'a>> {
-        let Some(offset) = self.curr_offset else {
-            return None;
-        };
-
-        let (frame, new_offset) = Self::next_with_offset(self.frames, self.frame_size, offset);
+        let (frame, new_offset) = Self::next_with_offset(self.frames, self.frame_size, self.curr_offset?);
         self.curr_offset = new_offset;
         Some(frame)
     }
@@ -571,17 +567,14 @@ pub struct PacketRxFrameIter<'a> {
 impl<'a> PacketRxFrameIter<'a> {
     #[inline]
     pub fn next_frame(&'a mut self) -> Option<RxFrame<'a>> {
-        let Some(offset) = self.curr_offset else {
-            return None;
-        };
-
         let (frame, new_offset) = Self::next_with_offset(
             self.frames,
             self.frame_cnt,
             self.init_offset,
-            offset,
+            self.curr_offset?,
             self.pkt_layer,
         )?;
+
         self.frame_cnt -= 1;
         self.curr_offset = new_offset;
         Some(frame)

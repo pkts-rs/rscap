@@ -1067,11 +1067,7 @@ impl WrappingCmp for u16 {
 
     #[inline]
     fn gt_wrapped(&self, other: Self::Other) -> bool {
-        if self.diff_wrapped(other) >= (1 << 15) {
-            true
-        } else {
-            false
-        }
+        self.diff_wrapped(other) >= (1 << 15)
     }
 
     #[inline]
@@ -1142,7 +1138,6 @@ impl SctpFragment {
     fn shift_links(&mut self, start: usize, new_start: usize) {
         if new_start == start {
             // Links aren't moving at all--don't need to copy bytes
-            return;
         } else if new_start < start {
             let shift_left = start - new_start;
 
@@ -1487,9 +1482,7 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
     fn put_unfiltered_unchecked(&mut self, pkt: &[u8]) {
         let sctp = SctpRef::from_bytes_unchecked(pkt);
 
-        let mut data_chunks = sctp.payload_chunks();
-
-        while let Some(payload) = data_chunks.next() {
+        for payload in sctp.payload_chunks() {
             let flags = payload.flags();
             if flags.beginning_fragment() && flags.ending_fragment() {
                 if flags.unordered() {
@@ -1505,7 +1498,7 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
                     Some(payload.stream_seq())
                 };
 
-                let frags = self.fragments.entry(ssn).or_insert(Vec::new());
+                let frags = self.fragments.entry(ssn).or_default();
 
                 match frags.binary_search_by(|(t, _, _)| t.cmp(&tsn)) {
                     Ok(idx) => {

@@ -185,7 +185,7 @@ impl L2Socket {
             let if_name_ptr = if_name.as_mut_ptr();
 
             let res = unsafe { libc::if_indextoname(addr.interface().index(), if_name_ptr) };
-            if res == ptr::null_mut() {
+            if res.is_null() {
                 return Err(io::Error::last_os_error());
             }
 
@@ -709,10 +709,7 @@ impl L2MappedSocket {
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let Some((rx_frame, next_rx)) = self.rx_ring.next_frame(self.next_rx) else {
-            return None;
-        };
-
+        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
         self.next_rx = next_rx;
 
         Some(rx_frame)
@@ -938,10 +935,7 @@ impl L2RxMappedSocket {
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let Some((rx_frame, next_rx)) = self.rx_ring.next_frame(self.next_rx) else {
-            return None;
-        };
-
+        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
         self.next_rx = next_rx;
 
         Some(rx_frame)

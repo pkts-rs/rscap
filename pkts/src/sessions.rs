@@ -67,11 +67,11 @@ pub trait Session {
 
     /// Creates a packet from the given bytes, checking that they conform to
     /// a valid packet structure for the current session state.
-    fn convert<'b>(bytes: &'b [u8]) -> Result<Self::Out<'b>, ValidationError>;
+    fn convert(bytes: &[u8]) -> Result<Self::Out<'_>, ValidationError>;
 
     /// Creates a packet from the given bytes without checking the syntactical
     /// validity of those bytes.
-    fn convert_unchecked<'b>(bytes: &'b [u8]) -> Self::Out<'b>;
+    fn convert_unchecked(bytes: &[u8]) -> Self::Out<'_>;
 
     /// Checks to see whether the given bytes form a syntactically valid packet
     /// within the context of the current sesson's state.
