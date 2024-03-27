@@ -1,5 +1,8 @@
 
 
+
+// TODO: make buffer a Buffer<'a> instead?
+
 #[derive(Clone, Debug)]
 pub struct Buffer<const N: usize> {
     buf: [u8; N],
@@ -9,10 +12,7 @@ pub struct Buffer<const N: usize> {
 impl<const N: usize> Buffer<N> {
     #[inline]
     pub fn new() -> Self {
-        Self {
-            buf: [0u8; N],
-            buf_len: 0,
-        }
+        Self::default()
     }
 
     #[inline]
@@ -44,9 +44,21 @@ impl<const N: usize> Buffer<N> {
         self.buf_len
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.buf_len == 0
+    }
+
     /// The number of unused bytes in the buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
         N - self.buf_len
+    }
+}
+
+impl<const N: usize> Default for Buffer<N> {
+    #[inline]
+    fn default() -> Self {
+        Self { buf: [0u8; N], buf_len: 0 }
     }
 }

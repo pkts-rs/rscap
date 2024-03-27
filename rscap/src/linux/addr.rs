@@ -203,7 +203,7 @@ impl FromStr for MacAddr {
             }
         }
 
-        return Ok(Self { addr });
+        Ok(Self { addr })
     }
 }
 
@@ -243,12 +243,12 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
 impl L2Addr for L2AddrIp {
     #[inline]
     fn protocol(&self) -> L2Protocol {
-        return libc::ETH_P_IP;
+        libc::ETH_P_IP
     }
 
     #[inline]
     fn interface(&self) -> Interface {
-        return self.iface;
+        self.iface
     }
 
     #[inline]
@@ -361,12 +361,12 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
 impl L2Addr for L2AddrUnspec {
     #[inline]
     fn protocol(&self) -> L2Protocol {
-        return self.protocol;
+        self.protocol
     }
 
     #[inline]
     fn interface(&self) -> Interface {
-        return self.iface;
+        self.iface
     }
 
     #[inline]

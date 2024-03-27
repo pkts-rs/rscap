@@ -67,7 +67,7 @@ impl Interface {
             }
         }
 
-        return &[];
+        &[]
     }
 }
 

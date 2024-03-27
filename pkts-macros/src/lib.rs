@@ -44,11 +44,10 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
     // let layer_type_index = quote::format_ident!("{}TypeIndex", layer_type);
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
-    if ast
+    if !ast
         .attrs
         .iter()
-        .find(|&a| a.path.is_ident("owned_type"))
-        .is_none()
+        .any(|a| a.path.is_ident("owned_type"))
     {
         let ref_type: syn::Ident = ast
             .attrs
@@ -94,11 +93,10 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                 }
             }
         }));
-    } else if ast
+    } else if !ast
         .attrs
         .iter()
-        .find(|&a| a.path.is_ident("ref_type"))
-        .is_none()
+        .any(|a| a.path.is_ident("ref_type"))
     {
         output.extend(proc_macro::TokenStream::from(quote::quote! {
             impl #impl_generics StatelessLayer for #layer_type #ty_generics #where_clause { }
@@ -158,7 +156,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     output.extend(derive_base_layer_impl(
         &ast.generics,
         &layer_type,
-        &layer_type.to_string().as_str(),
+        layer_type.to_string().as_str(),
         &metadata_type,
     ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
@@ -259,8 +257,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     field
                         .attrs
                         .iter()
-                        .find(|attr| attr.path.is_ident("data_field"))
-                        .is_some()
+                        .any(|attr| attr.path.is_ident("data_field"))
                 })
                 .expect("data_field inner attribute required to derive `LayerRef`")
                 .ident
@@ -275,7 +272,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     output.extend(derive_base_layer_impl(
         &ast.generics,
         &layer_type,
-        &owned_type.to_string().as_str(),
+        owned_type.to_string().as_str(),
         &metadata_type,
     ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {

@@ -39,8 +39,8 @@ impl L2Socket {
                 mem::size_of::<libc::sockaddr_ll>() as u32,
             )
         } {
-            0 => return Ok(()),
-            _ => return Err(io::Error::last_os_error()),
+            0 => Ok(()),
+            _ => Err(io::Error::last_os_error()),
         }
     }
 
@@ -697,7 +697,7 @@ impl L2MappedSocket {
             }
         }
 
-        return frame_variant;
+        frame_variant
     }
 
     /// Retrieves the next frame in the memory-mapped ringbuffer to transmit a packet with.
@@ -878,7 +878,7 @@ impl L2TxMappedSocket {
             }
         }
 
-        return frame_variant;
+        frame_variant
     }
 }
 

@@ -183,7 +183,7 @@ impl PacketTxRing {
         let block = &mut self.blocks[index.blocks_index];
 
         let (frame, new_offset) =
-            PacketTxFrameIter::next_offset(block.frames, block.frame_size, frame_offset);
+            PacketTxFrameIter::next_with_offset(block.frames, block.frame_size, frame_offset);
 
         index.frame_offset = new_offset;
 
@@ -253,12 +253,12 @@ pub struct PacketTxFrameIter<'a> {
 
 impl<'a> PacketTxFrameIter<'a> {
     #[inline]
-    pub fn next(&'a mut self) -> Option<TxFrameVariant<'a>> {
+    pub fn next_frame(&'a mut self) -> Option<TxFrameVariant<'a>> {
         let Some(offset) = self.curr_offset else {
             return None;
         };
 
-        let (frame, new_offset) = Self::next_offset(self.frames, self.frame_size, offset);
+        let (frame, new_offset) = Self::next_with_offset(self.frames, self.frame_size, offset);
         self.curr_offset = new_offset;
         Some(frame)
     }
@@ -268,7 +268,7 @@ impl<'a> PacketTxFrameIter<'a> {
     }
 
     #[inline]
-    fn next_offset(
+    fn next_with_offset(
         frames: &'a mut [u8],
         frame_size: usize,
         offset: usize,
@@ -486,7 +486,7 @@ impl PacketRxRing {
 
         let block = &mut self.blocks[index.blocks_index];
 
-        let (frame, new_offset) = PacketRxFrameIter::next_offset(
+        let (frame, new_offset) = PacketRxFrameIter::next_with_offset(
             block.frames,
             block.packet_cnt(),
             block.block_header().offset_to_first_pkt as usize,
@@ -570,12 +570,12 @@ pub struct PacketRxFrameIter<'a> {
 
 impl<'a> PacketRxFrameIter<'a> {
     #[inline]
-    pub fn next(&'a mut self) -> Option<RxFrame<'a>> {
+    pub fn next_frame(&'a mut self) -> Option<RxFrame<'a>> {
         let Some(offset) = self.curr_offset else {
             return None;
         };
 
-        let (frame, new_offset) = Self::next_offset(
+        let (frame, new_offset) = Self::next_with_offset(
             self.frames,
             self.frame_cnt,
             self.init_offset,
@@ -588,7 +588,7 @@ impl<'a> PacketRxFrameIter<'a> {
     }
 
     #[inline]
-    fn next_offset(
+    fn next_with_offset(
         frames: &'a mut [u8],
         frame_cnt: usize,
         init_offset: usize,
@@ -601,7 +601,7 @@ impl<'a> PacketRxFrameIter<'a> {
 
         // `frames` was initially shifted forward by `offset_to_first_pkt` bytes
         // This, combined with the current frame shift and the packet header and sockaddr shifts, gives us our final adjusted offset value
-        let full_offset = init_offset as usize
+        let full_offset = init_offset
             + curr_offset
             + tpacket_align(mem::size_of::<libc::tpacket3_hdr>())
             + mem::size_of::<libc::sockaddr_ll>();
