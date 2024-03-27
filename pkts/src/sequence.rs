@@ -1081,7 +1081,7 @@ impl WrappingCmp for u16 {
 // 4 byte overhead, potentially for every single 4-byte chunk: 65535 * 2 (plus 2 extra bytes for final null length) = 65536 * 2
 // #[cfg(not(feature = "alloc"))]
 pub struct SctpFragment {
-    buf: [u8; (65536 * 2)], // Must be this size to handle the case where a packet of size 65535 is fragmented into fragments of minimum length (4 bytes, assuming padding is used efficiently)
+    buf: [u8; 65536 * 2], // Must be this size to handle the case where a packet of size 65535 is fragmented into fragments of minimum length (4 bytes, assuming padding is used efficiently)
     last_frag_idx: usize,
     begin_recvd: bool,
     end_recvd: bool,
