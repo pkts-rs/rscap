@@ -16,3 +16,4 @@ custom_layer_selection = ["pkts-macros/custom_layer_selection"]
 
 [dependencies]
 pkts-macros = { path = "../pkts-macros", version = "0.1.3" }
+pkts-common = { path = "../pkts-common", version = "0.1.3" }

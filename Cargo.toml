@@ -1,7 +1,8 @@
 [workspace]
+workspace.resolver = "2"
 members = [
     "rscap",
     "pkts",
     "pkts-macros",
-    "pktspec",
+    "pktspec", "pkts-common",
 ]

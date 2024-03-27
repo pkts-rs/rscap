@@ -14,5 +14,6 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-libc = { version = "0.2" }
+libc = { version = "0.2", path = "../../libc" }
 pkts = { version = "0.1", path = "../pkts" }
+pkts-common = { version = "0.1.3", path = "../pkts-common" }

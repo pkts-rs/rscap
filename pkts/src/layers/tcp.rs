@@ -332,7 +332,7 @@ impl FromBytesCurrent for Tcp {
             window: tcp.window(),
             chksum: None,
             urgent_ptr: tcp.urgent_ptr(),
-            options: TcpOptions::from(tcp.options()),
+            options: TcpOptions { options: None, padding: None, }, // TcpOptions::from(tcp.options()), TODO: uncomment
             payload: None,
         }
     }
@@ -845,9 +845,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
             phase: TcpBuildOptsPayload,
         }
     }
-}
 
-impl<const N: usize> TcpBuilder<TcpBuildPayload, N> {
     /// Add a payload consisting of raw bytes to the TCP packet.
     #[inline]
     pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<TcpBuildFinal, N> {
@@ -920,7 +918,7 @@ impl<const N: usize> TcpBuilder<TcpBuildPayload, N> {
     }
 }
 
-impl<const N: usize> UdpBuilder<UdpBuildFinal, N> {
+impl<const N: usize> TcpBuilder<TcpBuildFinal, N> {
     #[inline]
     pub fn build(self) -> Result<Buffer<N>, ValidationError> {
         match self.error {
@@ -1159,7 +1157,11 @@ impl TcpOptions {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
-        Self::from(TcpOptionsRef::from_bytes_unchecked(bytes))
+        // Self::from(TcpOptionsRef::from_bytes_unchecked(bytes)) TODO: uncomment
+        Self {
+            options: None,
+            padding: None,
+        }
     }
 
     #[inline]
@@ -1170,12 +1172,14 @@ impl TcpOptions {
     #[inline]
     pub fn byte_len(&self) -> usize {
         let padding_len = self.padding.as_ref().map(|p| p.len()).unwrap_or(0);
-        let options_len = self
+        /*let options_len = self
             .options
             .as_ref()
             .map(|opts| opts.iter().map(|opt| opt.byte_len()).sum())
             .unwrap_or(0);
         options_len + padding_len
+        */ // TODO: uncomment this
+        padding_len
     }
 
     #[inline]
@@ -1204,12 +1208,13 @@ impl TcpOptions {
         &mut self.padding
     }
 
+    
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self.options.as_ref() {
             None => (),
             Some(options) => {
                 for option in options.iter() {
-                    option.to_bytes_extended(bytes);
+                    //option.to_bytes_extended(bytes); TODO: uncomment this
                 }
 
                 match self.padding.as_ref() {
@@ -1219,8 +1224,10 @@ impl TcpOptions {
             }
         }
     }
+    
 }
 
+/*
 impl From<&TcpOptionsRef<'_>> for TcpOptions {
     fn from(value: &TcpOptionsRef<'_>) -> Self {
         let (options, padding) = if value.iter().next().is_none() {
@@ -1240,12 +1247,14 @@ impl From<&TcpOptionsRef<'_>> for TcpOptions {
         TcpOptions { options, padding }
     }
 }
+*/
 
+/*
 impl From<TcpOptionsRef<'_>> for TcpOptions {
     fn from(value: TcpOptionsRef<'_>) -> Self {
         Self::from(&value)
     }
-}
+}*/
 
 #[derive(Clone, Copy, Debug)]
 pub struct TcpOptionsRef<'a> {
@@ -1325,7 +1334,7 @@ impl<'a> TcpOptionsRef<'a> {
     #[inline]
     pub fn padding(&self) -> &'a [u8] {
         let mut iter = self.iter();
-        while iter.next().is_some() {}
+        // while iter.next().is_some() {} TODO: uncomment
         &iter.bytes[iter.curr_idx..]
     }
 }
@@ -1336,6 +1345,7 @@ pub struct TcpOptionsIterRef<'a> {
     end_reached: bool,
 }
 
+/*
 impl<'a> Iterator for TcpOptionsIterRef<'a> {
     type Item = TcpOptionRef<'a>;
 
@@ -1361,7 +1371,7 @@ impl<'a> Iterator for TcpOptionsIterRef<'a> {
             None => None,
         }
     }
-}
+}*/
 
 const TCP_OPT_KIND_EOOL: u8 = 0;
 const TCP_OPT_KIND_NOP: u8 = 1;
@@ -1375,7 +1385,7 @@ const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
 const TCP_OPT_KIND_MPTCP: u8 = 29;
 
 
-
+#[derive(Clone, Debug)]
 pub enum TcpOption {
     /// End of Options List.
     /// 
@@ -1437,10 +1447,13 @@ pub enum TcpOption {
     Unknown(TcpOptionUnknown),
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionMss(pub u16);
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionWscale(pub u8);
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionSack {
     /// The list of blocks being selectively acknowledged. Each tuple represents (begin, end)
     /// pointers to a block of data that has been acknowledged.
@@ -1449,11 +1462,13 @@ pub struct TcpOptionSack {
     pub blocks_acked_cnt: usize,
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionTimestamp {
     pub ts: u32,
     pub prev_ts: u32,
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionUserTimeout {
     granularity: UserTimeoutGranularity,
     timeout: u16,
@@ -1477,34 +1492,39 @@ impl TcpOptionUserTimeout {
 
     #[inline]
     pub fn set_timeout(&self, timeout: u16) {
-        self.timeout = cmp::min(timeout, u16::MAX >> 1); // Saturate at 15-bit maximum value
+        //self.timeout = cmp::min(timeout, u16::MAX >> 1); // Saturate at 15-bit maximum value
+        // TODO: uncomment
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum UserTimeoutGranularity {
     Minute,
     Second,
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionAuthentication {
     pub opt_len: usize,
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionMultipath {
     pub opt_len: usize,
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionUnknown {
     pub kind: u8,
     pub value: Buffer<38>, // 40 bytes maximum in options, minus 2 for `kind` and `length`
 }
 
+#[derive(Clone, Debug)]
 pub struct TcpOptionPadding {
     pub padding: Buffer<39>, // 40 bytes maximum in options, minus 1 for `Eool`
 }
 
-
+/*
 impl TcpOption {
     #[inline]
     pub fn byte_len(&self) -> usize {
@@ -1636,17 +1656,15 @@ impl TcpOption {
                     reason: "unexpected number of bytes for Sack Permitted TCP Option"
                 })
             }
-            TCP_OPT_KIND_SACK => if length % 8 == 0 && length > 0 && length <= 32 {
+            TCP_OPT_KIND_SACK => todo!(), /* if length % 8 == 0 && length > 0 && length <= 32 {
                 for _ in 0..length / 8 {
-                    
+                    todo!()       
                 }
-            }
-
-const TCP_OPT_KIND_TIMESTAMP: u8 = 8;
-const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
-const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
-const TCP_OPT_KIND_MPTCP: u8 = 29;
-
+            } */
+            TCP_OPT_KIND_TIMESTAMP => todo!(),
+            TCP_OPT_KIND_USER_TIMEOUT => todo!(),
+            TCP_OPT_KIND_AUTHENTICATION => todo!(),
+            TCP_OPT_KIND_MPTCP => todo!(),
             Some(_) => match bytes.get(1) {
                 Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.len().checked_sub(len as usize) {
                     Some(0) => Ok(()),
@@ -1675,7 +1693,9 @@ const TCP_OPT_KIND_MPTCP: u8 = 29;
         }
     }
 }
+*/
 
+/*
 impl From<&TcpOptionRef<'_>> for TcpOption {
     fn from(value: &TcpOptionRef<'_>) -> Self {
         TcpOption {
@@ -1693,6 +1713,7 @@ impl From<TcpOptionRef<'_>> for TcpOption {
         Self::from(&value)
     }
 }
+*/
 
 /*
     #[inline]
