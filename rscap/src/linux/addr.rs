@@ -10,9 +10,9 @@
 
 //! Link-layer address structures.
 //! 
-//! Link-layer addresses may take different byte formats depending on the layer-2 protocol in use.
+//! Link-layer addresses may take different byte formats depending on the link-layer protocol in use.
 //! To account for this, link-layer addresses are strongly coupled to protocol by defining distinct
-//! address types for each layer-2 protocol available. The union of all of these possible protocols
+//! address types for each link-layer protocol available. The union of all of these possible protocols
 //! is additionally made available as [`L2AddrAny`].
 
 use std::array;
@@ -23,14 +23,14 @@ use crate::Interface;
 
 use pkts_common::Buffer;
 
-/// A layer-2 protocol identifier.
+/// A link-layer protocol identifier.
 /// 
 /// This value corresponds directly to `libc::ETH_P_*` protocol specifier values.
 pub type L2Protocol = i32;
 
-/// Defines a generic layer-2 (link-layer) address.
+/// Defines a generic link-layer address.
 pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
-    /// The layer-2 protocol associated with the address type.
+    /// The link-layer protocol associated with the address type.
     fn protocol(&self) -> L2Protocol;
 
     /// The interface packets are sent to or received from.
