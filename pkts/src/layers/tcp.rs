@@ -1230,21 +1230,22 @@ impl TcpOptions {
         &mut self.padding
     }
 
-    pub fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
-        /*
-        match self.options.as_ref() {
-            None => (),
-            Some(options) => {
-                for option in options.iter() {
-                    //option.to_bytes_extended(bytes); TODO: uncomment this
-                }
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+        bytes.push(0); // TODO: remove
+                       /*
+                       match self.options.as_ref() {
+                           None => (),
+                           Some(options) => {
+                               for option in options.iter() {
+                                   //option.to_bytes_extended(bytes); TODO: uncomment this
+                               }
 
-                match self.padding.as_ref() {
-                    None => (),
-                    Some(p) => bytes.extend(p),
-                }
-            }
-        }*/
+                               match self.padding.as_ref() {
+                                   None => (),
+                                   Some(p) => bytes.extend(p),
+                               }
+                           }
+                       }*/
 
         todo!()
     }

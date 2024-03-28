@@ -626,9 +626,8 @@ impl<'a> Iterator for ControlChunksIterRef<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for chunk in self.chunk_iter.by_ref() {
-            match chunk {
-                ChunkRef::Control(c) => return Some(c),
-                _ => (),
+            if let ChunkRef::Control(c) = chunk {
+                return Some(c);
             }
         }
         None
@@ -647,9 +646,8 @@ impl<'a> Iterator for DataChunksIterRef<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for chunk in self.chunk_iter.by_ref() {
-            match chunk {
-                ChunkRef::Payload(c) => return Some(c),
-                _ => (),
+            if let ChunkRef::Payload(c) = chunk {
+                return Some(c);
             }
         }
         None

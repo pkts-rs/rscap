@@ -52,7 +52,7 @@
 #[cfg(feature = "alloc")]
 use std::collections::{hash_map::RandomState, HashMap, VecDeque};
 
-use core::cmp;
+use core::cmp::{self, Ordering};
 use core::iter::Iterator;
 #[cfg(feature = "alloc")]
 use core::marker::PhantomData;
@@ -234,11 +234,31 @@ fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
     None
 }
 
+struct SequenceLayer {
+    layer: Box<dyn SequenceObject>,
+    validation: ValidateFn,
+    bytes: Option<Vec<u8>>,
+}
+
+impl SequenceLayer {
+    fn new(
+        upper_layer: Box<dyn SequenceObject>,
+        validation: ValidateFn,
+        bytes: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            layer: upper_layer,
+            validation,
+            bytes,
+        }
+    }
+}
+
 #[cfg(feature = "alloc")]
 pub struct LayeredSequence<T: BaseLayer + ToSlice> {
     first: Box<dyn SequenceObject>,
     first_streambuf: Option<Vec<u8>>,
-    layers: Vec<(Box<dyn SequenceObject>, ValidateFn, Option<Vec<u8>>)>,
+    layers: Vec<SequenceLayer>,
     _marker: PhantomData<T>,
 }
 
@@ -275,7 +295,7 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         let mut new_self = self;
         new_self
             .layers
-            .push((Box::new(seq), L::validate, streambuf));
+            .push(SequenceLayer::new(Box::new(seq), L::validate, streambuf));
         new_self
     }
 
@@ -316,11 +336,11 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     #[inline]
     pub fn put_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
         let mut upper_layer_updated = match self.layers.first_mut() {
-            Some((upper, validate, _)) => Self::percolate_up(
+            Some(upper_layer) => Self::percolate_up(
                 self.first.as_mut(),
-                upper.as_mut(),
+                upper_layer.layer.as_mut(),
                 &mut self.first_streambuf,
-                validate,
+                &upper_layer.validation,
             )?,
             None => {
                 self.first.put_unchecked(pkt);
@@ -329,17 +349,19 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
         };
 
         let mut lower_idx = 0;
-        while let Some(((lower, _, streambuf), (upper, validate, _))) =
-            first_two_mut(&mut self.layers[lower_idx..])
-        {
+        while let Some((lower_layer, upper_layer)) = first_two_mut(&mut self.layers[lower_idx..]) {
             if !upper_layer_updated {
                 break;
             }
             // Iteratively 'percolate' the packets up the various layers as defragmentation of lower layers
             // makes higher layer packets available
 
-            upper_layer_updated =
-                Self::percolate_up(lower.as_mut(), upper.as_mut(), streambuf, validate)?;
+            upper_layer_updated = Self::percolate_up(
+                lower_layer.layer.as_mut(),
+                upper_layer.layer.as_mut(),
+                &mut lower_layer.bytes,
+                &upper_layer.validation,
+            )?;
             lower_idx += 1;
         }
 
@@ -399,7 +421,7 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     /// from the final Sequence of this LayeredSequence.
     pub fn get(&mut self) -> Option<&[u8]> {
         match self.layers.last_mut() {
-            Some((s, _, _)) => s.get(),
+            Some(seq) => seq.layer.get(),
             None => self.first.get(),
         }
     }
@@ -1150,31 +1172,33 @@ impl SctpFragment {
     }
 
     fn shift_links(&mut self, start: usize, new_start: usize) {
-        if new_start == start {
-            // Links aren't moving at all--don't need to copy bytes
-        } else if new_start < start {
-            let shift_left = start - new_start;
+        match new_start.cmp(&start) {
+            Ordering::Less => {
+                let shift_left = start - new_start;
 
-            // Links are moving to the left
-            for i in start..self.last_frag_idx + 2 {
-                // Starting from the left, shift each byte left
-                self.buf[i - shift_left] = self.buf[i];
+                // Links are moving to the left
+                for i in start..self.last_frag_idx + 2 {
+                    // Starting from the left, shift each byte left
+                    self.buf[i - shift_left] = self.buf[i];
+                }
+
+                // Update the end pointer (since the links have shifted left)
+                self.last_frag_idx -= shift_left;
             }
+            Ordering::Greater => {
+                // start < new_start
+                let shift_right = new_start - start;
 
-            // Update the end pointer (since the links have shifted left)
-            self.last_frag_idx -= shift_left;
-        } else {
-            // start < new_start
-            let shift_right = new_start - start;
+                // Links are moving to the right
+                for i in (start..self.last_frag_idx + 2).rev() {
+                    // Starting from the right,, shift each byte right
+                    self.buf[i + shift_right] = self.buf[i];
+                }
 
-            // Links are moving to the right
-            for i in (start..self.last_frag_idx + 2).rev() {
-                // Starting from the right,, shift each byte right
-                self.buf[i + shift_right] = self.buf[i];
+                // Update the end pointer (since the links have shifted right)
+                self.last_frag_idx += shift_right;
             }
-
-            // Update the end pointer (since the links have shifted right)
-            self.last_frag_idx += shift_right;
+            _ => (),
         }
     }
 
@@ -1384,12 +1408,18 @@ impl<'a> FragHeader<'a> {
     }
 }
 
+struct SctpFragmentEntry {
+    tsn: u32,
+    flags: DataChunkFlags,
+    data: Vec<u8>,
+}
+
 // Note: it is the caller's responsibility to ensure that packets are input from the same src/dst port, in the same direction, and from the same stream identifier.
 // The `SctpDefrag` is only responsible for ensuring packets of a stream come in order (unless the unordered bit is set) and are defragmented.
 #[cfg(feature = "alloc")]
 pub struct SctpSequence<const WINDOW: usize = 25> {
     filter: Option<Box<PktFilterDynFn>>,
-    fragments: HashMap<Option<u16>, Vec<(u32, DataChunkFlags, Vec<u8>)>>,
+    fragments: HashMap<Option<u16>, Vec<SctpFragmentEntry>>,
     stream_seq: Option<u16>,
     unordered: utils::ArrayRing<Vec<u8>, WINDOW>,
     out: VecDeque<Vec<u8>>,
@@ -1434,26 +1464,26 @@ impl<const WINDOW: usize> SctpSequence<WINDOW> {
         }
     }
 
-    fn frags_complete(frags: &[(u32, DataChunkFlags, Vec<u8>)]) -> bool {
+    fn frags_complete(frags: &[SctpFragmentEntry]) -> bool {
         let mut i = frags.iter();
 
         let start_tsn = loop {
             match i.next() {
-                Some((t, f, _)) => {
-                    if f.beginning_fragment() {
-                        break *t;
+                Some(frag) => {
+                    if frag.flags.beginning_fragment() {
+                        break frag.tsn;
                     }
                 }
                 None => return false,
             }
         };
 
-        for (idx, (tsn, f, _)) in i.enumerate() {
-            if *tsn != start_tsn + idx as u32 + 1 {
+        for (idx, frag) in i.enumerate() {
+            if frag.tsn != start_tsn + idx as u32 + 1 {
                 return false;
             }
 
-            if f.ending_fragment() {
+            if frag.flags.ending_fragment() {
                 return true;
             }
         }
@@ -1514,29 +1544,40 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
 
                 let frags = self.fragments.entry(ssn).or_default();
 
-                match frags.binary_search_by(|(t, _, _)| t.cmp(&tsn)) {
+                match frags.binary_search_by(|frag| frag.tsn.cmp(&tsn)) {
                     Ok(idx) => {
                         // Swap out existing value with new one
-                        let mut p = (tsn, flags, Vec::from(payload.user_data()));
+                        let mut p = SctpFragmentEntry {
+                            tsn,
+                            flags,
+                            data: Vec::from(payload.user_data()),
+                        };
                         mem::swap(&mut p, frags.get_mut(idx).unwrap());
                     }
-                    Err(idx) => frags.insert(idx, (tsn, flags, Vec::from(payload.user_data()))),
+                    Err(idx) => frags.insert(
+                        idx,
+                        SctpFragmentEntry {
+                            tsn,
+                            flags,
+                            data: Vec::from(payload.user_data()),
+                        },
+                    ),
                 }
 
                 // Now reassemble the fragments if they're complete
                 if Self::frags_complete(frags) {
                     let mut reassembled = Vec::new();
                     let mut beginning_seen = false;
-                    for (_, f, v) in frags {
-                        if f.beginning_fragment() {
+                    for entry in frags {
+                        if entry.flags.beginning_fragment() {
                             beginning_seen = true;
                         }
 
                         if beginning_seen {
-                            reassembled.append(v);
+                            reassembled.append(&mut entry.data);
                         }
 
-                        if f.ending_fragment() {
+                        if entry.flags.ending_fragment() {
                             break;
                         }
                     }

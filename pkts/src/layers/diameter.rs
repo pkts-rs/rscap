@@ -1114,6 +1114,7 @@ impl BaseCommand {
 
     #[inline]
     pub fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
+        _bytes.push(0); // TODO: remove
         todo!()
     }
 }

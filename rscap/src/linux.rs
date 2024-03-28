@@ -85,3 +85,23 @@ pub struct PacketStatistics {
     /// The number of packets dropped by a socket.
     pub packets_dropped: usize,
 }
+
+/// The distribution algorithm to be used in a fanout group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FanoutAlgorithm {
+    /// Takes a hash of the network address (and optionally transport-layer ports) in the packet
+    /// and selects the socket based on that hash. This method maintains per-flow ordering; packets
+    /// from a given address/port 4-tuple are always sent to the same socket.
+    Hash,
+    /// Selects the socket in a round-robin manner.
+    RoundRobin,
+    /// Selects the socket based on the CPU the packet arrived on.
+    Cpu,
+    /// Always passes data to the first subscribed socket, moving to the next in the event of
+    /// backlog (and so on).
+    Rollover,
+    /// Selects the socket randomly.
+    Random,
+    /// Selects the socket using the kernel's recorded queue_mapping for the received packet skb.
+    QueueMapping,
+}
