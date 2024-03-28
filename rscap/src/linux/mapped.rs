@@ -1,15 +1,28 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{mem, slice};
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2024 Nathaniel Bennett <me[at]nathanielbennett[dotcom]>
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
 
-/// An index pointing to a particular frame within a `*MappedSocket`` block.
+//! Structures used for memory-mapped packet sockets.
+
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{io, mem, slice};
+
+/// An index pointing to a particular frame within a `MappedSocket` block.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct FrameIndex {
+pub(crate) struct FrameIndex {
     /// The index of the block currently being read/written.
     pub blocks_index: usize,
     /// The byte offset to the frame within the specified block (`None` indicates the first frame).
     pub frame_offset: Option<usize>,
 }
 
+/// Specifies block and frame size/count for a memory-mapped socket.
 #[derive(Clone, Copy)]
 pub struct BlockConfig {
     /// The size of each block allocated to the ring buffer. Must be a multiple of PAGE_SIZE
@@ -37,23 +50,43 @@ pub struct BlockConfig {
 }
 
 impl BlockConfig {
+    /// Constructs a new [`BlockConfig`] from the given parameters.
+    ///
+    /// The parameters have the following restrictions:
+    /// - `block_size` must be a power-of-two multiple of the page size of the machine (often 4096).
+    /// - `frame_size` must be a multiple of 16, and must be ab.
+    ///
+    ///
+    /// This method checks for overflowing
     #[inline]
-    pub fn new(block_size: u32, block_cnt: u32, frame_size: u32) -> Result<Self, &'static str> {
+    pub fn new(block_size: u32, block_cnt: u32, frame_size: u32) -> io::Result<Self> {
         let Some(map_length) = (block_size as usize).checked_mul(block_cnt as usize) else {
-            return Err("invalid overflowing total packet ring size");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "overflowing total ring size",
+            ));
         };
 
         // Check the case that a user maps TX+RX ring
         if map_length.checked_mul(2).is_none() {
-            return Err("total packet ring would overflow memory requirements");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "overflowing total ring size",
+            ));
         }
 
         let Some(frame_cnt_usize) = map_length.checked_div(frame_size as usize) else {
-            return Err("invalid overflowing total frame count");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "overflowing total frame count",
+            ));
         };
 
         let Ok(frame_cnt) = u32::try_from(frame_cnt_usize) else {
-            return Err("invalid oversized total frame size");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "overflowing total frame size",
+            ));
         };
 
         Ok(BlockConfig {
@@ -91,6 +124,7 @@ impl BlockConfig {
     }
 }
 
+/// The OSI layer used by the RX ring.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OsiLayer {
     /// Link-layer packet.
@@ -160,6 +194,7 @@ impl PacketTxRing {
         self.block_size * self.blocks.len()
     }
 
+    /// The transmission blocks that the ring is composed of.
     #[inline]
     pub fn blocks(&mut self) -> &mut [PacketTxBlock] {
         &mut self.blocks
@@ -245,6 +280,7 @@ impl PacketTxBlock {
     */
 }
 
+/// An iterator over frames within a given transmission block.
 pub struct PacketTxFrameIter<'a> {
     frames: &'a mut [u8],
     frame_size: usize,
@@ -254,7 +290,8 @@ pub struct PacketTxFrameIter<'a> {
 impl<'a> PacketTxFrameIter<'a> {
     #[inline]
     pub fn next_frame(&'a mut self) -> Option<TxFrameVariant<'a>> {
-        let (frame, new_offset) = Self::next_with_offset(self.frames, self.frame_size, self.curr_offset?);
+        let (frame, new_offset) =
+            Self::next_with_offset(self.frames, self.frame_size, self.curr_offset?);
         self.curr_offset = new_offset;
         Some(frame)
     }
@@ -320,6 +357,7 @@ pub enum TxFrameVariant<'a> {
     WrongFormat(InvalidTxFrame<'a>),
 }
 
+/// A transmission frame capable of conveying a single packet.
 pub struct TxFrame<'a> {
     header: &'a mut libc::tpacket3_hdr,
     packet: &'a mut [u8],
@@ -329,8 +367,8 @@ impl TxFrame<'_> {
     /// A zero-copy slice of the contents of the packet to be sent.
     ///
     /// The returned slice should only be used to write
-    /// Once a packet has been written into this slice, the length of the packet must also be sent
-    /// using [`Self::set_length`].
+    /// Once a packet has been written into this slice, the length of the packet must also be set
+    /// using [`send()`](Self::send()) for the packet to be correctly transmitted.
     #[inline]
     pub fn data(&mut self) -> &mut [u8] {
         self.packet
@@ -338,7 +376,8 @@ impl TxFrame<'_> {
 
     /// Sets the length of the packet and marks it as ready to be transmitted.
     ///
-    /// The length of the packet must not exceed the length of the writable data slice (returned by `data()`).
+    /// The length of the packet must not exceed the length of the writable data slice (returned by
+    /// [`data()`](Self::data())).
     #[inline]
     pub fn send(self, packet_length: u32) {
         assert!(packet_length as usize <= self.packet.len());
@@ -349,17 +388,17 @@ impl TxFrame<'_> {
     }
 }
 
+/// A transmission frame that has been marked as invalid by the kernel.
+///
+/// When dropped, this structure will mark its frame as available for use in subsequent packet
+/// transmissions.
 pub struct InvalidTxFrame<'a> {
     header: &'a mut libc::tpacket3_hdr,
     packet: &'a mut [u8],
 }
 
 impl InvalidTxFrame<'_> {
-    /// A zero-copy slice of the contents of the packet to be sent.
-    ///
-    /// The returned slice should only be used to write
-    /// Once a packet has been written into this slice, the length of the packet must also be sent
-    /// using [`Self::set_length`].
+    /// A zero-copy slice of the contents of the invalid packet.
     #[inline]
     pub fn data(&self) -> &[u8] {
         self.packet
@@ -374,9 +413,12 @@ impl Drop for InvalidTxFrame<'_> {
     }
 }
 
+/// The availability status of a given RX block or frame.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PacketRxStatus {
+    /// The block is unavailable and/or being written to by the kerne.
     Kernel,
+    /// The block/frame is ready for use.
     User,
 }
 
@@ -623,8 +665,10 @@ impl<'a> PacketRxFrameIter<'a> {
             OsiLayer::L3 => header.tp_net as usize - full_offset,
         };
 
+        let (padding, rem) = rem.split_at_mut(pkt_offset);
+
         // SAFETY: packet is guaranteed to be stored in `tp_len` bytes of data at `pkt_offset`
-        let packet = &mut rem[pkt_offset..pkt_offset + header.tp_len as usize];
+        let packet = &mut rem[..header.tp_len as usize];
 
         let new_offset = if (header.tp_next_offset as usize) < full_offset {
             None
@@ -636,6 +680,7 @@ impl<'a> PacketRxFrameIter<'a> {
             RxFrame {
                 header,
                 sockaddr,
+                padding,
                 packet,
             },
             new_offset,
@@ -646,6 +691,7 @@ impl<'a> PacketRxFrameIter<'a> {
 pub struct RxFrame<'a> {
     header: &'a mut libc::tpacket3_hdr,
     sockaddr: &'a mut libc::sockaddr_ll,
+    padding: &'a mut [u8],
     packet: &'a mut [u8],
 }
 
@@ -654,6 +700,12 @@ impl RxFrame<'_> {
     #[inline]
     pub fn data(&mut self) -> &mut [u8] {
         self.packet
+    }
+
+    /// Padding bytes following header info and immediately preceeding packet data.
+    #[inline]
+    pub fn padding(&mut self) -> &mut [u8] {
+        self.padding
     }
 
     /// The time the packet was received.
@@ -736,7 +788,8 @@ impl RxFrame<'_> {
 
     /// The RX Hash, a hash of the packet used to select which fanout socket to send the packet to.
     ///
-    /// See [`L2Socket::fanout()`] for more information on the RX Hash.
+    /// See [`set_packet_fanout()`](super::l2::L2Socket::set_fanout()) for more information on the
+    /// RX Hash.
     #[inline]
     pub fn rx_hash(&self) -> u32 {
         self.header.hv1.tp_rxhash

@@ -1,53 +1,56 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2024 Nathaniel Bennett <me[at]nathanielbennett[dotcom]>
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! Link-layer address structures.
+//! 
+//! Link-layer addresses may take different byte formats depending on the layer-2 protocol in use.
+//! To account for this, link-layer addresses are strongly coupled to protocol by defining distinct
+//! address types for each layer-2 protocol available. The union of all of these possible protocols
+//! is additionally made available as [`L2AddrAny`].
+
 use std::array;
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
+use crate::Interface;
+
 use pkts_common::Buffer;
 
-/// Protocol/Address pair
+/// A layer-2 protocol identifier.
+/// 
+/// This value corresponds directly to `libc::ETH_P_*` protocol specifier values.
 pub type L2Protocol = i32;
 
-#[derive(Clone, Copy)]
-pub struct Interface {
-    /// The index of the interface. Meant to specify "all" when set to 0
-    if_index: u32,
-}
-
-impl Interface {
-    pub const ALL: Interface = Interface { if_index: 0 };
-
-    /// Creates an [`Interface`] from the supplied interface index.
-    #[inline]
-    pub fn from_index(if_index: u32) -> Self {
-        Interface { if_index }
-    }
-
-    #[inline]
-    pub fn index(&self) -> u32 {
-        self.if_index
-    }
-}
-
+/// Defines a generic layer-2 (link-layer) address.
 pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
-    /// The Link-Layer protocol associated with the address type.
+    /// The layer-2 protocol associated with the address type.
     fn protocol(&self) -> L2Protocol;
 
-    /// The interface the packet is sent to or received from.
+    /// The interface packets are sent to or received from.
     fn interface(&self) -> Interface;
 
     /// Set the interface the packet is sent to or received from.
     ///
-    /// NOTE: this will only change the interface for the `L2Addr`, not for any socket the address
-    /// was retrieved from. To change the interface of a socket, use `bind()`.
+    /// This will only change the interface for the `L2Addr`, not for any socket the address was
+    /// retrieved from. To change the interface of a socket, use `bind()`.
     fn set_interface(&mut self, iface: Interface);
 
-    /// Constructs a [`libc::sockaddr_ll`] struct from the given address.
+    /// Constructs a [`sockaddr_ll`](libc::sockaddr_ll) struct from the given address.
     fn to_sockaddr(&self) -> libc::sockaddr_ll;
 }
 
 // TODO: should the MAC address API be contained within rscap, or pkts? Leaning towards rscap...
 
-/// A Media Access Control (MAC) address.
+/// A MAC (Media Access Control) address.
+/// 
+/// MAC addresses are the most common link-layer address type.
 pub struct MacAddr {
     addr: [u8; 6],
 }
@@ -98,7 +101,7 @@ impl Display for MacAddr {
 }
 
 impl FromStr for MacAddr {
-    type Err = &'static str; // TODO: change to MacAddrParseError
+    type Err = &'static str; // TODO: change to MacAddrParseError?
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -207,6 +210,7 @@ impl FromStr for MacAddr {
     }
 }
 
+/// A link-layer address corresponding to the `ETH_P_IP` protocol.
 pub struct L2AddrIp {
     addr: MacAddr,
     iface: Interface,

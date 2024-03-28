@@ -1,3 +1,16 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2024 Nathaniel Bennett <me[at]nathanielbennett[dotcom]>
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+//! Link-layer packet capture/transmission utilities.
+//!
+
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2AddrAny};
@@ -6,14 +19,38 @@ use super::mapped::{
 };
 use super::{PacketStatistics, RxTimestamping, TxTimestamping};
 
+/// The distribution algorithm to be used in a fanout group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FanoutAlgorithm {
+    /// Takes a hash of the network address (and optionally transport-layer ports) in the packet
+    /// and selects the socket based on that hash. This method maintains per-flow ordering; packets
+    /// from a given address/port 4-tuple are always sent to the same socket.
+    Hash,
+    /// Selects the socket in a round-robin manner.
+    RoundRobin,
+    /// Selects the socket based on the CPU the packet arrived on.
+    Cpu,
+    /// Always passes data to the first subscribed socket, moving to the next in the event of
+    /// backlog (and so on).
+    Rollover,
+    /// Selects the socket randomly.
+    Random,
+    /// Selects the socket using the kernel's recorded queue_mapping for the received packet skb.
+    QueueMapping,
+}
+
+/// A socket that exchanges packets at the link-layer.
+///
+/// In Linux, this corresponds to `socket(AF_PACKET, SOCK_RAW, 0)`.
 pub struct L2Socket {
     fd: i32,
 }
 
 impl L2Socket {
-    /// Create a new Link-Layer socket.
+    /// Create a new link-layer socket.
     ///
-    /// By default, L2 sockets do not listen or receive packets on any protocol or interface; to begin receiving packets, call [`L2Socket::bind()`].
+    /// By default, link-layer sockets do not listen or receive packets on any protocol or
+    /// interface; to begin receiving packets, call [`L2Socket::bind()`].
     ///
     /// # Permissions
     ///
@@ -27,11 +64,16 @@ impl L2Socket {
         }
     }
 
-    /// Bind a Link-Layer socket to a particular protocol/address and interface and begin
+    /// Bind the link-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
+    ///
+    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
+    /// refer to its documentation.
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         let sockaddr = addr.to_sockaddr();
 
+        // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
+        // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
         match unsafe {
             libc::bind(
                 self.fd,
@@ -44,27 +86,39 @@ impl L2Socket {
         }
     }
 
-    /// Configures the given socket's behavior when blocking would occur for calls to [`send()`](L2Socket::send()).
+    /// Moves the link-layer socket's behavior in or out of blocking mode.
     ///
-    /// If `nonblocking` is set to true, the socket will return immediate
+    /// An [`L2Socket`] that is nonblocking will return with an error of kind
+    /// [WouldBlock](io::ErrorKind::WouldBlock) whenever a packet cannot be immediately sent or
+    /// received. This is only applicable to the [`send()`](L2Socket::send()) or
+    /// [`recv()`](L2Socket::recv()) methods; any memory-mapped methods are always guaranteed to be
+    /// nonblocking.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        let mut fl = match unsafe { libc::fcntl(self.fd, libc::F_GETFL, 0) } {
+        let mut fcntl_flags = match unsafe { libc::fcntl(self.fd, libc::F_GETFL, 0) } {
             ..=-1 => return Err(io::Error::last_os_error()),
             f => f,
         };
 
         if nonblocking {
-            fl |= libc::O_NONBLOCK;
+            fcntl_flags |= libc::O_NONBLOCK;
         } else {
-            fl &= !libc::O_NONBLOCK;
+            fcntl_flags &= !libc::O_NONBLOCK;
         }
 
-        match unsafe { libc::fcntl(self.fd, libc::F_SETFL, fl) } {
+        match unsafe { libc::fcntl(self.fd, libc::F_SETFL, fcntl_flags) } {
             0 => Ok(()),
             _ => Err(io::Error::last_os_error()),
         }
     }
 
+    /// Configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         let bypass_req = if bypass { 1u32 } else { 0u32 };
 
@@ -83,6 +137,11 @@ impl L2Socket {
         Ok(())
     }
 
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
     #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = libc::tpacket_stats {
@@ -111,7 +170,7 @@ impl L2Socket {
         })
     }
 
-    /// Get the link-layer address the socket is currently bound to.
+    /// Returns the link-layer address the socket is currently bound to.
     pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
         let mut sockaddr = libc::sockaddr_ll {
             sll_family: 0,
@@ -144,26 +203,21 @@ impl L2Socket {
             ));
         }
 
-        L2AddrAny::try_from(sockaddr).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "returned address did not match requested type",
-            )
-        })
+        L2AddrAny::try_from(sockaddr).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
     /// If `true`, this option requests that the operating system use hardware timestamps
     /// provided by the NIC.
     ///
-    /// NOTE: for hardware timestamping to be employed, the socket must be bound to an interface.
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
     ///
     /// # Errors
     ///
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
-    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+    fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         if tx == TxTimestamping::Hardware || rx == RxTimestamping::Hardware {
             let mut hwtstamp_config = libc::hwtstamp_config {
                 flags: 0,
@@ -227,7 +281,98 @@ impl L2Socket {
         Ok(())
     }
 
-    /// Send a datagram over the socket.
+    /// Configures the network device the socket is currently bound to to act in promiscuous mode.
+    ///
+    /// A network device in promiscuous mode will capture all packets observed on a physical medium,
+    /// not just those destined for it.
+    #[inline]
+    pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
+        let addr = self.bound_addr()?;
+        let iface = addr.interface();
+
+        let req = libc::packet_mreq {
+            mr_ifindex: iface.index() as i32,
+            mr_type: libc::PACKET_MR_PROMISC as u16,
+            mr_alen: 0,
+            mr_address: [0u8; 8],
+        };
+
+        if unsafe {
+            libc::setsockopt(
+                self.fd,
+                libc::SOL_PACKET,
+                if promisc {
+                    libc::PACKET_ADD_MEMBERSHIP
+                } else {
+                    libc::PACKET_DROP_MEMBERSHIP
+                },
+                ptr::addr_of!(req) as *const libc::c_void,
+                mem::size_of::<libc::packet_mreq>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    /// Adds the given socket to a fanout group.
+    ///
+    /// A fanout group is a set of sockets that act together to process packets. Each received
+    /// packet is sent to only one of the sockets in the fanout group, based on the algorithm
+    /// chosen in `fan_alg`. The group is specified using a 16-bit group identifier, `group_id`.
+    /// Some additional options can be set:
+    ///
+    /// - `defrag` causes the kernel to defragment IP packets prior to sending them to the
+    /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
+    /// - `rollover` causes packets to be sent to a different socket than originally decided
+    /// by `fan_alg` if the original socket is backlogged with packets.
+    #[inline]
+    pub fn set_fanout(
+        &self,
+        group_id: u16,
+        fan_alg: FanoutAlgorithm,
+        defrag: bool,
+        rollover: bool,
+    ) -> io::Result<()> {
+        let mut opt = match fan_alg {
+            FanoutAlgorithm::Cpu => libc::PACKET_FANOUT_CPU,
+            FanoutAlgorithm::Hash => libc::PACKET_FANOUT_HASH,
+            FanoutAlgorithm::QueueMapping => libc::PACKET_FANOUT_QM,
+            FanoutAlgorithm::Random => libc::PACKET_FANOUT_RND,
+            FanoutAlgorithm::Rollover => libc::PACKET_FANOUT_ROLLOVER,
+            FanoutAlgorithm::RoundRobin => libc::PACKET_FANOUT_LB,
+        };
+
+        opt |= (group_id as u32) << 16;
+
+        if defrag {
+            opt |= libc::PACKET_FANOUT_FLAG_DEFRAG;
+        }
+
+        if rollover {
+            opt |= libc::PACKET_FANOUT_FLAG_ROLLOVER;
+        }
+
+        if unsafe {
+            libc::setsockopt(
+                self.fd,
+                libc::SOL_PACKET,
+                libc::PACKET_FANOUT,
+                ptr::addr_of!(opt) as *const libc::c_void,
+                mem::size_of::<u32>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2Socket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         match unsafe { libc::send(self.fd, buf.as_ptr() as *const libc::c_void, buf.len(), 0) } {
             ..=-1 => Err(io::Error::last_os_error()),
@@ -236,6 +381,9 @@ impl L2Socket {
     }
 
     /// Receive a datagram from the socket.
+    ///
+    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2Socket::bind())).
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         match unsafe { libc::recv(self.fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0) } {
             ..=-1 => Err(io::Error::last_os_error()),
@@ -310,25 +458,6 @@ impl L2Socket {
         };
 
         Ok((recvd, addr))
-    }
-
-    /// PACKET_RESERVE socket option; reserves a number of bytes for private use at the start of each block.
-    ///
-    /// This is superceded by a field in the tpacket_req3 struct.
-    fn _reserve_priv(&self, reserved: u32) -> io::Result<()> {
-        if unsafe {
-            libc::setsockopt(
-                self.fd,
-                libc::SOL_PACKET,
-                libc::PACKET_RESERVE,
-                ptr::addr_of!(reserved) as *const libc::c_void,
-                mem::size_of::<u32>() as u32,
-            ) != 0
-        } {
-            return Err(io::Error::last_os_error());
-        }
-
-        Ok(())
     }
 
     /// Sets the PACKET_VERSION socket option to TPACKET_V3.
@@ -412,7 +541,7 @@ impl L2Socket {
         Ok(())
     }
 
-    /// Memory-map the packet's TX/RX ringbuffers to enable zero-copy packet transmision/reception.
+    /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L2Socket`] will be closed.
     #[inline]
@@ -445,9 +574,13 @@ impl L2Socket {
         Ok(mapped)
     }
 
-    /// Memory-map the packet's TX ringbuffer to enable zero-copy packet transmision.
+    /// Memory-maps a TX ring buffer for the socket to enable zero-copy packet transmision.
     ///
     /// On error, the consumed [`L2Socket`] will be closed.
+    ///
+    /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
+    /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
+    /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
     #[inline]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L2TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
@@ -463,10 +596,23 @@ impl L2Socket {
             )
         };
 
-        Ok(L2TxMappedSocket::new(self, tx_ring))
+        // This will immediately wrap around to the first packet due to `frame_offset: None`
+        let start_frame = FrameIndex {
+            blocks_index: tx_ring.blocks_cnt() - 1,
+            frame_offset: None,
+        };
+
+        Ok(L2TxMappedSocket {
+            socket: self,
+            tx_ring,
+            last_checked_tx: start_frame,
+            next_tx: start_frame,
+            manual_tx_status: false,
+            tx_full: false,
+        })
     }
 
-    /// Memory-map the packet's RX ringbuffer to enable zero-copy packet reception.
+    /// Memory-maps an RX ring buffer for the socket to enable zero-copy packet reception.
     ///
     /// On error, the consumed [`L2Socket`] will be closed.
     #[inline]
@@ -490,10 +636,20 @@ impl L2Socket {
             )
         };
 
-        Ok(L2RxMappedSocket::new(self, rx_ring))
+        // This will immediately wrap around to the first packet due to `frame_offset: None`
+        let start_frame = FrameIndex {
+            blocks_index: rx_ring.blocks_cnt() - 1,
+            frame_offset: None,
+        };
+
+        Ok(L2RxMappedSocket {
+            socket: self,
+            rx_ring,
+            next_rx: start_frame,
+        })
     }
 
-    /// Configure a memory-mapped ringbuf for zero-copy transfer of packets from the kernel to userspace.
+    /// Memory-maps TX/RX ring buffers for the socket to enable zero-copy packet transmission/reception.
     ///
     /// On error, the L2Socket will be closed.
     ///
@@ -530,14 +686,23 @@ impl L2Socket {
             )
         };
 
-        Ok(L2MappedSocket::new(self, rx_ring, tx_ring))
+        // This will immediately wrap around to the first packet due to `frame_offset: None`
+        let start_frame = FrameIndex {
+            blocks_index: tx_ring.blocks_cnt() - 1,
+            frame_offset: None,
+        };
+
+        Ok(L2MappedSocket {
+            socket: self,
+            rx_ring,
+            next_rx: start_frame,
+            tx_ring,
+            last_checked_tx: start_frame,
+            next_tx: start_frame,
+            manual_tx_status: false,
+            tx_full: false,
+        })
     }
-
-    // Send a datagram over the socket.
-    // pub fn send_ring<'a>(&'a mut self) -> Option<TxFrame<'a>> {
-
-    // Receive a datagram from the socket.
-    // pub fn recv_ring<'a>(&'a mut self, buf: &mut [u8]) -> Option<RxFrame<'a>> {
 }
 
 impl Drop for L2Socket {
@@ -554,6 +719,7 @@ impl AsRawFd for L2Socket {
     }
 }
 
+/// A link-layer socket that has memory-mapped TX/RX buffers to enable zero-copy packet exchange.
 pub struct L2MappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -566,29 +732,107 @@ pub struct L2MappedSocket {
 }
 
 impl L2MappedSocket {
-    #[inline]
-    pub(crate) fn new(socket: L2Socket, rx_ring: PacketRxRing, tx_ring: PacketTxRing) -> Self {
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
-        Self {
-            socket,
-            rx_ring,
-            next_rx: start_frame,
-            tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
-        }
-    }
-
+    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// receiving packets.
+    ///
+    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
+    /// refer to its documentation.
     #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
+    }
+
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
+    ///
+    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
+    /// `amount` due to alignment requirements.
+    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
+        if unsafe {
+            libc::setsockopt(
+                self.socket.fd,
+                libc::SOL_PACKET,
+                libc::PACKET_RESERVE,
+                ptr::addr_of!(amount) as *const libc::c_void,
+                mem::size_of::<u32>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
+    }
+
+    /// Returns the link-layer address the socket is currently bound to.
+    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
+        self.socket.bound_addr()
+    }
+
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
+    }
+
+    /// Configures the network device the socket is currently bound to to act in promiscuous mode.
+    ///
+    /// A network device in promiscuous mode will capture all packets observed on a physical medium,
+    /// not just those destined for it.
+    #[inline]
+    pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
+        self.socket.set_promiscuous(promisc)
+    }
+
+    /// Adds the given socket to a fanout group.
+    ///
+    /// A fanout group is a set of sockets that act together to process packets. Each received
+    /// packet is sent to only one of the sockets in the fanout group, based on the algorithm
+    /// chosen in `fan_alg`. The group is specified using a 16-bit group identifier, `group_id`.
+    /// Some additional options can be set:
+    ///
+    /// - `defrag` causes the kernel to defragment IP packets prior to sending them to the
+    /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
+    /// - `rollover` causes packets to be sent to a different socket than originally decided
+    /// by `fan_alg` if the original socket is backlogged with packets.
+    #[inline]
+    pub fn set_packet_fanout(
+        &self,
+        group_id: u16,
+        fan_alg: FanoutAlgorithm,
+        defrag: bool,
+        rollover: bool,
+    ) -> io::Result<()> {
+        self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
     }
 
     /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
@@ -606,7 +850,25 @@ impl L2MappedSocket {
         self.manual_tx_status = manual;
     }
 
-    /// Retrieves the next frame in the memory-mapped ringbuffer to transmit a packet with.
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2MappedSocket::bind())).
+    #[inline]
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
+    }
+
+    /// Receive a datagram from the socket.
+    ///
+    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2MappedSocket::bind())).
+    #[inline]
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
+    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
     /// The returned [`TxFrame`] should have data written to it via the
     /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
@@ -700,7 +962,7 @@ impl L2MappedSocket {
         frame_variant
     }
 
-    /// Retrieves the next frame in the memory-mapped ringbuffer to transmit a packet with.
+    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
     /// The returned [`TxFrame`] should have data written to it via the
     /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
@@ -736,6 +998,7 @@ impl AsRawFd for L2MappedSocket {
     }
 }
 
+/// A link-layer socket that has a memory-mapped TX buffer to enable zero-copy packet transmission.
 pub struct L2TxMappedSocket {
     socket: L2Socket,
     tx_ring: PacketTxRing,
@@ -746,27 +1009,65 @@ pub struct L2TxMappedSocket {
 }
 
 impl L2TxMappedSocket {
-    #[inline]
-    pub(crate) fn new(socket: L2Socket, tx_ring: PacketTxRing) -> Self {
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
-        Self {
-            socket,
-            tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
-        }
-    }
-
+    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// receiving packets.
+    ///
+    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
+    /// refer to its documentation.
     #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
+    }
+
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
+    }
+
+    /// Returns the link-layer address the socket is currently bound to.
+    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
+        self.socket.bound_addr()
+    }
+
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
+    }
+
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2TxMappedSocket::bind())).
+    #[inline]
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
     }
 
     /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
@@ -784,7 +1085,7 @@ impl L2TxMappedSocket {
         self.manual_tx_status = manual;
     }
 
-    /// Retrieves the next frame in the memory-mapped ringbuffer to transmit a packet with.
+    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
     /// The returned [`TxFrame`] should have data written to it via the
     /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
@@ -899,6 +1200,7 @@ impl AsRawFd for L2TxMappedSocket {
     }
 }
 
+/// A link-layer socket that has a memory-mapped RX buffer to enable zero-copy packet reception.
 pub struct L2RxMappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -906,33 +1208,112 @@ pub struct L2RxMappedSocket {
 }
 
 impl L2RxMappedSocket {
-    #[inline]
-    pub(crate) fn new(socket: L2Socket, rx_ring: PacketRxRing) -> Self {
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: rx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
-        Self {
-            socket,
-            rx_ring,
-            next_rx: start_frame,
-        }
-    }
-
+    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// receiving packets.
+    ///
+    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
+    /// refer to its documentation.
     #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
     }
 
-    /// Retrieves the next frame in the memory-mapped ringbuffer to transmit a packet with.
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
     ///
-    /// The returned [`TxFrame`] should have data written to it via the
-    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
-    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
-    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
-    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
+    }
+
+    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
+    ///
+    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
+    /// `amount` due to alignment requirements.
+    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
+        if unsafe {
+            libc::setsockopt(
+                self.socket.fd,
+                libc::SOL_PACKET,
+                libc::PACKET_RESERVE,
+                ptr::addr_of!(amount) as *const libc::c_void,
+                mem::size_of::<u32>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    /// Returns the link-layer address the socket is currently bound to.
+    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
+        self.socket.bound_addr()
+    }
+
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
+    }
+
+    /// Adds the given socket to a fanout group.
+    ///
+    /// A fanout group is a set of sockets that act together to process packets. Each received
+    /// packet is sent to only one of the sockets in the fanout group, based on the algorithm
+    /// chosen in `fan_alg`. The group is specified using a 16-bit group identifier, `group_id`.
+    /// Some additional options can be set:
+    ///
+    /// - `defrag` causes the kernel to defragment IP packets prior to sending them to the
+    /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
+    /// - `rollover` causes packets to be sent to a different socket than originally decided
+    /// by `fan_alg` if the original socket is backlogged with packets.
+    #[inline]
+    pub fn set_packet_fanout(
+        &self,
+        group_id: u16,
+        fan_alg: FanoutAlgorithm,
+        defrag: bool,
+        rollover: bool,
+    ) -> io::Result<()> {
+        self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
+    }
+
+    /// Receive a datagram from the socket.
+    ///
+    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2RxMappedSocket::bind())).
+    #[inline]
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
+    /// Retrieves the next frame in the memory-mapped ring buffer to receive a packet from.
+    ///
+    /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
         let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
