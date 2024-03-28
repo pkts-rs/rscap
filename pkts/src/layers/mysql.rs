@@ -123,7 +123,6 @@ impl LayerObject for MysqlPacket {
 }
 
 impl ToBytes for MysqlPacket {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.push(self.sequence_id);
@@ -196,7 +195,6 @@ impl<'a> LayerOffset for MysqlPacketRef<'a> {
 }
 
 impl<'a> Validate for MysqlPacketRef<'a> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() < 4 {
             return Err(ValidationError {

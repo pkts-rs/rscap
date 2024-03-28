@@ -280,7 +280,6 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     }
 
     /// Add another [`Sequence`] that acts on the output of the current sequence(s).
-    #[inline]
     pub fn add<'a, L: LayerRef<'a> + Validate, S: Sequence<In<'a> = L> + 'static>(
         self,
         seq: S,
@@ -333,7 +332,6 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     /// up to the caller of this method to ensure that `pkt` is not malformed. A packet that
     /// does not conform to the required layer type may lead to a panic condition, or it may
     /// alter the stream of output packets in an unexpected way.
-    #[inline]
     pub fn put_unchecked(&mut self, pkt: &[u8]) -> Result<(), ValidationError> {
         let mut upper_layer_updated = match self.layers.first_mut() {
             Some(upper_layer) => Self::percolate_up(
@@ -933,7 +931,6 @@ impl<const RWND: usize, const FRAG_CNT: usize> Default for SctpSegments<RWND, FR
 }
 
 impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
-    #[inline]
     pub fn new() -> Self {
         Self {
             frags: core::array::from_fn(|_| SctpFragment::default()),
@@ -952,7 +949,6 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
         }
     }
 
-    #[inline]
     pub fn get(&mut self) -> Option<&[u8]> {
         if self.reorder[self.reorder_start].occupied {
             // There's an entry ready to be received
@@ -1135,7 +1131,6 @@ impl SctpFragment {
         Self::default()
     }
 
-    #[inline]
     pub fn clear(&mut self) {
         self.last_frag_idx = 0;
         self.total_len = 0;
@@ -1338,7 +1333,6 @@ impl SctpFragment {
 
 // #[cfg(not(feature = "alloc"))]
 impl Default for SctpFragment {
-    #[inline]
     fn default() -> Self {
         Self {
             buf: [0; 65536 * 2],
@@ -1428,7 +1422,6 @@ pub struct SctpSequence<const WINDOW: usize = 25> {
 
 #[cfg(feature = "alloc")]
 impl<const WINDOW: usize> SctpSequence<WINDOW> {
-    #[inline]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         SctpSequence {
@@ -1441,7 +1434,6 @@ impl<const WINDOW: usize> SctpSequence<WINDOW> {
         }
     }
 
-    #[inline]
     fn put_unordered(&mut self, stream_seq: u16, data: Vec<u8>) {
         match self.stream_seq {
             None => {

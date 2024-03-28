@@ -36,6 +36,7 @@ impl L3Socket {
     ///
     /// A program must have the `CAP_NET_RAW` capability in order for this call to succeed;
     /// otherwise, `EPERM` will be returned.
+    #[inline]
     pub fn new() -> io::Result<L3Socket> {
         // Set the socket to receive no packets by default (protocol: 0)
         match unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_RAW, 0) } {
@@ -122,7 +123,6 @@ impl L3Socket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = libc::tpacket_stats {
             tp_packets: 0,
@@ -266,7 +266,6 @@ impl L3Socket {
     ///
     /// A network device in promiscuous mode will capture all packets observed on a physical medium,
     /// not just those destined for it.
-    #[inline]
     pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
         let addr = self.bound_addr()?;
         let iface = addr.interface();
@@ -308,7 +307,6 @@ impl L3Socket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
-    #[inline]
     pub fn set_fanout(
         &self,
         group_id: u16,
@@ -525,7 +523,6 @@ impl L3Socket {
     /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L3Socket`] will be closed.
-    #[inline]
     fn mmap_socket(
         &self,
         config: BlockConfig,
@@ -562,7 +559,6 @@ impl L3Socket {
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
-    #[inline]
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -617,7 +613,6 @@ impl L3Socket {
     /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
     /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
-    #[inline]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L3TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
         self.set_tx_ring_opt(config)?;
@@ -651,7 +646,6 @@ impl L3Socket {
     /// Enables zero-copy packet reception for the socket.
     ///
     /// On error, the consumed `L3Socket` will be closed.
-    #[inline]
     pub fn packet_rx_ring(
         self,
         config: BlockConfig,
@@ -687,7 +681,6 @@ impl L3Socket {
 }
 
 impl Drop for L3Socket {
-    #[inline]
     fn drop(&mut self) {
         unsafe { libc::close(self.fd) };
     }
@@ -718,7 +711,6 @@ impl L3MappedSocket {
     ///
     /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
     /// refer to its documentation.
-    #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
     }
@@ -760,7 +752,6 @@ impl L3MappedSocket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }
@@ -789,7 +780,6 @@ impl L3MappedSocket {
     ///
     /// A network device in promiscuous mode will capture all packets observed on a physical medium,
     /// not just those destined for it.
-    #[inline]
     pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
         self.socket.set_promiscuous(promisc)
     }
@@ -805,7 +795,6 @@ impl L3MappedSocket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
-    #[inline]
     pub fn set_packet_fanout(
         &self,
         group_id: u16,
@@ -835,7 +824,6 @@ impl L3MappedSocket {
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3MappedSocket::bind())).
-    #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
     }
@@ -844,7 +832,6 @@ impl L3MappedSocket {
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3MappedSocket::bind())).
-    #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
     }
@@ -856,7 +843,6 @@ impl L3MappedSocket {
     /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
-    #[inline]
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
         if self.tx_full {
             return None;
@@ -928,7 +914,6 @@ impl L3MappedSocket {
     ///
     /// assert!(malformed == 5);
     /// ```
-    #[inline]
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
 
@@ -961,7 +946,6 @@ impl L3MappedSocket {
 }
 
 impl Drop for L3MappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
@@ -996,7 +980,6 @@ impl L3TxMappedSocket {
     ///
     /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
     /// refer to its documentation.
-    #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
     }
@@ -1018,7 +1001,6 @@ impl L3TxMappedSocket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }
@@ -1047,7 +1029,6 @@ impl L3TxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3RxMappedSocket::bind())).
-    #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
     }
@@ -1056,7 +1037,6 @@ impl L3TxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3TxMappedSocket::bind())).
-    #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
     }
@@ -1068,7 +1048,6 @@ impl L3TxMappedSocket {
     /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
-    #[inline]
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
         if self.tx_full {
             return None;
@@ -1102,7 +1081,6 @@ impl L3TxMappedSocket {
     /// If individual packet results are desired, setting this option to `true` modifies socket
     /// behavior such that each sent packet must have its status checked using `tx_status` prior
     /// to that packet being discarded from the ring.
-    #[inline]
     pub fn set_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
     }
@@ -1156,7 +1134,6 @@ impl L3TxMappedSocket {
     ///
     /// assert!(malformed == 5);
     /// ```
-    #[inline]
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
 
@@ -1174,7 +1151,6 @@ impl L3TxMappedSocket {
 }
 
 impl Drop for L3TxMappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
@@ -1206,7 +1182,6 @@ impl L3RxMappedSocket {
     ///
     /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
     /// refer to its documentation.
-    #[inline]
     pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
         self.socket.bind(addr)
     }
@@ -1228,7 +1203,6 @@ impl L3RxMappedSocket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }
@@ -1284,7 +1258,6 @@ impl L3RxMappedSocket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
-    #[inline]
     pub fn set_packet_fanout(
         &self,
         group_id: u16,
@@ -1299,7 +1272,6 @@ impl L3RxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3TxMappedSocket::bind())).
-    #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
     }
@@ -1308,7 +1280,6 @@ impl L3RxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3RxMappedSocket::bind())).
-    #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
     }
@@ -1316,7 +1287,6 @@ impl L3RxMappedSocket {
     /// Retrieves the next frame in the memory-mapped ring buffer to receive a packet from.
     ///
     /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
-    #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
         let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
         self.next_rx = next_rx;
@@ -1326,7 +1296,6 @@ impl L3RxMappedSocket {
 }
 
 impl Drop for L3RxMappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(

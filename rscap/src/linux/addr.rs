@@ -89,7 +89,6 @@ impl From<MacAddr> for [u8; 6] {
 }
 
 impl Debug for MacAddr {
-    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MacAddress")
             .field(
@@ -109,7 +108,6 @@ impl Debug for MacAddr {
 }
 
 impl Display for MacAddr {
-    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -122,7 +120,6 @@ impl Display for MacAddr {
 impl FromStr for MacAddr {
     type Err = AddrConversionError; // TODO: change to MacAddrParseError?
 
-    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut addr = [0u8; 6];
         let mut addr_idx = 0;
@@ -283,7 +280,6 @@ impl L2Addr for L2AddrIp {
         self.iface = iface;
     }
 
-    #[inline]
     fn to_sockaddr(&self) -> libc::sockaddr_ll {
         let sll_addr = array::from_fn(|i| *self.addr.addr.get(i).unwrap_or(&0));
 
@@ -363,7 +359,6 @@ pub struct L2AddrUnspec {
 impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
     type Error = AddrConversionError;
 
-    #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
             return Err(AddrConversionError::new("invalid address family "));
@@ -401,7 +396,6 @@ impl L2Addr for L2AddrUnspec {
         self.iface = iface;
     }
 
-    #[inline]
     fn to_sockaddr(&self) -> libc::sockaddr_ll {
         let sll_addr = array::from_fn(|i| *self.addr.as_slice().get(i).unwrap_or(&0));
 

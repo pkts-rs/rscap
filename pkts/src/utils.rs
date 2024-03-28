@@ -119,7 +119,6 @@ impl BitVec {
         }
     }
 
-    #[inline]
     pub fn is_filled(&self) -> bool {
         match self.bits.split_last() {
             None => true,
@@ -140,7 +139,6 @@ impl BitVec {
         }
     }
 
-    #[inline]
     pub fn set(&mut self, bits_start: usize, bits_end: usize) {
         assert!(
             bits_start <= bits_end,
@@ -256,7 +254,6 @@ impl<T, const N: usize> ArrayRing<T, N> {
         ret
     }
 
-    #[inline]
     pub fn pop_front(&mut self) -> Option<T> {
         if N == 0 {
             return None; // Who would ever want a 0-sized array...

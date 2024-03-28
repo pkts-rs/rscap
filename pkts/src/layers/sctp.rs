@@ -270,7 +270,6 @@ impl Sctp {
 
 #[doc(hidden)]
 impl FromBytesCurrent for Sctp {
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let sctp = SctpRef::from_bytes_unchecked(bytes);
 
@@ -328,7 +327,6 @@ impl LayerObject for Sctp {
 
     /// Replaces the first payload chunk in the [`struct@Sctp`] packet with the given payload, or
     /// adds a new payload chunk with all associated fields set to 0 if there were none.
-    #[inline]
     fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         if let Some(payload_chunk) = self.payload_chunks.first_mut() {
             payload_chunk.payload = payload
@@ -361,7 +359,6 @@ impl LayerObject for Sctp {
 }
 
 impl ToBytes for Sctp {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
@@ -514,7 +511,6 @@ impl LayerOffset for SctpRef<'_> {
 }
 
 impl Validate for SctpRef<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let mut remaining = match curr_layer.get(12..) {
             Some(rem) => rem,
@@ -670,7 +666,6 @@ pub struct ChunksIterRef<'a> {
 impl<'a> Iterator for ChunksIterRef<'a> {
     type Item = ChunkRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (chunk_type, unpadded_len) =
             match (self.bytes.first(), utils::get_array::<2>(self.bytes, 2)) {
@@ -738,7 +733,6 @@ impl ControlChunk {
         ControlChunkRef::validate(bytes)
     }
 
-    #[inline]
     pub fn chunk_type(&self) -> u8 {
         match self {
             ControlChunk::Init(c) => c.chunk_type(),
@@ -757,7 +751,6 @@ impl ControlChunk {
         }
     }
 
-    #[inline]
     pub fn len(&self) -> usize {
         match self {
             ControlChunk::Init(c) => c.len(),
@@ -776,7 +769,6 @@ impl ControlChunk {
         }
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             ControlChunk::Init(c) => c.to_bytes_extended(bytes),
@@ -804,7 +796,6 @@ impl From<ControlChunkRef<'_>> for ControlChunk {
 }
 
 impl From<&ControlChunkRef<'_>> for ControlChunk {
-    #[inline]
     fn from(value: &ControlChunkRef<'_>) -> Self {
         match value {
             ControlChunkRef::Init(c) => ControlChunk::Init(c.into()),
@@ -849,7 +840,6 @@ impl<'a> ControlChunkRef<'a> {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
         let chunk_type = *bytes.first().expect(
             "insufficient bytes to create SCTP Control chunk from bytes (Chunk Type field missing)",
@@ -873,7 +863,6 @@ impl<'a> ControlChunkRef<'a> {
         }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let chunk_type = *bytes
             .first()
@@ -1071,7 +1060,6 @@ impl InitChunk {
         &mut self.options
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_INIT);
         bytes.push(self.flags);
@@ -1096,7 +1084,6 @@ impl From<InitChunkRef<'_>> for InitChunk {
 }
 
 impl From<&InitChunkRef<'_>> for InitChunk {
-    #[inline]
     fn from(value: &InitChunkRef<'_>) -> Self {
         let mut options = Vec::new();
         let iter = value.options_iter();
@@ -1155,7 +1142,6 @@ impl<'a> InitChunkRef<'a> {
         InitChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -1305,7 +1291,6 @@ pub struct InitOptionsIterRef<'a> {
 impl<'a> Iterator for InitOptionsIterRef<'a> {
     type Item = InitOptionRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (opt_type, unpadded_len) = match (
             utils::get_array(self.bytes, 0).map(|&a| u16::from_be_bytes(a)),
@@ -1385,7 +1370,6 @@ impl InitOption {
         Self::CookiePreservative(cookie_lifespan)
     }
 
-    #[inline]
     pub fn option_type(&self) -> u16 {
         match self {
             Self::Ipv4Address(_) => INIT_OPT_IPV4_ADDRESS,
@@ -1397,7 +1381,6 @@ impl InitOption {
         }
     }
 
-    #[inline]
     pub fn unpadded_len(&self) -> u16 {
         match self {
             Self::Ipv4Address(_) => 8,
@@ -1414,7 +1397,6 @@ impl InitOption {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
-    #[inline]
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             Self::Ipv4Address(ipv4) => {
@@ -1473,7 +1455,6 @@ impl From<InitOptionRef<'_>> for InitOption {
 }
 
 impl From<&InitOptionRef<'_>> for InitOption {
-    #[inline]
     fn from(value: &InitOptionRef<'_>) -> Self {
         match value.payload() {
             InitOptionPayloadRef::Ipv4Address(ipv4) => InitOption::Ipv4Address(ipv4),
@@ -1518,7 +1499,6 @@ impl<'a> InitOptionRef<'a> {
         InitOptionRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         let header = (utils::to_array(bytes, 0), utils::to_array(bytes, 2));
         match header {
@@ -1600,7 +1580,6 @@ impl<'a> InitOptionRef<'a> {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
-    #[inline]
     pub fn payload(&self) -> InitOptionPayloadRef<'a> {
         match self.opt_type() {
             INIT_OPT_IPV4_ADDRESS => InitOptionPayloadRef::Ipv4Address(u32::from_be_bytes(utils::to_array(self.data, 4).expect("insufficent bytes in SCTP INIT Option to extract IPv4 Address payload"))),
@@ -1735,7 +1714,6 @@ impl InitAckChunk {
         &mut self.options
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_INIT_ACK);
         bytes.push(self.flags);
@@ -1759,7 +1737,6 @@ impl From<InitAckChunkRef<'_>> for InitAckChunk {
 }
 
 impl From<&InitAckChunkRef<'_>> for InitAckChunk {
-    #[inline]
     fn from(value: &InitAckChunkRef<'_>) -> Self {
         let mut options = Vec::new();
         let iter = value.options_iter();
@@ -1796,7 +1773,6 @@ impl<'a> InitAckChunkRef<'a> {
         InitAckChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -2014,7 +1990,6 @@ impl InitAckOption {
         InitAckOptionRef::validate(bytes)
     }
 
-    #[inline]
     pub fn option_type(&self) -> u16 {
         match self {
             Self::StateCookie(_) => INIT_ACK_OPT_STATE_COOKIE,
@@ -2026,7 +2001,6 @@ impl InitAckOption {
         }
     }
 
-    #[inline]
     pub fn unpadded_len(&self) -> u16 {
         match self {
             Self::StateCookie(s) => (4 + s.len()).try_into().expect("too many bytes in SCTP INIT ACK State Cookie option to represent in a 16-bit Length field"),
@@ -2044,7 +2018,6 @@ impl InitAckOption {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             InitAckOption::StateCookie(c) => {
@@ -2093,7 +2066,6 @@ impl From<InitAckOptionRef<'_>> for InitAckOption {
 }
 
 impl From<&InitAckOptionRef<'_>> for InitAckOption {
-    #[inline]
     fn from(value: &InitAckOptionRef<'_>) -> Self {
         match value.payload() {
             InitAckOptionPayloadRef::StateCookie(cookie) => {
@@ -2129,7 +2101,6 @@ impl<'a> InitAckOptionRef<'a> {
         InitAckOptionRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         let header = (utils::to_array(bytes, 0), utils::to_array(bytes, 2));
         match header {
@@ -2220,7 +2191,6 @@ impl<'a> InitAckOptionRef<'a> {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
-    #[inline]
     pub fn payload(&self) -> InitAckOptionPayloadRef<'a> {
         match self.opt_type() {
             INIT_ACK_OPT_IPV4_ADDRESS => InitAckOptionPayloadRef::Ipv4Address(u32::from_be_bytes(utils::to_array(self.data, 4).expect("insufficent bytes in SCTP INIT ACK option to extract IPv4 Address payload"))),
@@ -2334,7 +2304,6 @@ impl SackChunk {
         &mut self.duplicate_tsns
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SACK);
         bytes.push(self.flags);
@@ -2363,7 +2332,6 @@ impl From<SackChunkRef<'_>> for SackChunk {
 }
 
 impl From<&SackChunkRef<'_>> for SackChunk {
-    #[inline]
     fn from(value: &SackChunkRef<'_>) -> Self {
         let mut gap_ack_blocks = Vec::new();
         for gap_ack in value.gap_ack_blocks_iter() {
@@ -2402,7 +2370,6 @@ impl<'a> SackChunkRef<'a> {
         SackChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -2661,7 +2628,6 @@ impl HeartbeatChunk {
         &mut self.heartbeat
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_HEARTBEAT);
         bytes.push(self.flags);
@@ -2707,7 +2673,6 @@ impl<'a> HeartbeatChunkRef<'a> {
         HeartbeatChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -2810,7 +2775,6 @@ impl<'a> HeartbeatInfoRef<'a> {
         HeartbeatInfoRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -2934,7 +2898,6 @@ impl HeartbeatAckChunk {
         &mut self.heartbeat
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_HEARTBEAT_ACK);
         bytes.push(self.flags);
@@ -2980,7 +2943,6 @@ impl<'a> HeartbeatAckChunkRef<'a> {
         HeartbeatAckChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &'a [u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -3136,7 +3098,6 @@ impl From<AbortChunkRef<'_>> for AbortChunk {
 }
 
 impl From<&AbortChunkRef<'_>> for AbortChunk {
-    #[inline]
     fn from(value: &AbortChunkRef<'_>) -> Self {
         let mut causes = Vec::new();
         let iter = value.error_iter();
@@ -3169,7 +3130,6 @@ impl<'a> AbortChunkRef<'a> {
         AbortChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -3264,7 +3224,6 @@ pub struct ErrorCauseIterRef<'a> {
 impl<'a> Iterator for ErrorCauseIterRef<'a> {
     type Item = ErrorCauseRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (err_type, unpadded_len) = match (
             utils::get_array(self.bytes, 0).map(|&a| u16::from_be_bytes(a)),
@@ -3359,7 +3318,6 @@ impl ErrorCause {
         ErrorCauseRef::validate(bytes)
     }
 
-    #[inline]
     pub fn len(&self) -> usize {
         match self {
             Self::OutOfResource | Self::CookieDuringShutdown | Self::InvalidMandatoryParameter => 4,
@@ -3377,7 +3335,6 @@ impl ErrorCause {
         }
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self {
             ErrorCause::InvalidStreamIdentifier(e) => e.to_bytes_extended(bytes),
@@ -3415,7 +3372,6 @@ impl From<ErrorCauseRef<'_>> for ErrorCause {
 }
 
 impl From<&ErrorCauseRef<'_>> for ErrorCause {
-    #[inline]
     fn from(value: &ErrorCauseRef<'_>) -> Self {
         match value {
             ErrorCauseRef::InvalidStreamIdentifier(e) => {
@@ -3492,7 +3448,6 @@ impl<'a> ErrorCauseRef<'a> {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
         let cause_code = u16::from_be_bytes(
             utils::to_array(bytes, 0)
@@ -3536,7 +3491,6 @@ impl<'a> ErrorCauseRef<'a> {
         }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let cause_code = u16::from_be_bytes(
             utils::to_array(bytes, 0)
@@ -3677,7 +3631,6 @@ impl StreamIdentifierError {
         self.reserved = reserved;
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_INVALID_STREAM_ID.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
@@ -3720,7 +3673,6 @@ impl<'a> StreamIdentifierErrorRef<'a> {
         StreamIdentifierErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -3849,7 +3801,6 @@ impl MissingParameterError {
         &mut self.missing_params
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_MISSING_MAND_PARAM.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -3897,7 +3848,6 @@ impl<'a> MissingParameterErrorRef<'a> {
         MissingParameterErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4098,7 +4048,6 @@ impl<'a> StaleCookieErrorRef<'a> {
         StaleCookieErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4226,7 +4175,6 @@ impl UnresolvableAddrError {
         &mut self.addr
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_UNRESOLVABLE_ADDRESS.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -4268,7 +4216,6 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
         UnresolvableAddrErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4441,7 +4388,6 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
         UnrecognizedChunkErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4556,7 +4502,6 @@ impl UnrecognizedParamError {
         &mut self.params
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_UNRECOGNIZED_PARAMS.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -4574,7 +4519,6 @@ impl From<UnrecognizedParamErrorRef<'_>> for UnrecognizedParamError {
 }
 
 impl From<&UnrecognizedParamErrorRef<'_>> for UnrecognizedParamError {
-    #[inline]
     fn from(value: &UnrecognizedParamErrorRef<'_>) -> Self {
         let mut params = Vec::new();
         let iter = value.params_iter();
@@ -4603,7 +4547,6 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
         UnrecognizedParamErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4679,7 +4622,6 @@ pub struct ParamsIterRef<'a> {
 impl<'a> Iterator for ParamsIterRef<'a> {
     type Item = GenericParamRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match utils::to_array(self.bytes, 2) {
             Some(unpadded_len_arr) => {
@@ -4744,7 +4686,6 @@ impl NoUserDataError {
         self.tsn = tsn;
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_NO_USER_DATA.to_be_bytes());
         bytes.extend(8u16.to_be_bytes());
@@ -4783,7 +4724,6 @@ impl<'a> NoUserDataErrorRef<'a> {
         NoUserDataErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -4911,7 +4851,6 @@ impl AssociationNewAddrError {
         &mut self.tlvs
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_RESTART_ASSOC_NEW_ADDR.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -4958,7 +4897,6 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
         AssociationNewAddrErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -5073,7 +5011,6 @@ impl UserInitiatedAbortError {
         &mut self.reason
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_USER_INITIATED_ABORT.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -5115,7 +5052,6 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
         UserInitiatedAbortErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -5228,7 +5164,6 @@ impl ProtocolViolationError {
         &mut self.information
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(ERR_CODE_PROTOCOL_VIOLATION.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -5270,7 +5205,6 @@ impl<'a> ProtocolViolationErrorRef<'a> {
         ProtocolViolationErrorRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (utils::to_array(bytes, 0), utils::to_array(bytes, 2)) {
             (Some(cause_code_arr), Some(len_arr)) => {
@@ -5407,7 +5341,6 @@ impl GenericParam {
         &mut self.value
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.extend(self.param_type.to_be_bytes());
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -5465,7 +5398,6 @@ impl<'a> GenericParamRef<'a> {
         GenericParamRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(len_arr) => {
@@ -5636,7 +5568,6 @@ impl ShutdownChunk {
         self.cum_tsn_ack = ack;
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN);
         bytes.push(self.flags);
@@ -5679,7 +5610,6 @@ impl<'a> ShutdownChunkRef<'a> {
         ShutdownChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -5807,7 +5737,6 @@ impl ShutdownAckChunk {
         4
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN_ACK);
         bytes.push(self.flags);
@@ -5848,7 +5777,6 @@ impl<'a> ShutdownAckChunkRef<'a> {
         ShutdownAckChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -5976,7 +5904,6 @@ impl ErrorChunk {
         &mut self.causes
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_ERROR);
         bytes.push(self.flags);
@@ -5995,7 +5922,6 @@ impl From<ErrorChunkRef<'_>> for ErrorChunk {
 }
 
 impl From<&ErrorChunkRef<'_>> for ErrorChunk {
-    #[inline]
     fn from(value: &ErrorChunkRef<'_>) -> Self {
         let mut causes = Vec::new();
         let iter = value.error_iter();
@@ -6027,7 +5953,6 @@ impl<'a> ErrorChunkRef<'a> {
         ErrorChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -6165,7 +6090,6 @@ impl CookieEchoChunk {
         &mut self.cookie
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_COOKIE_ECHO);
         bytes.push(self.flags);
@@ -6209,7 +6133,6 @@ impl<'a> CookieEchoChunkRef<'a> {
         CookieEchoChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -6390,7 +6313,6 @@ impl<'a> CookieAckChunkRef<'a> {
         CookieAckChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -6543,7 +6465,6 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
         ShutdownCompleteChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match (bytes.first(), utils::to_array(bytes, 2)) {
             (Some(&chunk_type), Some(len_arr)) => {
@@ -6716,7 +6637,6 @@ impl UnknownChunk {
         &mut self.value
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.chunk_type);
         bytes.push(self.flags);
@@ -6775,7 +6695,6 @@ impl<'a> UnknownChunkRef<'a> {
         UnknownChunkRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 2) {
             Some(len_arr) => {
@@ -7017,7 +6936,6 @@ impl DataChunk {
 }
 
 impl ToBytes for DataChunk {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.push(0); // DATA Type = 0
@@ -7034,7 +6952,6 @@ impl ToBytes for DataChunk {
 }
 
 impl From<&DataChunkRef<'_>> for DataChunk {
-    #[inline]
     fn from(value: &DataChunkRef<'_>) -> Self {
         DataChunk {
             flags: value.flags(),
@@ -7104,7 +7021,6 @@ impl<'a> DataChunkRef<'a> {
     /// DATA chunk. If the bytes represent a well-formed DATA chunk, this method will return
     /// `Ok()`; otherwise, it will return a [`ValidationError`] indicating what part of the
     /// chunk was invalid.
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let len = match utils::to_array(bytes, 2) {
             None => {

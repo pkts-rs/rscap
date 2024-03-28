@@ -36,6 +36,7 @@ impl L2Socket {
     ///
     /// A program must have the `CAP_NET_RAW` capability in order for this call to succeed;
     /// otherwise, `EPERM` will be returned.
+    #[inline]
     pub fn new() -> io::Result<L2Socket> {
         // Set the socket to receive no packets by default (protocol: 0)
         match unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_RAW, 0) } {
@@ -122,7 +123,6 @@ impl L2Socket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = libc::tpacket_stats {
             tp_packets: 0,
@@ -266,7 +266,6 @@ impl L2Socket {
     ///
     /// A network device in promiscuous mode will capture all packets observed on a physical medium,
     /// not just those destined for it.
-    #[inline]
     pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
         let addr = self.bound_addr()?;
         let iface = addr.interface();
@@ -308,7 +307,6 @@ impl L2Socket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
-    #[inline]
     pub fn set_fanout(
         &self,
         group_id: u16,
@@ -525,7 +523,6 @@ impl L2Socket {
     /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L2Socket`] will be closed.
-    #[inline]
     fn mmap_socket(
         &self,
         config: BlockConfig,
@@ -562,7 +559,6 @@ impl L2Socket {
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
-    #[inline]
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -617,7 +613,6 @@ impl L2Socket {
     /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
     /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
-    #[inline]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L2TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
         self.set_tx_ring_opt(config)?;
@@ -651,7 +646,6 @@ impl L2Socket {
     /// Enables zero-copy packet reception for the socket.
     ///
     /// On error, the consumed `L2Socket` will be closed.
-    #[inline]
     pub fn packet_rx_ring(
         self,
         config: BlockConfig,
@@ -687,7 +681,6 @@ impl L2Socket {
 }
 
 impl Drop for L2Socket {
-    #[inline]
     fn drop(&mut self) {
         unsafe { libc::close(self.fd) };
     }
@@ -731,6 +724,7 @@ impl L2MappedSocket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+    #[inline]
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         self.socket.set_qdisc_bypass(bypass)
     }
@@ -766,6 +760,7 @@ impl L2MappedSocket {
     }
 
     /// Returns the link-layer address the socket is currently bound to.
+    #[inline]
     pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
         self.socket.bound_addr()
     }
@@ -781,6 +776,7 @@ impl L2MappedSocket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[inline]
     pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         self.socket.set_timestamp_method(tx, rx)
     }
@@ -856,7 +852,6 @@ impl L2MappedSocket {
     /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
-    #[inline]
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
         if self.tx_full {
             return None;
@@ -961,7 +956,6 @@ impl L2MappedSocket {
 }
 
 impl Drop for L2MappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
@@ -1009,6 +1003,7 @@ impl L2TxMappedSocket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+    #[inline]
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         self.socket.set_qdisc_bypass(bypass)
     }
@@ -1024,6 +1019,7 @@ impl L2TxMappedSocket {
     }
 
     /// Returns the link-layer address the socket is currently bound to.
+    #[inline]
     pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
         self.socket.bound_addr()
     }
@@ -1039,6 +1035,7 @@ impl L2TxMappedSocket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[inline]
     pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         self.socket.set_timestamp_method(tx, rx)
     }
@@ -1047,7 +1044,6 @@ impl L2TxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2RxMappedSocket::bind())).
-    #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
     }
@@ -1056,7 +1052,6 @@ impl L2TxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2TxMappedSocket::bind())).
-    #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
     }
@@ -1068,7 +1063,6 @@ impl L2TxMappedSocket {
     /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
-    #[inline]
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
         if self.tx_full {
             return None;
@@ -1174,7 +1168,6 @@ impl L2TxMappedSocket {
 }
 
 impl Drop for L2TxMappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
@@ -1219,6 +1212,7 @@ impl L2RxMappedSocket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+    #[inline]
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         self.socket.set_qdisc_bypass(bypass)
     }
@@ -1254,6 +1248,7 @@ impl L2RxMappedSocket {
     }
 
     /// Returns the link-layer address the socket is currently bound to.
+    #[inline]
     pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
         self.socket.bound_addr()
     }
@@ -1269,6 +1264,7 @@ impl L2RxMappedSocket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[inline]
     pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         self.socket.set_timestamp_method(tx, rx)
     }
@@ -1299,7 +1295,6 @@ impl L2RxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2TxMappedSocket::bind())).
-    #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
     }
@@ -1308,7 +1303,6 @@ impl L2RxMappedSocket {
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2RxMappedSocket::bind())).
-    #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
     }
@@ -1326,7 +1320,6 @@ impl L2RxMappedSocket {
 }
 
 impl Drop for L2RxMappedSocket {
-    #[inline]
     fn drop(&mut self) {
         unsafe {
             libc::munmap(

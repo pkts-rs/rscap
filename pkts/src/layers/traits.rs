@@ -237,7 +237,6 @@ pub trait LayerIndex: LayerObject {
     /// If the layer type `T` is the same type as the base layer (`self`), this method will
     /// return a reference to the base layer. For cases where a sublayer of the same type as
     /// the base layer needs to be indexed into, refer to `get_nth_layer()`.
-    #[inline]
     fn get_layer<T: LayerObject>(&self) -> Option<&T> {
         if let Some(t) = self.as_any().downcast_ref::<T>() {
             return Some(t);
@@ -842,7 +841,6 @@ pub mod extras {
             }
         }
 
-        #[inline]
         fn appended_with_boxed(
             self,
             other: Box<dyn LayerObject>,
@@ -859,7 +857,6 @@ pub mod extras {
         ///
         /// Note that using this method can lead to a `panic` later on in the lifetime of the
         /// layer if the provided new layer is not permitted as a payload for the innermost underlayer.
-        #[inline]
         fn appended_with_boxed_unchecked(self, other: Box<dyn LayerObject>) -> Self::Output {
             let mut base: Self::Output = self.into();
             if let Some(mut curr) = base.get_payload_mut() {

@@ -182,7 +182,6 @@ impl LayerObject for Udp {
         self.payload.is_some()
     }
 
-    #[inline]
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
@@ -192,7 +191,6 @@ impl LayerObject for Udp {
 }
 
 impl ToBytes for Udp {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         let len: u16 = self
@@ -248,7 +246,6 @@ impl ToBytes for Udp {
 }
 
 impl FromBytesCurrent for Udp {
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let udp = UdpRef::from_bytes_unchecked(bytes);
         Udp {
@@ -370,7 +367,6 @@ impl UdpRef<'_> {
 }
 
 impl Validate for UdpRef<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         match curr_layer.get(4..6) {
             Some(len_slice) => {
@@ -488,7 +484,6 @@ impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
         }
     }
 
-    #[inline]
     pub fn from_buffer(buffer: Buffer<N>) -> Self {
         Self {
             layer_start: buffer.len(),
@@ -498,7 +493,6 @@ impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
         }
     }
 
-    #[inline]
     pub fn sport(mut self, sport: u16) -> UdpBuilder<UdpBuildDstPort, N> {
         if self.error.is_none() {
             if self.data.remaining() >= 2 {
@@ -522,7 +516,6 @@ impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
 }
 
 impl<const N: usize> UdpBuilder<UdpBuildDstPort, N> {
-    #[inline]
     pub fn dport(mut self, dport: u16) -> UdpBuilder<UdpBuildChksum, N> {
         if self.error.is_none() {
             if self.data.remaining() >= 2 {
@@ -546,7 +539,6 @@ impl<const N: usize> UdpBuilder<UdpBuildDstPort, N> {
 }
 
 impl<const N: usize> UdpBuilder<UdpBuildChksum, N> {
-    #[inline]
     pub fn chksum(mut self, chksum: u16) -> UdpBuilder<UdpBuildPayload, N> {
         if self.error.is_none() {
             if self.data.remaining() >= 4 {
@@ -573,7 +565,6 @@ impl<const N: usize> UdpBuilder<UdpBuildChksum, N> {
 
 impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     /// Add a payload consisting of raw bytes to the UDP packet.
-    #[inline]
     pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<UdpBuildFinal, N> {
         'insert_data: {
             if self.error.is_some() {
@@ -621,7 +612,6 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
-    #[inline]
     pub fn payload(
         self,
         payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,

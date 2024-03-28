@@ -54,7 +54,6 @@ impl Ether {
     ///
     /// This field determines the type and structure of the Ethernet's
     /// payload.
-    #[inline]
     pub fn eth_type(&self) -> u16 {
         match self.payload.as_ref() {
             None => ETH_PROTOCOL_EXPERIMENTAL, // default to experimental protocol indicator
@@ -72,7 +71,6 @@ impl Ether {
 
 #[doc(hidden)]
 impl FromBytesCurrent for Ether {
-    #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         let ether = EtherRef::from_bytes_unchecked(bytes);
         if ether.payload_raw().is_empty() {
@@ -107,7 +105,6 @@ impl LayerLength for Ether {
 }
 
 impl LayerObject for Ether {
-    #[inline]
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
         payload
             .layer_metadata()
@@ -146,7 +143,6 @@ impl LayerObject for Ether {
 }
 
 impl ToBytes for Ether {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.extend(self.src);
@@ -229,7 +225,6 @@ impl<'a> FromBytesRef<'a> for EtherRef<'a> {
 }
 
 impl<'a> LayerOffset for EtherRef<'a> {
-    #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         if bytes.len() <= 14 {
             return None;
@@ -263,7 +258,6 @@ impl<'a> LayerOffset for EtherRef<'a> {
 }
 
 impl<'a> Validate for EtherRef<'a> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() < 14 {
             Err(ValidationError {
@@ -277,7 +271,6 @@ impl<'a> Validate for EtherRef<'a> {
     }
 
     #[doc(hidden)]
-    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         if curr_layer.len() == 14 {
             return Ok(());

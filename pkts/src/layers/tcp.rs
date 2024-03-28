@@ -253,7 +253,6 @@ impl LayerObject for Tcp {
         self.payload.is_some()
     }
 
-    #[inline]
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
@@ -263,7 +262,6 @@ impl LayerObject for Tcp {
 }
 
 impl ToBytes for Tcp {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
@@ -495,7 +493,6 @@ impl<'a> FromBytesRef<'a> for TcpRef<'a> {
 
 #[doc(hidden)]
 impl LayerOffset for TcpRef<'_> {
-    #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let tcp = TcpRef::from_bytes_unchecked(bytes);
         if layer_type == Raw::layer_id() {
@@ -507,7 +504,6 @@ impl LayerOffset for TcpRef<'_> {
 }
 
 impl Validate for TcpRef<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let header_len = match curr_layer.get(12) {
             None => {
@@ -646,7 +642,6 @@ impl<const N: usize> Default for TcpBuilder<TcpBuildSrcPort, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
-    #[inline]
     pub fn new() -> Self {
         Self {
             layer_start: 0,
@@ -656,7 +651,6 @@ impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
         }
     }
 
-    #[inline]
     pub fn from_buffer(buffer: Buffer<N>) -> Self {
         Self {
             layer_start: buffer.len(),
@@ -666,7 +660,6 @@ impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
         }
     }
 
-    #[inline]
     pub fn sport(mut self, sport: u16) -> TcpBuilder<TcpBuildDstPort, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -738,7 +731,6 @@ impl<const N: usize> TcpBuilder<TcpBuildSeq, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildAck, N> {
-    #[inline]
     pub fn ack(mut self, ack: u32) -> TcpBuilder<TcpBuildFlags, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
@@ -762,7 +754,6 @@ impl<const N: usize> TcpBuilder<TcpBuildAck, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
-    #[inline]
     pub fn flags(mut self, flags: TcpFlags) -> TcpBuilder<TcpBuildFlags, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
@@ -787,7 +778,6 @@ impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildWindowSize, N> {
-    #[inline]
     pub fn chksum(mut self, window: u16) -> TcpBuilder<TcpBuildChksum, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -811,7 +801,6 @@ impl<const N: usize> TcpBuilder<TcpBuildWindowSize, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
-    #[inline]
     pub fn chksum(mut self, chksum: u16) -> TcpBuilder<TcpBuildOptsPayload, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -835,7 +824,6 @@ impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
-    #[inline]
     pub fn option(mut self, _option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -862,7 +850,6 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     }
 
     /// Add a payload consisting of raw bytes to the TCP packet.
-    #[inline]
     pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<TcpBuildFinal, N> {
         'insert_data: {
             if self.error.is_some() {
@@ -910,7 +897,6 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
-    #[inline]
     pub fn payload(
         self,
         payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,
@@ -1616,7 +1602,6 @@ impl TcpOption {
         }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         if let Some(TCP_OPT_KIND_EOOL | TCP_OPT_KIND_NOP) = bytes.first() {
             return if bytes.len() == 1 {
@@ -1742,7 +1727,6 @@ impl From<TcpOptionRef<'_>> for TcpOption {
 */
 
 /*
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match bytes.first() {
             Some(0 | 1) => if bytes.len() == 1 {

@@ -253,7 +253,6 @@ impl ClientMessage {
         }
     }
 
-    #[inline]
     pub fn len(&self) -> usize {
         match self {
             ClientMessage::AuthDataResponse(m) => m.len(),
@@ -929,7 +928,6 @@ impl Bind {
         &mut self.results_fmt
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
@@ -1020,7 +1018,6 @@ impl FunctionCall {
         self.result_fmt = result_fmt;
     }
 
-    #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.msg_id());
         bytes.extend((self.len() as i32 - 1).to_be_bytes());
@@ -1228,7 +1225,6 @@ impl<'a> BindRef<'a> {
         self.msg_length() as usize + 1
     }
 
-    #[inline]
     pub fn dst_portal(&self) -> &str {
         let mut iter = self
             .data
@@ -1246,7 +1242,6 @@ impl<'a> BindRef<'a> {
         )
     }
 
-    #[inline]
     pub fn src_stmt(&self) -> &str {
         let mut iter = self.data.get(5..).expect("insufficient bytes in PsqlClient Bind packet to extract Source Prepared Statement field").split(|b| *b == 0);
         iter.next(); // get Destination Portal out of the way
@@ -1259,7 +1254,6 @@ impl<'a> BindRef<'a> {
         str::from_utf8(res).expect("PsqlClient Bind packet had an invalid UTF-8 sequence in its Source Prepared Statement field")
     }
 
-    #[inline]
     pub fn params_fmt(&self) -> FormatCodeIter {
         let mut rem = self.data.get(5..).expect(
             "insufficient bytes in PsqlClient Bind packet to extract Parameter Format fields",
@@ -1285,7 +1279,6 @@ impl<'a> BindRef<'a> {
         }
     }
 
-    #[inline]
     pub fn params(&self) -> ParamIter {
         let fmt_codes = self.params_fmt();
         let mut rem = fmt_codes
@@ -1305,7 +1298,6 @@ impl<'a> BindRef<'a> {
         }
     }
 
-    #[inline]
     pub fn results_fmt(&self) -> FormatCodeIter {
         let mut params = self.params();
         for _ in params.by_ref() {}
@@ -1333,7 +1325,6 @@ pub struct FormatCodeIter<'a> {
 impl<'a> Iterator for FormatCodeIter<'a> {
     type Item = FormatCode;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.num_codes <= 0 {
             return None;
@@ -1356,7 +1347,6 @@ pub struct ParamIter<'a> {
 impl<'a> Iterator for ParamIter<'a> {
     type Item = Option<&'a [u8]>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.num_params <= 0 {
             return None;
@@ -1501,7 +1491,6 @@ impl<'a> ClosePortalRef<'a> {
         )
     }
 
-    #[inline]
     pub fn name(&self) -> &str {
         let mut iter = self
             .data
@@ -1519,7 +1508,6 @@ impl<'a> ClosePortalRef<'a> {
         )
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length, close_type) = match (
             bytes.first(),
@@ -1663,7 +1651,6 @@ impl<'a> ClosePreparedRef<'a> {
         str::from_utf8(res).expect("PsqlClient Close Prepared Statement packet had an invalid UTF-8 sequence in Prepared Statement Name field")
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length, close_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
@@ -1790,7 +1777,6 @@ impl<'a> CopyDataRef<'a> {
         )
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
@@ -1878,7 +1864,6 @@ impl<'a> CopyDoneRef<'a> {
         self.msg_length() as usize + 1
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
@@ -1956,7 +1941,6 @@ impl<'a> CopyFailRef<'a> {
         self.msg_length() as usize + 1
     }
 
-    #[inline]
     pub fn name(&self) -> &str {
         let mut iter = self.data.get(5..).expect("insufficient bytes in PsqlClient Copy Fail packet to extract Prepared Error Message field").split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
@@ -1970,7 +1954,6 @@ impl<'a> CopyFailRef<'a> {
         )
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
@@ -2090,7 +2073,6 @@ impl<'a> DescribePortalRef<'a> {
         *self.data.get(5).expect("insufficient bytes in PsqlClient Describe Portal packet to extract Describe Type field")
     }
 
-    #[inline]
     pub fn name(&self) -> &str {
         let mut iter = self
             .data
@@ -2108,7 +2090,6 @@ impl<'a> DescribePortalRef<'a> {
         )
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length, describe_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
@@ -2235,7 +2216,6 @@ impl<'a> DescribePreparedRef<'a> {
         *self.data.get(5).expect("insufficient bytes in PsqlClient Describe Prepared Statement packet to extract Describe Type field")
     }
 
-    #[inline]
     pub fn name(&self) -> &str {
         let mut iter = self.data.get(6..).expect("insufficient bytes in PsqlClient Describe Prepared Statement packet to extract Prepared Statement Name field").split(|b| *b == 0);
         let res = iter.next().unwrap(); // TODO: the first element is guaranteed to exist...?
@@ -2245,7 +2225,6 @@ impl<'a> DescribePreparedRef<'a> {
         str::from_utf8(res).expect("PsqlClient Describe Prepared Statement packet had an invalid UTF-8 sequence in Prepared Statement Name field")
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length, describe_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
@@ -2365,7 +2344,6 @@ impl<'a> ExecuteRef<'a> {
         self.msg_length() as usize + 1
     }
 
-    #[inline]
     pub fn portal_name(&self) -> &str {
         let payload = self
             .data
@@ -2379,7 +2357,6 @@ impl<'a> ExecuteRef<'a> {
             .expect("PsqlClient Execute packet had an invalid UTF-8 sequence in Portal Name field")
     }
 
-    #[inline]
     pub fn max_rows(&self) -> Option<i32> {
         let payload = self
             .data
@@ -2397,7 +2374,6 @@ impl<'a> ExecuteRef<'a> {
         }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
@@ -2510,7 +2486,6 @@ impl<'a> FlushRef<'a> {
         self.msg_length() as usize + 1
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),

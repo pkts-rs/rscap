@@ -606,7 +606,6 @@ impl Ipv4 {
     ///
     /// This field is automatically determined based on the payload of the packet
     /// and cannot be manually set.
-    #[inline]
     pub fn protocol(&self) -> u8 {
         match self.payload.as_ref() {
             None => DATA_PROTO_EXP1,
@@ -699,7 +698,6 @@ impl Ipv4 {
 
 #[doc(hidden)]
 impl FromBytesCurrent for Ipv4 {
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
         Ipv4 {
@@ -717,7 +715,6 @@ impl FromBytesCurrent for Ipv4 {
         }
     }
 
-    #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         let ipv4 = Ipv4Ref::from_bytes_unchecked(bytes);
         if ipv4.payload_raw().is_empty() {
@@ -746,7 +743,6 @@ impl LayerLength for Ipv4 {
 }
 
 impl LayerObject for Ipv4 {
-    #[inline]
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
         payload
             .layer_metadata()
@@ -1108,7 +1104,6 @@ impl LayerOffset for Ipv4Ref<'_> {
 }
 
 impl Validate for Ipv4Ref<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let (version, ihl) =
             match curr_layer.first() {
@@ -1206,7 +1201,6 @@ impl Validate for Ipv4Ref<'_> {
     }
 
     #[doc(hidden)]
-    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let ihl =
             match curr_layer.first() {
@@ -1684,7 +1678,6 @@ pub struct Ipv4Option {
 }
 
 impl Ipv4Option {
-    #[inline]
     fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.option_type);
         match self.option_type {
@@ -1766,7 +1759,6 @@ impl Ipv4Option {
 }
 
 impl From<&Ipv4OptionRef<'_>> for Ipv4Option {
-    #[inline]
     fn from(ipv4_option: &Ipv4OptionRef<'_>) -> Self {
         Ipv4Option {
             option_type: ipv4_option.option_type(),
@@ -1801,7 +1793,6 @@ impl<'a> Ipv4OptionRef<'a> {
         Ipv4OptionRef { bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match bytes.first() {
             Some(0 | 1) => if bytes.len() == 1 {
@@ -2059,7 +2050,6 @@ impl Ipv6 {
 
 #[doc(hidden)]
 impl FromBytesCurrent for Ipv6 {
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let ipv6 = Ipv6Ref::from_bytes_unchecked(bytes);
         Ipv6 {
@@ -2072,7 +2062,6 @@ impl FromBytesCurrent for Ipv6 {
         }
     }
 
-    #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
         let ipv6 = Ipv6Ref::from_bytes_unchecked(bytes);
         if ipv6.payload_raw().is_empty() {
@@ -2098,7 +2087,6 @@ impl LayerLength for Ipv6 {
 }
 
 impl LayerObject for Ipv6 {
-    #[inline]
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
         payload
             .layer_metadata()
@@ -2137,7 +2125,6 @@ impl LayerObject for Ipv6 {
 }
 
 impl ToBytes for Ipv6 {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.push(0b_0110_0000 | ((self.traffic_class.value & 0xF0) >> 4));
@@ -2334,7 +2321,6 @@ impl<'a> FromBytesRef<'a> for Ipv6Ref<'a> {
 
 #[doc(hidden)]
 impl LayerOffset for Ipv6Ref<'_> {
-    #[inline]
     fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
         let payload = bytes
             .get(40..)
@@ -2377,7 +2363,6 @@ impl LayerOffset for Ipv6Ref<'_> {
 }
 
 impl Validate for Ipv6Ref<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let (version, data_len) =
             match (curr_layer.first(), curr_layer.get(4..6)) {
@@ -2426,7 +2411,6 @@ impl Validate for Ipv6Ref<'_> {
     }
 
     #[doc(hidden)]
-    #[inline]
     fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
         let next_header_type =
             match curr_layer.get(6) {

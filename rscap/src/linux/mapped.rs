@@ -58,7 +58,6 @@ impl BlockConfig {
     ///
     ///
     /// This method checks for overflowing
-    #[inline]
     pub fn new(block_size: u32, block_cnt: u32, frame_size: u32) -> io::Result<Self> {
         let Some(map_length) = (block_size as usize).checked_mul(block_cnt as usize) else {
             return Err(io::Error::new(
@@ -140,8 +139,6 @@ pub struct PacketTxRing {
 }
 
 impl PacketTxRing {
-    /// The passed
-    #[inline]
     pub(crate) unsafe fn new(
         ring_start: *mut u8,
         frame_size: usize,
@@ -261,23 +258,6 @@ impl PacketTxBlock {
             curr_offset: Some(first_offset),
         }
     }
-
-    /*
-    /// Retrieves and permanently consumes the next packet in the block. Any call to [`Self::packets`]
-    /// following this will not include the retrieved packet.
-    #[inline]
-    pub fn pop_packet<'a>(&'a mut self) -> Option<PacketTxFrame<'a>> {
-        let (frame, next_frame_idx) = PacketTxFrameIter::next_offset(
-            self.frames,
-            self.frame_size,
-        )?;
-        self.curr_frame_offset = next_frame_idx;
-        unsafe {
-            self.description.hdr.bh1.num_pkts -= 1;
-        }
-        Some(frame)
-    }
-    */
 }
 
 /// An iterator over frames within a given transmission block.
@@ -300,7 +280,6 @@ impl<'a> PacketTxFrameIter<'a> {
         self.curr_offset.is_some()
     }
 
-    #[inline]
     fn next_with_offset(
         frames: &'a mut [u8],
         frame_size: usize,
@@ -429,7 +408,6 @@ pub struct PacketRxRing {
 }
 
 impl PacketRxRing {
-    #[inline]
     pub(crate) unsafe fn new(
         ring_start: *mut u8,
         block_cnt: usize,
@@ -500,7 +478,6 @@ impl PacketRxRing {
         self.blocks.len()
     }
 
-    #[inline]
     pub(crate) fn next_frame(
         &mut self,
         mut index: FrameIndex,
@@ -578,7 +555,6 @@ impl PacketRxBlock {
     }
 
     /// Returns an iterator over the packets contained within the block.
-    #[inline]
     pub fn packets(&mut self) -> PacketRxFrameIter<'_> {
         let remainder = self.block_header().num_pkts as usize;
         let init_offset = self.block_header().offset_to_first_pkt as usize;
@@ -607,7 +583,6 @@ pub struct PacketRxFrameIter<'a> {
 }
 
 impl<'a> PacketRxFrameIter<'a> {
-    #[inline]
     pub fn next_frame(&'a mut self) -> Option<RxFrame<'a>> {
         let (frame, new_offset) = Self::next_with_offset(
             self.frames,
@@ -621,8 +596,7 @@ impl<'a> PacketRxFrameIter<'a> {
         self.curr_offset = new_offset;
         Some(frame)
     }
-
-    #[inline]
+    
     fn next_with_offset(
         frames: &'a mut [u8],
         frame_cnt: usize,

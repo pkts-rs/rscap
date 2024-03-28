@@ -115,7 +115,6 @@ impl FromBytesCurrent for Diameter {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let diam = DiameterRef::from_bytes_unchecked(bytes);
         Diameter {
@@ -169,7 +168,6 @@ impl LayerObject for Diameter {
         self.payload.is_some()
     }
 
-    #[inline]
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
@@ -184,7 +182,6 @@ impl LayerObject for Diameter {
 }
 
 impl ToBytes for Diameter {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         // Version
         bytes.push(1);
@@ -314,7 +311,6 @@ impl LayerOffset for DiameterRef<'_> {
 }
 
 impl Validate for DiameterRef<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(curr_layer, 0) {
             Some(mut unpadded_len_arr) => {
@@ -396,7 +392,6 @@ pub struct AvpIterRef<'a> {
 impl<'a> Iterator for AvpIterRef<'a> {
     type Item = GenericAvpRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.bytes.is_empty() {
             return None;
@@ -508,7 +503,6 @@ impl FromBytesCurrent for DiamBase {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
-    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let diam = DiamBaseRef::from_bytes_unchecked(bytes);
         let mut avps = Vec::new();
@@ -564,7 +558,6 @@ impl LayerObject for DiamBase {
         self.payload.is_some()
     }
 
-    #[inline]
     fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
@@ -579,7 +572,6 @@ impl LayerObject for DiamBase {
 }
 
 impl ToBytes for DiamBase {
-    #[inline]
     fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         // Version
         bytes.push(1);
@@ -711,7 +703,6 @@ impl LayerOffset for DiamBaseRef<'_> {
 }
 
 impl Validate for DiamBaseRef<'_> {
-    #[inline]
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(curr_layer, 0) {
             Some(unpadded_len_arr) => {
@@ -793,7 +784,6 @@ pub struct BaseAvpIterRef<'a> {
 impl<'b> Iterator for BaseAvpIterRef<'b> {
     type Item<'a> = BaseAvpRef<'a> where Self: 'a;
 
-    #[inline]
     fn next<'a>(&'a mut self) -> Option<Self::Item<'a>> {
         if self.bytes.is_empty() {
             return None;
@@ -1743,7 +1733,6 @@ impl From<GenericAvpRef<'_>> for GenericAvp {
 }
 
 impl From<&GenericAvpRef<'_>> for GenericAvp {
-    #[inline]
     fn from(value: &GenericAvpRef<'_>) -> Self {
         GenericAvp {
             code: value.code(),
@@ -1770,7 +1759,6 @@ impl<'a> GenericAvpRef<'a> {
         GenericAvpRef { data: bytes }
     }
 
-    #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 4) {
             Some(unpadded_len_arr) => {
@@ -1861,7 +1849,6 @@ impl<'a> GenericAvpRef<'a> {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
-    #[inline]
     pub fn vendor_id(&self) -> Option<u32> {
         if self.flags().vendor_specific() {
             Some(u32::from_be_bytes(utils::to_array(self.data, 8).expect(
@@ -1872,7 +1859,6 @@ impl<'a> GenericAvpRef<'a> {
         }
     }
 
-    #[inline]
     pub fn data(&self) -> &[u8] {
         let minimum_length = if self.flags().vendor_specific() {
             12

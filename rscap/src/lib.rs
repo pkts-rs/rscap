@@ -74,7 +74,6 @@ impl Interface {
     ///
     /// Otherwise, any returned error indicates that `if_name` does not correspond with a valid
     /// interface.
-    #[inline]
     pub fn new_raw(if_name: &[u8]) -> io::Result<Self> {
         if if_name.len() >= 16 || if_name.contains(&0x00) {
             return Err(io::Error::new(
@@ -123,7 +122,6 @@ impl Interface {
     ///
     /// Otherwise, a returned error indicates that [`Interface`] does not correspond to a valid
     /// interface.
-    #[inline]
     pub fn name(&self) -> io::Result<String> {
         let mut name_bytes = [0u8; libc::IF_NAMESIZE];
         match unsafe { libc::if_indextoname(self.if_index, name_bytes.as_mut_ptr() as *mut i8) } {
@@ -142,7 +140,6 @@ impl Interface {
     ///
     /// Any returned error indicates that [`Interface`] does not correspond to a valid
     /// interface.
-    #[inline]
     pub fn name_raw(&self) -> io::Result<Vec<u8>> {
         let mut name_arr = [0u8; libc::IF_NAMESIZE];
         match unsafe { libc::if_indextoname(self.if_index, name_arr.as_mut_ptr() as *mut i8) } {
