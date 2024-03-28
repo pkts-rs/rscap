@@ -22,7 +22,6 @@ use crate::utils;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::{cmp, mem};
-use core::iter::Iterator;
 
 /// A TCP (Transmission Control Protocol) packet.
 ///
@@ -153,12 +152,12 @@ impl Tcp {
     /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
     /// been assigned to the packet.
     ///
-    /// By default, the TCP checksum is automatically calculated when a [`Tcp`] instance is
+    /// By default, the TCP checksum is automatically calculated when a [`struct@Tcp`] instance is
     /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
     /// If a checksum has already been assigned to the packet, this method will return it;
-    /// otherwise, it will return `None`. This means that a [`Tcp`] instance created from bytes
-    /// or from a [`TcpRef`] instance will still have a checksum of `None` by default, regardless
-    /// of the checksum value of the underlying bytes it was created from.
+    /// otherwise, it will return `None`. This means that a [`struct@Tcp`] instance created from
+    /// bytes or from a [`TcpRef`] instance will still have a checksum of `None` by default,
+    /// regardless of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u16> {
         self.chksum
@@ -166,7 +165,7 @@ impl Tcp {
 
     /// Assigns a checksum to be used for the packet.
     ///
-    /// By default, the TCP checksum is automatically calculated when a [`Tcp`] instance is
+    /// By default, the TCP checksum is automatically calculated when a [`struct@Tcp`] instance is
     /// converted to bytes. This method overrides that behavior so that the provided checksum is
     /// used instead. You generally shouldn't need to use this method unless:
     ///   1. You know the expected checksum of the packet in advance and don't want the checksum
@@ -182,11 +181,11 @@ impl Tcp {
     /// Clears any previously assigned checksum for the packet.
     ///
     /// This method guarantees that the TCP checksum will be automatically calculated for this
-    /// [`Tcp`] instance whenever the packet is converted to bytes. You shouldn't need to call
-    /// this method unless you've previously explicitly assigned a checksum to the packet--either
-    /// through a call to [`Tcp::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Tcp`] instances from bytes or from a [`TcpRef`] instance will have a
-    /// checksum of `None` by default.
+    /// [`struct@Tcp`] instance whenever the packet is converted to bytes. You shouldn't need to
+    /// call this method unless you've previously explicitly assigned a checksum to the
+    /// packet--either through a call to [`Tcp::set_chksum()`] or through a Builder pattern.
+    /// Packets converted from bytes into [`struct@Tcp`] instances from bytes or from a [`TcpRef`]
+    /// instance will have a checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
@@ -827,7 +826,7 @@ impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
 
 impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     #[inline]
-    pub fn option(mut self, option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
+    pub fn option(mut self, _option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
 //                self.data.append(&chksum.to_be_bytes());
@@ -840,12 +839,16 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
             }
         }
 
+        todo!()
+
+        /*
         TcpBuilder {
             layer_start: self.layer_start,
             data: self.data,
             error: self.error,
             phase: TcpBuildOptsPayload,
         }
+        */
     }
 
     /// Add a payload consisting of raw bytes to the TCP packet.
@@ -1158,12 +1161,15 @@ impl TcpOptions {
     }
 
     #[inline]
-    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+    pub fn from_bytes_unchecked(_bytes: &[u8]) -> Self {
         // Self::from(TcpOptionsRef::from_bytes_unchecked(bytes)) TODO: uncomment
+        /*
         Self {
             options: None,
             padding: None,
         }
+        */
+        todo!()
     }
 
     #[inline]
@@ -1211,7 +1217,8 @@ impl TcpOptions {
     }
 
     
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
+        /*
         match self.options.as_ref() {
             None => (),
             Some(options) => {
@@ -1224,7 +1231,9 @@ impl TcpOptions {
                     Some(p) => bytes.extend(p),
                 }
             }
-        }
+        }*/
+
+        todo!()
     }
     
 }
@@ -1335,9 +1344,12 @@ impl<'a> TcpOptionsRef<'a> {
 
     #[inline]
     pub fn padding(&self) -> &'a [u8] {
+        /*
         let mut iter = self.iter();
         // while iter.next().is_some() {} TODO: uncomment
         &iter.bytes[iter.curr_idx..]
+        */
+        todo!()
     }
 }
 
@@ -1442,7 +1454,7 @@ pub enum TcpOption {
     Mptcp(TcpOptionMultipath),
     /// Padding bytes following Eool.
     /// 
-    /// This is NOT an actual TCP option; rather, it is used only after [`TcpOpt::Eool`] to align
+    /// This is NOT an actual TCP option; rather, it is used only after [`TcpOption::Eool`] to align
     /// TCP options to a 4-byte word boundary.
     Padding(TcpOptionPadding),
     /// A TCP option with an unknown `kind` (i.e. different from listed above).
@@ -1493,14 +1505,14 @@ impl TcpOptionUserTimeout {
     }
 
     #[inline]
-    pub fn set_timeout(&self, timeout: u16) {
+    pub fn set_timeout(&self, _timeout: u16) {
         //self.timeout = cmp::min(timeout, u16::MAX >> 1); // Saturate at 15-bit maximum value
         // TODO: uncomment
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-enum UserTimeoutGranularity {
+pub enum UserTimeoutGranularity {
     Minute,
     Second,
 }

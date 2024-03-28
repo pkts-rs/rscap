@@ -21,7 +21,7 @@ Rscap is a multi-purpose library for network packet capture/transmission and pac
 ## Features
 
 - **Platform-independent interface for packet capture/transmission:** rscap provides a single unified interface for capturing and transmitting packets across any supported platform. Additionally, the library exposes safe abstractions of platform-specific packet capture tools (such as `AF_PACKET`/`PACKET_MMAP` sockets in Linux) to support cases where fine-grained control or platform-specific features are desired.
-- **`no-std` Compatible:** every packet type in the `pkts` crate can be used without the standard library, and special `LayerRef` and `LayerMut` types can be used to access/modify raw packet bytes without requiring `alloc`.
+- **`no-std` Compatible:** every packet type in the `pkts` crate can be used without the standard library, and a special `LayerRef` type can be used to access raw packet bytes without requiring `alloc`.
 - **Robust APIs for building/modifying packets:** rscap provides simple operations to combine various layers into a single packet, and to index into a different layers of a packet to retrieve or modify fields. Users of [`scapy`](https://github.com/ecdev/scapy) may find the API surprisingly familiar, especially for layer composition and indexing operations:
 
 ```rust

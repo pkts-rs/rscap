@@ -8,6 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub fn decode_once(data: &[u8]) {
+pub fn decode_once(_data: &[u8]) {
     todo!()
 }

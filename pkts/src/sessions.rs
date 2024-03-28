@@ -10,7 +10,7 @@
 
 //! # [`Session`] types
 //!
-//! While stateless protocols are not uncommon (see [`Dns`] or [`Http`]),
+//! While stateless protocols are not uncommon (see `Dns` or `Http`),
 //! many protocols implemented by `rscap` are stateful. These protocols
 //! require some form of state machine to be maintained by an endpoint
 //! in order to guage the correctness of a received packet.
@@ -25,14 +25,14 @@
 //! semantically stateful. This means that the protocol has defined more than
 //! one packet format, and the only way to choose the right format when
 //! converting raw bytes is to have some knowledge of the connection state.
-//! A good example of this is [`MysqlClient`] and [`MysqlServer`], which
+//! A good example of this is [`MysqlClient`] and `MysqlServer`, which
 //! have various different packet formats for startup, authentication
 //! and data delivery.
 //!
 //! Protocols that are syntactically stateless can be validated/parsed from bytes
 //! without requiring saved state; these are designated by the [`StatelessLayer`]
 //! trait. Stateless packets also generally implement the [`Validate`] trait, along
-//! with [`FromBytes`]/[`FromBytesCurrent`], [`FromBytesRef`] or [`FromBytesMut`].
+//! with [`FromBytes`]/[`FromBytesCurrent`] and [`FromBytesRef`].
 //! Syntactically stateful protocols cannot validate or convert from bytes using
 //! these traits; to resolve this gap in functionality, [`Session`] types were
 //! designed.
@@ -46,18 +46,13 @@
 //!
 //! TODO: example(s) here
 //!
-//! [`Dns`]: crate::layers::dns::Dns
-//! [`Http`]: crate::layers::http::Http
-//! [`Tcp`]: crate::layers::tcp::Tcp
-//! [`MysqlClient`]: crate::layers::mysql::MysqlClient
-//! [`MysqlServer`]: crate::layers::mysql::MysqlServer
+//! [`Tcp`]: struct@crate::layers::tcp::Tcp
+//! [`MysqlClient`]: struct@crate::layers::mysql::MysqlClient
 //! [`StatelessLayer`]: crate::layers::traits::extras::StatelessLayer
 //! [`Validate`]: crate::layers::traits::Validate
 //! [`FromBytes`]: crate::layers::traits::FromBytes
 //! [`FromBytesCurrent`]: crate::layers::traits::extras::FromBytesCurrent
 //! [`FromBytesRef`]: crate::layers::traits::FromBytesRef
-//! [`FromBytesMut`]: crate::layers::traits::FromBytesMut
-//!
 
 use crate::error::ValidationError;
 use crate::layers::traits::LayerRef;

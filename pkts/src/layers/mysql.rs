@@ -13,7 +13,7 @@
 
 use std::cmp::Ordering;
 
-use super::{Raw, RawRef};
+use super::Raw;
 use crate::error::*;
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
@@ -88,7 +88,7 @@ impl LayerLength for MysqlPacket {
 
 impl LayerObject for MysqlPacket {
     #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         // payload.as_any().downcast_ref::<&MysqlClient>().is_some()
         todo!()
     }
@@ -124,7 +124,7 @@ impl LayerObject for MysqlPacket {
 
 impl ToBytes for MysqlPacket {
     #[inline]
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         let start = bytes.len();
         bytes.push(self.sequence_id);
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
@@ -283,7 +283,7 @@ impl LayerObject for MysqlClient {
 }
 
 impl ToBytes for MysqlClient {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }

@@ -76,10 +76,13 @@ pub trait LayerLength {
 /// underlayer until one with an empty payload is reached, and then replacing the empty payload
 /// with the new layer.
 ///
-/// For instance, if one had an [`Ipv4`] layer that had a structure of `Ipv4` / `Tcp` (with the
-/// [`Tcp`] layer having no payload), then appending a [`Http`] layer to it would result in a
-/// structure of `Ipv4` / `Tcp` / `Http`. This is different from `set_payload()`, which would
-/// attempt (and fail) to change the layer structure to be `Ipv4` / `Http`.
+/// For instance, if one had an [`Ipv4`] layer that had a structure of [`Ipv4`] / [`Tcp`] (with the
+/// [`Tcp`] layer having no payload), then appending a `Http` layer to it would result in a
+/// structure of [`Ipv4`] / [`Tcp`] / `Http`. This is different from `set_payload()`, which would
+/// attempt (and fail) to change the layer structure to be [`Ipv4`] / `Http`.
+/// 
+/// [`Ipv4`]: struct@crate::layers::ip::Ipv4
+/// [`Tcp`]: struct@crate::layers::tcp::Tcp
 pub trait BaseLayerAppend: BaseLayerAppendBoxed {
     /// Determines whether a given new layer can be appended to an existing one.
     ///
@@ -495,14 +498,14 @@ pub trait Validate: BaseLayer + StatelessLayer {
     /// fields of that packet. This is achieved by using the `from_bytes_unchecked()` method in any
     /// of the layer types.
     ///
-    /// 1. [`ValidationErrorType::InvalidSize`] errors are checked for and returned first and in
+    /// 1. [`ValidationErrorClass::InvalidSize`] errors are checked for and returned first and in
     /// order from parent layer to sublayer. An `InvalidSize` error indicates that there are
     /// insufficient bytes for some portion of the packet, such that an attempt to index into those
     /// bytes would panic. If this error is returned by a call to validate, the caller should not
     /// use `from_bytes_unchecked()`, as subsequent method invocations on that layer instance may
     /// result in a panic condition.
     ///
-    /// 2. [`ValidationErrorType::InvalidValue`] errors are returned when a field in a layer
+    /// 2. [`ValidationErrorClass::InvalidValue`] errors are returned when a field in a layer
     /// contains an invalid value (such as an Ipv4 packet containing a version code other than `4`).
     /// `InvalidValue` errors are returned in order from parent layer to sublayer. These errors
     /// will not lead to panic conditions if the bytes are converted into a layer type,
@@ -513,7 +516,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     /// For the most part, this is because the conversion to `Layer` types drops some meta
     /// information contained within the bytes (and corrects others as needed).
     ///
-    /// 3. [`ValidationErrorType::ExcessBytes`] errors are returned when the byte slice contains
+    /// 3. [`ValidationErrorClass::ExcessBytes`] errors are returned when the byte slice contains
     /// more bytes in it than is needed to fully construct the layer and its sublayers
     /// (i.e. there are trailing bytes at the end of the packet). Byte slices that return this
     /// error can be safely converted using `from_bytes_unchecked()` without leading to panic
@@ -524,7 +527,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     /// If no errors are returned, the byte slice can be used to construct a layer that is both
     /// panic-free and reflexive.
     ///
-    /// [`ValidationErrorType::InvalidPayloadLayer`] will not be returned by this function.
+    /// [`ValidationErrorClass::InvalidPayloadLayer`] will not be returned by this function.
     fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let curr_valid = Self::validate_current_layer(bytes);
         match curr_valid {
@@ -544,7 +547,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
                 class: ValidationErrorClass::InvalidValue,
                 reason: e.reason,
             }),
-            (Err(_), _) => curr_valid, // ValidationErrorType::ExcessBytes(_)
+            (Err(_), _) => curr_valid, // ValidationErrorClass::ExcessBytes(_)
             _ => Ok(()),
         }
     }
@@ -591,7 +594,7 @@ pub trait FromBytes: Sized + Validate + StatelessLayer + FromBytesCurrent {
     ///
     /// The following function may panic if the slice of bytes doesn't form a valid packet
     /// structure. If an invocation of `validate()` on the slice does not return
-    /// [`ValidationErrorType::InvalidSize`], this function will not panic.
+    /// [`ValidationErrorClass::InvalidSize`], this function will not panic.
     fn from_bytes_unchecked(bytes: &[u8]) -> Self;
 }
 
@@ -611,55 +614,8 @@ pub trait FromBytesRef<'a>: Sized + Validate + StatelessLayer {
     ///
     /// The following function may panic if the slice of bytes doesn't form a valid packet
     /// structure. If an invocation of `validate()` on the slice does not return
-    /// [`ValidationErrorType::InvalidSize`], this function will not panic.
+    /// [`ValidationErrorClass::InvalidSize`], this function will not panic.
     fn from_bytes_unchecked(bytes: &'a [u8]) -> Self;
-}
-
-pub trait FromBytesMut<'a>: Sized + Validate + StatelessLayer {
-    /// Converts a slice of bytes into a [`LayerMut`] type, returning an error if the bytes would
-    /// not form a valid layer.
-    #[inline]
-    fn from_bytes(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
-        Self::validate(bytes)?;
-        Ok(Self::from_bytes_unchecked(bytes))
-    }
-
-    /// Converts a slice of bytes into a [`LayerMut`] type, returning an error if the bytes would
-    /// not form a valid layer. Validation errors of type [`ValidationErrorType::ExcessBytes`]
-    /// are silently ignored.
-    #[inline]
-    fn from_bytes_trailing(bytes: &'a mut [u8]) -> Result<Self, ValidationError> {
-        match Self::validate(bytes) {
-            Ok(_) => Ok(Self::from_bytes_unchecked(bytes)),
-            Err(e) => match e.class {
-                ValidationErrorClass::ExcessBytes(extra) => Ok(
-                    Self::from_bytes_trailing_unchecked(bytes, bytes.len() - extra),
-                ),
-                _ => Err(e),
-            },
-        }
-    }
-
-    /// Converts a slice of bytes into a [`LayerMut`] type.
-    ///
-    /// # Panics
-    ///
-    /// The following function may panic if the slice of bytes doesn't form a valid packet
-    /// structure. If an invocation of `validate()` on the slice does not return
-    /// [`ValidationErrorType::InvalidSize`], this function will not panic.
-    #[inline]
-    fn from_bytes_unchecked(bytes: &'a mut [u8]) -> Self {
-        Self::from_bytes_trailing_unchecked(bytes, bytes.len())
-    }
-
-    /// Converts a slice of bytes into a [`LayerMut`] type.
-    ///
-    /// # Panics
-    ///
-    /// The following function may panic if the slice of bytes do not form a valid packet
-    /// structure. If an invocation of `validate()` on the slice does not return
-    /// [`ValidationErrorType::InvalidSize`], this function will not panic.
-    fn from_bytes_trailing_unchecked(bytes: &'a mut [u8], length: usize) -> Self;
 }
 
 // =============================================================================
@@ -775,17 +731,17 @@ pub mod extras {
 
     /// Utility method to convert a given type into some type implementing [`Layer`].
     ///
-    /// This is used for converting a type implementing [`LayerRef<'_>] or [`LayerMut<'_>`]
-    /// into its corresponding owned type. For example, the [`IPv4Ref<'_>`] type implements
+    /// This is used for converting a type implementing [`LayerRef`] into its corresponding owned
+    /// type. For example, the [`IPv4Ref`](crate::layers::ip::Ipv4Ref) type implements
     /// [`IntoLayer<Output=IPv4>`]. Because of this, it can be converted into its owned
-    /// variant, the [`IPv4`] type.
+    /// variant, the [`IPv4`](struct@crate::layers::ip::Ipv4) type.
     #[doc(hidden)]
     pub trait IntoLayer: Into<Self::Output> {
         type Output: LayerObject;
     }
 
     /// A trait for creating an owned layer type [`Layer`] from an instance of a protocol layer
-    /// (a [`Layer`], [`LayerRef`] or [`LayerMut`]).
+    /// (a [`Layer`] or [`LayerRef`]).
     pub trait ToOwnedLayer {
         type Owned: LayerObject;
 
@@ -808,6 +764,7 @@ pub mod extras {
     }
 
     /// Utility method to convert a given type into a [`Box`]ed instance of [`Layer`].
+    /// 
     /// This is primarily used internally to facilitate appending one layer to another
     /// in a type-agnostic way.
     pub trait ToBoxedLayer {
@@ -817,7 +774,8 @@ pub mod extras {
         fn to_boxed_layer(&self) -> Box<dyn LayerObject>;
     }
 
-    /// Blanket implementation of [`IntoBoxedLayer`] for all types implementing [`IntoLayer`].
+    /// Blanket implementation of [`ToBoxedLayer`] for all types implementing [`IntoLayer`].
+    /// 
     /// This converts the given instance into a type implementing [`Layer`] using methods from
     /// [`IntoLayer`] and returns that instance within a [`Box`].
     impl<T: IntoLayer + ToOwnedLayer> ToBoxedLayer for T {
@@ -839,7 +797,8 @@ pub mod extras {
     }
     */
 
-    // methods relating to `BaseLayer` types that would pollute the object safety of [`BaseLayer`] if added to it.
+    /// Methods relating to [`BaseLayer`] types that would violate the object-safety of `BaseLayer`
+    /// if added to it.
     pub trait BaseLayerMetadata: BaseLayer {
         fn metadata() -> &'static dyn LayerMetadata;
     }
@@ -872,7 +831,7 @@ pub mod extras {
 
     pub trait BaseLayerAppendBoxed: BaseLayer + IntoLayer + Sized + ToOwnedLayer {
         fn can_append_with_boxed(&self, other: &dyn LayerObject) -> bool {
-            let base: Self::Owned = self.to_owned(); // Ouch. Heavy allocation here
+            let base: Self::Owned = self.to_owned(); // Ouch. Heavy allocation here, and just for a check!
             if let Some(mut curr) = base.get_payload_ref() {
                 while curr.get_payload_ref().is_some() {
                     curr = curr.get_payload_ref().unwrap();
@@ -920,15 +879,15 @@ pub mod extras {
 
     /// Assigns a unique identifier to the layer.
     ///
-    /// Each protocol layer must have the same LayerId returned by this trait across [`Layer`],
-    /// [`LayerRef`] and [`LayerMut`] types of that protocol. So, there were a protocol layer
-    /// called `Example`, then `Example::layer_id()` == `ExampleRef::layer_id()`, and likewise
+    /// Each protocol layer must have the same LayerId returned by this trait across [`Layer`]
+    /// and [`LayerRef`] types of that protocol. So, there were a protocol layer called `Example`,
+    /// then `Example::layer_id()` == `ExampleRef::layer_id()`, and likewise
     /// `Example::layer_id()` == `ExampleMut::layer_id()`.
     pub trait LayerIdentifier: Sized {
         /// A unique identifier for the layer type.
         ///
-        /// This identifier is guaranteed to be the same across instances of [`Layer`], [`LayerRef`]
-        /// and [`LayerMut`] types of the same protocol layer.
+        /// This identifier is guaranteed to be the same across instances of [`Layer`] and
+        /// [`LayerRef`] types of the same protocol layer.
         fn layer_id() -> LayerId;
     }
 
@@ -949,16 +908,21 @@ pub mod extras {
     ///
     /// Some [`Layer`] types always have the same structure to their data regardless of the state of the protocol,
     /// while others have several data layout variants that may be ambiguous without accompanying information.
-    /// An example of stateless layers would be [`Dns`], which only ever has one data layout, or [`PsqlClient`],
+    /// An example of stateless layers would be `Dns`, which only ever has one data layout, or [`PsqlClient`],
     /// which has information encoded into the first bytes of the packet that allows a decoder to determine the
     /// byte layout of the specific packet variant. On the other hand, stateful layers require knowlede of what
     /// packets have been exchanged prior to the given byte packet in order to be successfully converted. An
-    /// example of this would be the [`MysqlClient`] and [`MysqlServer`] layers.
+    /// example of this would be the [`MysqlClient`] and `MysqlServer` layers.
     ///
     /// Any [`Layer`] type implementing [`StatelessLayer`] can be decoded directly from bytes using
-    /// `from_bytes()`/`from_bytes_unchecked()` or by using a [`Defragment`] type. Layers that do not implement
+    /// `from_bytes()`/`from_bytes_unchecked()` or by using a [`Sequence`] type. Layers that do not implement
     /// [`StatelessLayer`] can be decoded from bytes using a [`Session`] type (which keeps track of connection state)
     /// or by using constructor methods specific to that layer that require additional state information.
+    /// 
+    /// [`MysqlClient`]: struct@crate::layers::mysql::MysqlClient
+    /// [`PsqlClient`]: struct@crate::layers::psql::PsqlClient
+    /// [`Sequence`]: crate::sequence::Sequence
+    /// [`Session`]: crate::sessions::Session
     pub trait StatelessLayer {}
 
     // ==========================================================

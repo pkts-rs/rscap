@@ -45,6 +45,9 @@
 //! the Sequence type before it.
 //!
 //! TODO: example here
+//! 
+//! [`Sctp`]: struct@crate::layers::sctp::Sctp
+//! [`Tcp`]: struct@crate::layers::tcp::Tcp
 
 #[cfg(feature = "alloc")]
 use std::collections::{hash_map::RandomState, HashMap, VecDeque};
@@ -111,7 +114,7 @@ pub trait SequenceObject {
     /// 1. The inserted packet is not fragmented (only applicable if fragmentation occurs
     /// in the protocol, such as for [`Ipv4Sequence`]).
     /// 2. The inserted packet is the next required packet in order (only applicable if
-    /// the Sequence enforces ordering on the packets, such as for [`TcpSequence`]).
+    /// the Sequence enforces ordering on the packets, such as for `TcpSequence`).
     /// 3. There are no outstanding packets that can be fetched from the sequence using
     /// [`SequenceObject::get()`].
     ///
@@ -149,8 +152,9 @@ pub trait SequenceObject {
     fn filter(&self) -> Option<&PktFilterDynFn>;
 
     /// Sets the filter of the Sequence type, discarding any current filter in place.
-    /// Note that this filter type operates on a raw slice of bytes; to set a filter
-    /// that operates on the input packet type, see [`Sequence::set_filter()`].
+    /// 
+    /// Note that this filter type operates on a raw slice of bytes; to set a filter that operates
+    /// on the input packet type, see [`set_filter()`](UnboundedSequence::set_filter()).
     fn set_filter_raw(&mut self, filter: Option<fn(&[u8]) -> bool>);
 }
 
@@ -171,7 +175,7 @@ pub trait Sequence: SequenceObject + Sized {
     /// 1. The inserted packet is not fragmented (only applicable if fragmentation occurs
     /// in the protocol, such as for [`Ipv4Sequence`]).
     /// 2. The inserted packet is the next required packet in order (only applicable if
-    /// the Sequence enforces ordering on the packets, such as for [`TcpSequence`]).
+    /// the Sequence enforces ordering on the packets, such as for `TcpSequence`).
     /// 3. There are no outstanding packets that can be fetched from the sequence using
     /// [`SequenceObject::get()`].
     ///
@@ -203,10 +207,10 @@ pub trait UnboundedSequence: Sequence {
     /// Sets the filter of the Sequence type, discarding any current filter in place,
     /// and returns the sequence type as its output.
     ///
-    /// This variant of [`Sequence::set_filter()`] is useful for creating
+    /// This variant of [`set_filter()`](UnboundedSequence::set_filter()) is useful for creating
     /// [`LayeredSequence`] instances:
     ///
-    /// ```rs
+    /// ```
     /// let seq = LayeredSequence::new(Ipv4Sequence::new().with_filter(|ip| !(ip.src() == 0 || ip.dst() == 0)), true)
     ///         .add_bounded(StcpSequence::new().with_filter(|sctp| sctp.sport() == 4321 && sctp.verify_tag() == 1111));
     /// ```
@@ -1471,8 +1475,8 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
     fn put_and_get_unchecked<'a>(&'a mut self, pkt: &'a [u8]) -> Option<&'a [u8]> {
         let sctp = SctpRef::from_bytes_unchecked(pkt);
 
-        let mut data_chunks = sctp.payload_chunks();
-        if data_chunks.count() > 1 {}
+        let _data_chunks = sctp.payload_chunks();
+        // if data_chunks.count() > 1 {}
         todo!()
     }
     /*

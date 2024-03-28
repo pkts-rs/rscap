@@ -116,7 +116,7 @@ impl FromBytesCurrent for PsqlClient {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {}
 
-    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+    fn from_bytes_current_layer_unchecked(_bytes: &[u8]) -> Self {
         todo!()
     }
 }
@@ -150,13 +150,13 @@ impl LayerObject for PsqlClient {
         todo!()
     }
 
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn set_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
         todo!()
     }
 }
 
 impl ToBytes for PsqlClient {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }
@@ -1080,25 +1080,25 @@ pub struct PsqlClientRef<'a> {
 impl<'a> PsqlClientRef<'a> {}
 
 impl<'a> FromBytesRef<'a> for PsqlClientRef<'a> {
-    fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+    fn from_bytes_unchecked(_bytes: &'a [u8]) -> Self {
         todo!()
     }
 }
 
 impl<'a> LayerOffset for PsqlClientRef<'a> {
-    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+    fn payload_byte_index_default(_bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
         todo!()
     }
 }
 
 impl<'a> Validate for PsqlClientRef<'a> {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+    fn validate_current_layer(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
 
     #[doc(hidden)]
     #[inline]
-    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+    fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
 }
@@ -2170,7 +2170,7 @@ impl<'a> DescribePortalRef<'a> {
                     reason: "null character found before end of string in PsqlClient Describe Portal packet Portal Name field",
                 })
             },
-            Err(e) => return Err(ValidationError {
+            Err(_) => return Err(ValidationError {
                 layer: PsqlClient::name(),
                 class: ValidationErrorClass::InvalidValue,
                 reason: "invalid UTF-8 character found in PsqlClient Describe Portal packet Portal Name field",
@@ -2421,7 +2421,7 @@ impl<'a> ExecuteRef<'a> {
             }
         };
 
-        let (portal_name_bytes, max_rows_bytes) = match utils::split_delim(rem, 0x00) {
+        let (portal_name_bytes, _max_rows_bytes) = match utils::split_delim(rem, 0x00) {
             Some(t) => t,
             None => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -2621,11 +2621,11 @@ impl PsqlServer {
 
 #[doc(hidden)]
 impl FromBytesCurrent for PsqlServer {
-    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
+    fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
         todo!()
     }
 
-    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+    fn from_bytes_current_layer_unchecked(_bytes: &[u8]) -> Self {
         todo!()
     }
 }
@@ -2638,7 +2638,7 @@ impl LayerLength for PsqlServer {
 
 impl LayerObject for PsqlServer {
     #[inline]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         false
     }
 
@@ -2658,13 +2658,13 @@ impl LayerObject for PsqlServer {
         todo!()
     }
 
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn set_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
         todo!()
     }
 }
 
 impl ToBytes for PsqlServer {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
         todo!()
     }
 }
@@ -2778,25 +2778,25 @@ pub struct PsqlServerRef<'a> {
 impl<'a> PsqlServerRef<'a> {}
 
 impl<'a> FromBytesRef<'a> for PsqlServerRef<'a> {
-    fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+    fn from_bytes_unchecked(_bytes: &'a [u8]) -> Self {
         todo!()
     }
 }
 
 impl<'a> LayerOffset for PsqlServerRef<'a> {
-    fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize> {
+    fn payload_byte_index_default(_bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
         todo!()
     }
 }
 
 impl<'a> Validate for PsqlServerRef<'a> {
-    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+    fn validate_current_layer(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
 
     #[doc(hidden)]
     #[inline]
-    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+    fn validate_payload_default(_curr_layer: &[u8]) -> Result<(), ValidationError> {
         todo!()
     }
 }

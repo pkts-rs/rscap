@@ -150,12 +150,12 @@ impl Sctp {
     /// Retrieves the assigned CRC32c checksum for the packet, or `None` if no checksum has
     /// been assigned to the packet.
     ///
-    /// By default, the SCTP checksum is automatically calculated when an [`Sctp`] instance is
-    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
-    /// If a checksum has already been assigned to the packet, this method will return it;
-    /// otherwise, it will return `None`. This means that an [`Sctp`] instance created from bytes
-    /// or from a [`SctpRef`] instance will still have a checksum of `None` by default, regardless
-    /// of the checksum value of the underlying bytes it was created from.
+    /// By default, the SCTP checksum is automatically calculated when an [`struct@Sctp`] instance
+    /// is converted to bytes, unless a checksum is pre-assigned to the instance prior to
+    /// conversion. If a checksum has already been assigned to the packet, this method will return
+    /// it; otherwise, it will return `None`. This means that an [`struct@Sctp`] instance created
+    /// from bytes or from a [`SctpRef`] instance will still have a checksum of `None` by default,
+    /// regardless of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u32> {
         self.chksum
@@ -163,8 +163,8 @@ impl Sctp {
 
     /// Assigns the CRC32c checksum to be used for the packet.
     ///
-    /// By default, the SCTP checksum is automatically calculated when an [`Sctp`] instance is
-    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// By default, the SCTP checksum is automatically calculated when an [`struct@Sctp`] instance
+    /// is converted to bytes. This method overrides that behavior so that the provided checksum is
     /// used instead. You generally shouldn't need to use this method unless:
     ///   1. You know the expected checksum of the packet in advance and don't want the checksum
     ///      calculation to automatically run again (since it can be a costly operation), or
@@ -179,11 +179,11 @@ impl Sctp {
     /// Clears any previously assigned CRC32c checksum for the packet.
     ///
     /// This method guarantees that the SCTP checksum will be automatically calculated for this
-    /// [`Sctp`] instance whenever the packet is converted to bytes. You shouldn't need to call
-    /// this method unless you've previously explicitly assigned a checksum to the packet--either
+    /// [`struct@Sctp`] instance whenever the packet is converted to bytes. You shouldn't need to
+    /// call this method unless you've previously explicitly assigned a checksum to the packet--either
     /// through a call to [`Sctp::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Sctp`] instances from bytes or from a [`SctpRef`] instance will have a
-    /// checksum of `None` by default.
+    /// from bytes into [`struct@Sctp`] instances from bytes or from a [`SctpRef`] instance will
+    /// have a checksum of `None` by default.
     #[inline]
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
@@ -201,7 +201,7 @@ impl Sctp {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`PayloadChunk`].
+    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
     /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
@@ -219,7 +219,7 @@ impl Sctp {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`PayloadChunk`].
+    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
     /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
@@ -312,20 +312,22 @@ impl LayerObject for Sctp {
         true // SCTP can handle arbitrary protocols
     }
 
-    /// Returns a reference to the first payload chunk in the [`Sctp`] packet, if such a chunk exists.
+    /// Returns a reference to the first payload chunk in the [`struct@Sctp`] packet, if such a
+    /// chunk exists.
     #[inline]
     fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
         self.payload_chunks.first().map(|c| c.payload.as_ref())
     }
 
-    /// Returns a mutable reference to the first payload chunk in the [`Sctp`] packet, if such a chunk exists.
+    /// Returns a mutable reference to the first payload chunk in the [`struct@Sctp`] packet, if
+    /// such a chunk exists.
     #[inline]
     fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload_chunks.first_mut().map(|c| c.payload.as_mut())
     }
 
-    /// Replaces the first payload chunk in the [`Sctp`] packet with the given payload, or adds a new payload
-    /// chunk with all associated fields set to 0 if there were none.
+    /// Replaces the first payload chunk in the [`struct@Sctp`] packet with the given payload, or
+    /// adds a new payload chunk with all associated fields set to 0 if there were none.
     #[inline]
     fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         if let Some(payload_chunk) = self.payload_chunks.first_mut() {
@@ -449,7 +451,7 @@ impl<'a> SctpRef<'a> {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`PayloadChunk`].
+    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
     /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
@@ -476,8 +478,8 @@ impl<'a> SctpRef<'a> {
     ///
     /// These constraints will be enforced by this library by default.
     #[inline]
-    pub fn payload_chunks(&self) -> PayloadChunksIterRef<'a> {
-        PayloadChunksIterRef {
+    pub fn payload_chunks(&self) -> DataChunksIterRef<'a> {
+        DataChunksIterRef {
             chunk_iter: self.chunks(),
         }
     }
@@ -635,11 +637,11 @@ impl<'a> Iterator for ControlChunksIterRef<'a> {
 
 /// An iterator over the Payload chunks (i.e. the DATA chunks) of an SCTP packet.
 #[derive(Clone, Copy, Debug)]
-pub struct PayloadChunksIterRef<'a> {
+pub struct DataChunksIterRef<'a> {
     chunk_iter: ChunksIterRef<'a>,
 }
 
-impl<'a> Iterator for PayloadChunksIterRef<'a> {
+impl<'a> Iterator for DataChunksIterRef<'a> {
     type Item = DataChunkRef<'a>;
 
     #[inline]

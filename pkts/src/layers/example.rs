@@ -113,18 +113,11 @@ impl<'a> Validate for ExampleRef<'a> {
 
 /*
 
-// To mutate existing packets, we have two options:
-//
-// 1. `LayerMut` - allows easy in-place modifications, but only for fields that are fixed-size.
-//
-// 2. `LayerBuilder` - a typed builder that allows passing in a
+// To mutate existing packets, we have:
+// `LayerBuilder` - a typed builder that allows passing in a
 
 
 // `LayerBuilder<'a, 'b, State>`
-
-// new(layer: LayerMut<'a>) -> Self
-//
-
 
 trait State<'b>: private::Sealed {
     fn new() -> Self;
@@ -264,5 +257,4 @@ impl<'a, 'b> TcpBuilder<'b, HeaderState> {
 // Solutions?
 // - Restrict what kinds of fields can be modified easily in a stacked manner??
 // - Restrict to only one layer? (not very useful...)
-// - Move this functionality to LayerMut (less efficient)
 */

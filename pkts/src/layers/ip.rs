@@ -48,11 +48,11 @@ pub const DATA_PROTO_ICMP: u8 = 0x01;
 pub const DATA_PROTO_IGMP: u8 = 0x02;
 /// Gateway-to-Gateway Protocol (see RFC 823)
 pub const DATA_PROTO_GGP: u8 = 0x03;
-/// IP in IP encapsulation (see [`Ipv4`], [`Ipv6`], RFC 2003)
+/// IP in IP encapsulation (see [`struct@Ipv4`], [`struct@Ipv6`], RFC 2003)
 pub const DATA_PROTO_IP_IN_IP: u8 = 0x04;
 /// Internet Stream Protocol (see RFC 1190 and RFC 1819)
 pub const DATA_PROTO_ST: u8 = 0x05;
-/// Transmission Control Protocol (see [`Tcp`], RFC 793)
+/// Transmission Control Protocol (see [`struct@Tcp`], RFC 793)
 pub const DATA_PROTO_TCP: u8 = 0x06;
 /// Core-Based Trees (see RFC 2189)
 pub const DATA_PROTO_CBT: u8 = 0x07;
@@ -60,7 +60,7 @@ pub const DATA_PROTO_CBT: u8 = 0x07;
 pub const DATA_PROTO_EGP: u8 = 0x08;
 /// Interior gateway Protocol
 pub const DATA_PROTO_IGP: u8 = 0x09;
-/// BBN RCC Monitoringdata[0] & 0x0F
+/// BBN RCC Monitoring
 pub const DATA_PROTO_BBN_RCC_MON: u8 = 0x0A;
 /// Network Voide Protocol (see RFC 741)
 pub const DATA_PROTO_NVP2: u8 = 0x0B;
@@ -74,7 +74,7 @@ pub const DATA_PROTO_EMCON: u8 = 0x0E;
 pub const DATA_PROTO_XNET: u8 = 0x0F;
 /// CHAOS
 pub const DATA_PROTO_CHAOS: u8 = 0x10;
-/// User Datagram Protocol (see [`Udp`], RFC 741)
+/// User Datagram Protocol (see [`struct@Udp`], RFC 741)
 pub const DATA_PROTO_UDP: u8 = 0x11;
 /// Multiplexing (see IEN 90)
 pub const DATA_PROTO_MUX: u8 = 0x12;
@@ -448,14 +448,15 @@ pub struct Ipv4 {
 impl Ipv4 {
     /// The Internet Header Length (IHL) of the packet.
     ///
-    /// This field indicates the number of bytes in the header of the IPv4 packet as a multiple of 4.
-    /// So, an IHL of 8 would indicate that the first 32 bytes of the packet are the IPv4 header.
-    /// The IHL must be a minimum of 20 bytes (i.e. a value of 5) to cover the necessary mandatory IPv4
-    /// fields, and cannot exceed 60 bytes (i.e. a value of 15).
+    /// This field indicates the number of bytes in the header of the IPv4 packet as a multiple of
+    /// four. So, an IHL of 8 would indicate that the first 32 bytes of the packet are the IPv4
+    /// header. The IHL must be a minimum of 20 bytes (i.e. a value of 5) to cover the necessary
+    /// mandatory IPv4 fields, and cannot exceed 60 bytes (i.e. a value of 15).
     ///
-    /// As an implementation-specific detail, the IHL is automatically calculated and cannot be manually
-    /// set in an [`Ipv4`] object. This is because the IHL determines the number of bytes in the options field,
-    /// and changing the IHL without changing the options would break the packet's structural composition.
+    /// As an implementation-specific detail, the IHL is automatically calculated and cannot be
+    /// manually set in an [`struct@Ipv4`] object. This is because the IHL determines the number of
+    /// bytes in the options field, and changing the IHL without changing the options would break
+    /// the packet's structural composition.
     #[inline]
     pub fn ihl(&self) -> u8 {
         let len = self.options.byte_len();
@@ -623,12 +624,12 @@ impl Ipv4 {
     /// Retrieves the assigned checksum for the packet, or `None` if no checksum has explicitly
     /// been assigned to the packet.
     ///
-    /// By default, the IPv4 checksum is automatically calculated when an [`Ipv4`] instance is
-    /// converted to bytes, unless a checksum is pre-assigned to the instance prior to conversion.
-    /// If a checksum has already been assigned to the packet, this method will return it;
-    /// otherwise, it will return `None`. This means that an [`Ipv4`] instance created from bytes
-    /// or from a [`Ipv4Ref`] instance will still have a checksum of `None` by default, regardless
-    /// of the checksum value of the underlying bytes it was created from.
+    /// By default, the IPv4 checksum is automatically calculated when an [`struct@Ipv4`] instance
+    /// is converted to bytes, unless a checksum is pre-assigned to the instance prior to
+    /// conversion. If a checksum has already been assigned to the packet, this method will return
+    /// it; otherwise, it will return `None`. This means that an [`struct@Ipv4`] instance created
+    /// from bytes or from a [`Ipv4Ref`] instance will still have a checksum of `None` by default,
+    /// regardless of the checksum value of the underlying bytes it was created from.
     #[inline]
     pub fn chksum(&self) -> Option<u16> {
         self.chksum
@@ -636,8 +637,8 @@ impl Ipv4 {
 
     /// Assigns a checksum to be used for the packet.
     ///
-    /// By default, the IPv4 checksum is automatically calculated when an [`Ipv4`] instance is
-    /// converted to bytes. This method overrides that behavior so that the provided checksum is
+    /// By default, the IPv4 checksum is automatically calculated when an [`struct@Ipv4`] instance
+    /// is converted to bytes. This method overrides that behavior so that the provided checksum is
     /// used instead. You generally shouldn't need to use this method unless:
     ///   1. You know the expected checksum of the packet in advance and don't want the checksum
     ///      calculation to automatically run again (since it can be a costly operation), or
@@ -652,11 +653,11 @@ impl Ipv4 {
     /// Clears any previously assigned checksum for the packet.
     ///
     /// This method guarantees that the IPv4 checksum will be automatically calculated for this
-    /// [`Ipv4`] instance whenever the packet is converted to bytes. You shouldn't need to call
-    /// this method unless you've previously explicitly assigned a checksum to the packet--either
-    /// through a call to [`Ipv4::set_chksum()`] or through a Builder pattern. Packets converted
-    /// from bytes into [`Ipv4`] instances from bytes or from a [`Ipv4Ref`] instance will have a
-    /// checksum of `None` by default.
+    /// [`struct@Ipv4`] instance whenever the packet is converted to bytes. You shouldn't need to
+    /// call this method unless you've previously explicitly assigned a checksum to the
+    /// packet--either through a call to [`Ipv4::set_chksum()`] or through a Builder pattern.
+    /// Packets converted from bytes into [`struct@Ipv4`] instances from bytes or from a [`Ipv4Ref`]
+    /// instance will have a checksum of `None` by default.
     pub fn clear_chksum(&mut self) {
         self.chksum = None;
     }

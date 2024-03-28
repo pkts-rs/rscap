@@ -25,6 +25,9 @@
 //! their own modules. For instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers
 //! are all contained within the [`ip`] module. In addition to this, the [`traits`]
 //! module contains traits commonly implemented across all `Layer`s.
+//! 
+//! [`Ipv4`]: struct@crate::layers::ip::Ipv4
+//! [`Ipv6`]: struct@crate::layers::ip::Ipv6
 
 pub mod diameter;
 pub(crate) mod example;
@@ -58,9 +61,10 @@ use core::fmt::Debug;
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
 /// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
 ///
-/// [`Ipv4`]: crate::layers::ip::Ipv4
-/// [`Tcp`]: crate::layers::tcp::Tcp
-/// [`Udp`]: crate::layers::udp::Udp
+/// [`Raw`]: struct@Raw
+/// [`Ipv4`]: struct@crate::layers::ip::Ipv4
+/// [`Tcp`]: struct@crate::layers::tcp::Tcp
+/// [`Udp`]: struct@crate::layers::udp::Udp
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(RawMetadata)]
 #[ref_type(RawRef)]
@@ -167,9 +171,10 @@ impl Raw {
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
 /// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
 ///
-/// [`Ipv4`]: crate::layers::ip::Ipv4
-/// [`Tcp`]: crate::layers::tcp::Tcp
-/// [`Udp`]: crate::layers::udp::Udp
+/// [`Ipv4`]: struct@crate::layers::ip::Ipv4
+/// [`Tcp`]: struct@crate::layers::tcp::Tcp
+/// [`Udp`]: struct@crate::layers::udp::Udp
+/// [`Raw`]: struct@Raw
 #[derive(Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Raw)]
 #[metadata_type(RawMetadata)]
