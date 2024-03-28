@@ -574,84 +574,9 @@ impl L2Socket {
         Ok(mapped)
     }
 
-    /// Memory-maps a TX ring buffer for the socket to enable zero-copy packet transmision.
+    /// Enables zero-copy packet transmission/reception for the socket.
     ///
-    /// On error, the consumed [`L2Socket`] will be closed.
-    ///
-    /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
-    /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
-    /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
-    #[inline]
-    pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L2TxMappedSocket> {
-        self.set_tpacket_v3_opt()?;
-        self.set_tx_ring_opt(config)?;
-        let mapping = self.mmap_socket(config, false)?;
-
-        let tx_ring = unsafe {
-            PacketTxRing::new(
-                mapping as *mut u8,
-                config.frame_size() as usize,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
-            )
-        };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
-        Ok(L2TxMappedSocket {
-            socket: self,
-            tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
-        })
-    }
-
-    /// Memory-maps an RX ring buffer for the socket to enable zero-copy packet reception.
-    ///
-    /// On error, the consumed [`L2Socket`] will be closed.
-    #[inline]
-    pub fn packet_rx_ring(
-        self,
-        config: BlockConfig,
-        timeout: Option<u32>,
-        reserved: Option<u32>,
-    ) -> io::Result<L2RxMappedSocket> {
-        self.set_tpacket_v3_opt()?;
-        self.set_rx_ring_opt(config, timeout, reserved)?;
-        let mapping = self.mmap_socket(config, false)?;
-
-        let rx_ring = unsafe {
-            PacketRxRing::new(
-                mapping as *mut u8,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
-                reserved.unwrap_or(0) as usize,
-                OsiLayer::L2,
-            )
-        };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: rx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
-        Ok(L2RxMappedSocket {
-            socket: self,
-            rx_ring,
-            next_rx: start_frame,
-        })
-    }
-
-    /// Memory-maps TX/RX ring buffers for the socket to enable zero-copy packet transmission/reception.
-    ///
-    /// On error, the L2Socket will be closed.
+    /// On error, the consumed `L2Socket` will be closed.
     ///
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
@@ -703,6 +628,81 @@ impl L2Socket {
             tx_full: false,
         })
     }
+
+    /// Enables zero-copy packet transmission for the socket.
+    ///
+    /// On error, the consumed `L2Socket` will be closed.
+    ///
+    /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
+    /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
+    /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
+    #[inline]
+    pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L2TxMappedSocket> {
+        self.set_tpacket_v3_opt()?;
+        self.set_tx_ring_opt(config)?;
+        let mapping = self.mmap_socket(config, false)?;
+
+        let tx_ring = unsafe {
+            PacketTxRing::new(
+                mapping as *mut u8,
+                config.frame_size() as usize,
+                config.block_cnt() as usize,
+                config.block_size() as usize,
+            )
+        };
+
+        // This will immediately wrap around to the first packet due to `frame_offset: None`
+        let start_frame = FrameIndex {
+            blocks_index: tx_ring.blocks_cnt() - 1,
+            frame_offset: None,
+        };
+
+        Ok(L2TxMappedSocket {
+            socket: self,
+            tx_ring,
+            last_checked_tx: start_frame,
+            next_tx: start_frame,
+            manual_tx_status: false,
+            tx_full: false,
+        })
+    }
+
+    /// Enables zero-copy packet reception for the socket.
+    ///
+    /// On error, the consumed `L2Socket` will be closed.
+    #[inline]
+    pub fn packet_rx_ring(
+        self,
+        config: BlockConfig,
+        timeout: Option<u32>,
+        reserved: Option<u32>,
+    ) -> io::Result<L2RxMappedSocket> {
+        self.set_tpacket_v3_opt()?;
+        self.set_rx_ring_opt(config, timeout, reserved)?;
+        let mapping = self.mmap_socket(config, false)?;
+
+        let rx_ring = unsafe {
+            PacketRxRing::new(
+                mapping as *mut u8,
+                config.block_cnt() as usize,
+                config.block_size() as usize,
+                reserved.unwrap_or(0) as usize,
+                OsiLayer::L2,
+            )
+        };
+
+        // This will immediately wrap around to the first packet due to `frame_offset: None`
+        let start_frame = FrameIndex {
+            blocks_index: rx_ring.blocks_cnt() - 1,
+            frame_offset: None,
+        };
+
+        Ok(L2RxMappedSocket {
+            socket: self,
+            rx_ring,
+            next_rx: start_frame,
+        })
+    }
 }
 
 impl Drop for L2Socket {
@@ -719,7 +719,7 @@ impl AsRawFd for L2Socket {
     }
 }
 
-/// A link-layer socket that has memory-mapped TX/RX buffers to enable zero-copy packet exchange.
+/// A link-layer socket with zero-copy packet transmission/reception.
 pub struct L2MappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -920,6 +920,7 @@ impl L2MappedSocket {
     ///
     /// ```
     /// use std::{thread, time::Duration};
+    /// use rscap::linux::prelude::*;
     ///
     /// let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
     /// sock.manual_tx_status(true);
@@ -998,7 +999,7 @@ impl AsRawFd for L2MappedSocket {
     }
 }
 
-/// A link-layer socket that has a memory-mapped TX buffer to enable zero-copy packet transmission.
+/// A link-layer socket with zero-copy packet transmission.
 pub struct L2TxMappedSocket {
     socket: L2Socket,
     tx_ring: PacketTxRing,
@@ -1061,6 +1062,15 @@ impl L2TxMappedSocket {
         self.socket.set_timestamp_method(tx, rx)
     }
 
+    /// Receive a datagram from the socket.
+    ///
+    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2RxMappedSocket::bind())).
+    #[inline]
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
@@ -1068,21 +1078,6 @@ impl L2TxMappedSocket {
     #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
-    }
-
-    /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
-    ///
-    /// By default (i.e., when `manual` = `false`), the results of packet transmission are
-    /// transparently handled. As a result, packets flagged as malformed by the kernel are
-    /// aggregated into statistics rather than being reported back to the user on a case-by-case
-    /// basis.
-    ///
-    /// If individual packet results are desired, setting this option to `true` modifies socket
-    /// behavior such that each sent packet must have its status checked using `tx_status` prior
-    /// to that packet being discarded from the ring.
-    #[inline]
-    pub fn manual_tx_status(&mut self, manual: bool) {
-        self.manual_tx_status = manual;
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -1115,12 +1110,28 @@ impl L2TxMappedSocket {
         Some(frame)
     }
 
+    /// Sets [`mapped_send()`](Self::mapped_send()) results to be manually handled via repeated
+    /// calls to [`tx_status()`](Self::tx_status()).
+    ///
+    /// By default (i.e., when `manual` = `false`), the results of packet transmission are
+    /// transparently handled. As a result, packets flagged as malformed by the kernel are
+    /// aggregated into statistics rather than being reported back to the user on a case-by-case
+    /// basis.
+    ///
+    /// If individual packet results are desired, setting this option to `true` modifies socket
+    /// behavior such that each sent packet must have its status checked using `tx_status` prior
+    /// to that packet being discarded from the ring.
+    #[inline]
+    pub fn set_tx_status(&mut self, manual: bool) {
+        self.manual_tx_status = manual;
+    }
+
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
-    /// By default, or when `manual_tx_status` is set to `false`, this method will only return the
-    /// status the last packet sent using `mapped_send()`. When `manual_tx_status()` is set to
-    /// `true`, this method will return the status of each packet sent with `mapped_send()` in the
-    /// order they were sent.
+    /// By default, or when [`set_tx_status()`](Self::set_tx_status()) is set to `false`, this
+    /// method will only return the status the last packet sent using `mapped_send()`. When
+    /// `set_tx_status()` is set to `true`, this method will return the status of each packet sent
+    /// with [`mapped_send()`](Self::mapped_send()) in the order they were sent.
     ///
     /// To correctly handle TX statuses manually, one should count pending packets sent with
     /// `mapped_send()`. The status of each pending packet should then be retrieved via consecutive
@@ -1129,14 +1140,15 @@ impl L2TxMappedSocket {
     /// returns [`TxFrameVariant::SendRequest`] or [`TxFrameVariant::Sending`], the packet is still
     /// being handled by the kernel. In this case, the count should not be decremented, as the next
     /// call to `tx_status()` will return the status of that same packet. If `tx_status()` returns
-    /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of pending
-    /// packets should be decremented. The contents of the packet can be retrieved from the
-    /// [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
+    /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of
+    /// pending packets should be decremented. The contents of the packet can be retrieved from the
+    /// encapsulated [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
     ///
     /// # Examples
     ///
     /// ```
     /// use std::{thread, time::Duration};
+    /// use rscap::linux::prelude::*;
     ///
     /// let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
     /// sock.manual_tx_status(true);
@@ -1200,7 +1212,7 @@ impl AsRawFd for L2TxMappedSocket {
     }
 }
 
-/// A link-layer socket that has a memory-mapped RX buffer to enable zero-copy packet reception.
+/// A link-layer socket with zero-copy packet reception.
 pub struct L2RxMappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -1300,6 +1312,15 @@ impl L2RxMappedSocket {
         rollover: bool,
     ) -> io::Result<()> {
         self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
+    }
+
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2TxMappedSocket::bind())).
+    #[inline]
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
     }
 
     /// Receive a datagram from the socket.
