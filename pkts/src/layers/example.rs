@@ -39,7 +39,6 @@ impl LayerLength for Example {
     }
 }
 
-
 #[allow(unused_variables)]
 impl LayerObject for Example {
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use crate::{Buffer, parse_layers, parse_layers_unchecked};
 pub use crate::error::{ValidationError, ValidationErrorClass};
-pub use crate::layers::{Raw, RawRef};
 pub use crate::layers::traits::*;
+pub use crate::layers::{Raw, RawRef};
+pub use crate::{parse_layers, parse_layers_unchecked, Buffer};

@@ -28,22 +28,20 @@ mod private {
     pub trait Sealed {}
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use crate::layers::ip::Ipv4;
 
-    use crate::layers::udp::*;
     use crate::layers::tcp::{Tcp, TcpRef};
     use crate::layers::traits::*;
-    use crate::{parse_layers, Buffer};
+    use crate::layers::udp::*;
     use crate::sequence::*;
+    use crate::{parse_layers, Buffer};
 
     #[test]
     fn udp_builder() {
         let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        
+
         let udp_builder = UdpBuilder::new()
             .sport(65321)
             .dport(443)
@@ -55,7 +53,6 @@ mod tests {
             Err(e) => panic!("{:?}", e),
         };
     }
-
 
     #[test]
     fn from_the_layers() {

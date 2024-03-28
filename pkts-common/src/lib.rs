@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
 // TODO: make buffer a Buffer<'a> instead?
 
 #[derive(Clone, Debug)]
@@ -67,6 +66,9 @@ impl<const N: usize> Buffer<N> {
 impl<const N: usize> Default for Buffer<N> {
     #[inline]
     fn default() -> Self {
-        Self { buf: [0u8; N], buf_len: 0 }
+        Self {
+            buf: [0u8; N],
+            buf_len: 0,
+        }
     }
 }

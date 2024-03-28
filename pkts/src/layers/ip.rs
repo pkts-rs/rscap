@@ -803,7 +803,7 @@ impl ToBytes for Ipv4 {
                         .map(|m| m.ip_data_protocol())
                         .expect("unknown payload protocol found in IPv4 packet")
                 })
-                .unwrap_or(DATA_PROTO_EXP1) as u8,
+                .unwrap_or(DATA_PROTO_EXP1),
         ); // 0xFD when no payload specified
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         bytes.extend(self.src.to_be_bytes());
@@ -1050,8 +1050,7 @@ impl<'a> Ipv4Ref<'a> {
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
-        &self
-            .data
+        self.data
             .get(options_end..)
             .expect("insufficient bytes in IPv4 packet to retrieve payload")
     }
@@ -1072,7 +1071,7 @@ impl LayerOffset for Ipv4Ref<'_> {
             None => return None,
         };
 
-        match bytes.get(9).map(|b| *b) {
+        match bytes.get(9).copied() {
             Some(DATA_PROTO_TCP) => {
                 if layer_type == Tcp::layer_id() {
                     Some(ihl)
@@ -1231,7 +1230,7 @@ impl Validate for Ipv4Ref<'_> {
                 }),
             };
 
-        match curr_layer.get(9).map(|b| *b) {
+        match curr_layer.get(9).copied() {
             Some(DATA_PROTO_TCP) => TcpRef::validate(next_layer),
             Some(DATA_PROTO_UDP) => UdpRef::validate(next_layer),
             Some(DATA_PROTO_SCTP) => SctpRef::validate(next_layer),
@@ -1429,7 +1428,7 @@ impl From<&Ipv4OptionsRef<'_>> for Ipv4Options {
         } else {
             let mut opts = Vec::new();
             let mut iter = value.iter();
-            while let Some(opt) = iter.next() {
+            for opt in iter.by_ref() {
                 opts.push(Ipv4Option::from(opt));
             }
             match iter.bytes {
@@ -2223,10 +2222,10 @@ impl<'a> Ipv6Ref<'a> {
                 .data
                 .first()
                 .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
-                << 4 + self
+                << (4 + self
                     .data
                     .get(2)
-                    .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
+                    .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field"))
                 >> 4,
         }
     }
@@ -2341,7 +2340,7 @@ impl LayerOffset for Ipv6Ref<'_> {
             .get(40..)
             .expect("insufficient bytes in IPv6 packet to retrieve payload");
 
-        match bytes.get(6).map(|b| *b) {
+        match bytes.get(6).copied() {
             Some(DATA_PROTO_TCP) => {
                 if layer_type == Tcp::layer_id() {
                     Some(40)

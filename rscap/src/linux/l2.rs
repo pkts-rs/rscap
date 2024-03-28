@@ -203,7 +203,8 @@ impl L2Socket {
             ));
         }
 
-        L2AddrAny::try_from(sockaddr).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.as_str()))
+        L2AddrAny::try_from(sockaddr)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.as_str()))
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.

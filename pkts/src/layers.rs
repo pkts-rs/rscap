@@ -25,7 +25,7 @@
 //! their own modules. For instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers
 //! are all contained within the [`ip`] module. In addition to this, the [`traits`]
 //! module contains traits commonly implemented across all `Layer`s.
-//! 
+//!
 //! [`Ipv4`]: struct@crate::layers::ip::Ipv4
 //! [`Ipv6`]: struct@crate::layers::ip::Ipv6
 

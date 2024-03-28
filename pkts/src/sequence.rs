@@ -45,7 +45,7 @@
 //! the Sequence type before it.
 //!
 //! TODO: example here
-//! 
+//!
 //! [`Sctp`]: struct@crate::layers::sctp::Sctp
 //! [`Tcp`]: struct@crate::layers::tcp::Tcp
 
@@ -152,7 +152,7 @@ pub trait SequenceObject {
     fn filter(&self) -> Option<&PktFilterDynFn>;
 
     /// Sets the filter of the Sequence type, discarding any current filter in place.
-    /// 
+    ///
     /// Note that this filter type operates on a raw slice of bytes; to set a filter that operates
     /// on the input packet type, see [`set_filter()`](UnboundedSequence::set_filter()).
     fn set_filter_raw(&mut self, filter: Option<fn(&[u8]) -> bool>);
@@ -231,7 +231,7 @@ fn first_two_mut<T>(slice: &mut [T]) -> Option<(&mut T, &mut T)> {
         }
     }
 
-    return None;
+    None
 }
 
 #[cfg(feature = "alloc")]
@@ -255,7 +255,7 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
                 None
             },
             layers: Vec::new(),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -420,6 +420,12 @@ pub struct Ipv4Sequence<const FRAG_CNT: usize> {
 
 pub const IPV4_DEFAULT_FRAG_CNT: usize = 16;
 
+impl Default for Ipv4Sequence<IPV4_DEFAULT_FRAG_CNT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ipv4Sequence<IPV4_DEFAULT_FRAG_CNT> {
     /// Create a new `Ipv4Sequence` instance.
     #[inline]
@@ -561,7 +567,7 @@ impl<const FRAG_CNT: usize> Ipv4Fragments<FRAG_CNT> {
 
     pub fn put(&mut self, data: &[u8], id: u16, mf: bool, fo: usize) {
         let is_fragment = mf || fo != 0;
-        if fo != 0 && (data.len() % 8 != 0) || data.len() == 0 {
+        if fo != 0 && (data.len() % 8 != 0) || data.is_empty() {
             return; // Invalid fragmentation
                     // TODO: shouldn't this be checked as part of Ipv4::validate()????
         }
@@ -898,6 +904,12 @@ pub struct SctpSegments<const RWND: usize, const FRAG_CNT: usize> {
     started: bool,
 }
 
+impl<const RWND: usize, const FRAG_CNT: usize> Default for SctpSegments<RWND, FRAG_CNT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
     #[inline]
     pub fn new() -> Self {
@@ -1042,11 +1054,7 @@ impl WrappingCmp for u32 {
 
     #[inline]
     fn gt_wrapped(&self, other: Self::Other) -> bool {
-        if self.diff_wrapped(other) >= (1 << 31) {
-            true
-        } else {
-            false
-        }
+        self.diff_wrapped(other) >= (1 << 31)
     }
 
     #[inline]

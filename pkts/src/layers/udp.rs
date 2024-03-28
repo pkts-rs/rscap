@@ -14,7 +14,7 @@
 //! network. It provides weak assurance of data correctness via a 16-bit one's complement checksum
 //! and preserves message boundaries, but does not guarantee delivery or provide any built-in
 //! mechanism for packet acknowledgement or retransmission.
-//! 
+//!
 //! A UDP layer can be represented directly with [`struct@Udp`], or referenced from a byte array
 //! with [`UdpRef`]. UDP packets can be constructed from scratch using either [`Udp::new()`] (which
 //! may use heap allocations) or [`UdpBuilder`], which constructs a UDP packet entirely within
@@ -58,9 +58,15 @@ pub struct Udp {
     payload: Option<Box<dyn LayerObject>>,
 }
 
+impl Default for Udp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Udp {
     /// Construct a new UDP packet.
-    /// 
+    ///
     /// The default UDP packet contains a source and destination port of 0, no set checksum, and no
     /// payload.
     #[inline]
@@ -357,8 +363,7 @@ impl UdpRef<'_> {
     /// The payload data of the UDP packet.
     #[inline]
     pub fn payload(&self) -> &[u8] {
-        &self
-            .data
+        self.data
             .get(8..)
             .expect("insufficient bytes in UDP packet to retrieve payload data")
     }
@@ -407,49 +412,49 @@ impl Validate for UdpRef<'_> {
 // =============================================================================
 
 #[doc(hidden)]
-pub trait UdpBuildPhase { }
+pub trait UdpBuildPhase {}
 
 #[doc(hidden)]
 pub struct UdpBuildSrcPort;
 
-impl UdpBuildPhase for UdpBuildSrcPort { }
+impl UdpBuildPhase for UdpBuildSrcPort {}
 
 #[doc(hidden)]
 pub struct UdpBuildDstPort;
 
-impl UdpBuildPhase for UdpBuildDstPort { }
+impl UdpBuildPhase for UdpBuildDstPort {}
 
 #[doc(hidden)]
 pub struct UdpBuildChksum;
 
-impl UdpBuildPhase for UdpBuildChksum { }
+impl UdpBuildPhase for UdpBuildChksum {}
 
 #[doc(hidden)]
 pub struct UdpBuildPayload;
 
-impl UdpBuildPhase for UdpBuildPayload { }
+impl UdpBuildPhase for UdpBuildPayload {}
 
 #[doc(hidden)]
 pub struct UdpBuildFinal;
 
-impl UdpBuildPhase for UdpBuildFinal { }
+impl UdpBuildPhase for UdpBuildFinal {}
 
 /// A Builder type for UDP packets, with configurable maximum bytearray size.
-/// 
+///
 /// This struct employs a type-enforced Builder pattern, meaning that each step of building the
 /// UDP packet is represented by a distinct type in the generic type `T`. In practical terms,
 /// this simply means that you can build a UDP packet one field at a time without having to
 /// worry about getting ordering wrong or missing fields--any errors of this kind will be caught
 /// by the compiler.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```
 /// use pkts::prelude::*;
 /// use pkts::layers::udp::UdpBuilder;
-/// 
+///
 /// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-/// 
+///
 /// let udp_builder = UdpBuilder::new()
 ///     .sport(65321)
 ///     .dport(443)
@@ -464,6 +469,12 @@ pub struct UdpBuilder<T: UdpBuildPhase, const N: usize> {
     layer_start: usize,
     error: Option<ValidationError>,
     phase: T,
+}
+
+impl<const N: usize> Default for UdpBuilder<UdpBuildSrcPort, N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
@@ -566,7 +577,7 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<UdpBuildFinal, N> {
         'insert_data: {
             if self.error.is_some() {
-                break 'insert_data
+                break 'insert_data;
             }
 
             if self.data.remaining() < data.len() {
@@ -575,7 +586,7 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
                     class: ValidationErrorClass::InsufficientBytes,
                     reason: "UDP Payload serialization exceeded available buffer size",
                 });
-                break 'insert_data
+                break 'insert_data;
             }
 
             let Ok(data_len) = u16::try_from(data.len() + 8) else {
@@ -584,7 +595,7 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
                     class: ValidationErrorClass::InvalidSize,
                     reason: "UDP Payload serialization exceeded UDP maximum possible length",
                 });
-                break 'insert_data
+                break 'insert_data;
             };
 
             let len_start = self.layer_start + 4;
@@ -606,14 +617,17 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     }
 
     /// Add a payload to the UDP packet.
-    /// 
+    ///
     /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
     #[inline]
-    pub fn payload(self, payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>) -> Result<Buffer<N>, ValidationError> {
+    pub fn payload(
+        self,
+        payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,
+    ) -> Result<Buffer<N>, ValidationError> {
         if let Some(error) = self.error {
-            return Err(error)
+            return Err(error);
         }
         let mut data = payload_build_fn(self.data)?;
         let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
@@ -621,7 +635,7 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
                 layer: Udp::name(),
                 class: ValidationErrorClass::InvalidSize,
                 reason: "UDP Payload serialization exceeded UDP maximum possible length",
-            })
+            });
         };
 
         let len_start = self.layer_start + 4;

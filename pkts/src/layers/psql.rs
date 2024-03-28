@@ -1176,7 +1176,7 @@ pub struct AuthDataResponseRef<'a> {
 impl<'a> AuthDataResponseRef<'a> {
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Auth Response packet to extract Message Identifier field")
+        *self.data.first().expect("insufficient bytes in PsqlClient Auth Response packet to extract Message Identifier field")
     }
 
     #[inline]
@@ -1210,7 +1210,7 @@ pub struct BindRef<'a> {
 impl<'a> BindRef<'a> {
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Bind packet to extract Message Identifier field",
         )
     }
@@ -1308,7 +1308,7 @@ impl<'a> BindRef<'a> {
     #[inline]
     pub fn results_fmt(&self) -> FormatCodeIter {
         let mut params = self.params();
-        while let Some(_) = params.next() {}
+        for _ in params.by_ref() {}
 
         let mut rem = params.data;
 
@@ -1370,7 +1370,7 @@ impl<'a> Iterator for ParamIter<'a> {
         let param_len = i32::from_be_bytes(*param_len_arr);
         if param_len < 0 {
             // When -1, treat as None
-            return Some(None);
+            Some(None)
         } else {
             let param;
             (param, self.data) = utils::split_at(self.data, param_len as usize)
@@ -1446,11 +1446,11 @@ impl<'a> CancelRequestRef<'a> {
         }
 
         if bytes.len() > 16 {
-            return Err(ValidationError {
+            Err(ValidationError {
                 layer: PsqlClient::name(),
                 class: ValidationErrorClass::ExcessBytes(bytes.len() - 16),
                 reason: "extra bytes remained at end of PsqlClient Cancel Request packet",
-            });
+            })
         } else {
             Ok(())
         }
@@ -1477,7 +1477,7 @@ impl<'a> ClosePortalRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Close Portal packet to extract Message Identifier field")
+        *self.data.first().expect("insufficient bytes in PsqlClient Close Portal packet to extract Message Identifier field")
     }
 
     #[inline]
@@ -1522,7 +1522,7 @@ impl<'a> ClosePortalRef<'a> {
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         let (msg_type, msg_length, close_type) = match (
-            bytes.get(0),
+            bytes.first(),
             utils::get_array(bytes, 1),
             bytes.get(6),
         ) {
@@ -1580,7 +1580,7 @@ impl<'a> ClosePortalRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -1633,7 +1633,7 @@ impl<'a> ClosePreparedRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Close Prepared Statement packet to extract Message Identifier field")
+        *self.data.first().expect("insufficient bytes in PsqlClient Close Prepared Statement packet to extract Message Identifier field")
     }
 
     #[inline]
@@ -1665,7 +1665,7 @@ impl<'a> ClosePreparedRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length, close_type) = match (bytes.get(0), utils::get_array(bytes, 1), bytes.get(6)) {
+        let (msg_type, msg_length, close_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -1710,7 +1710,7 @@ impl<'a> ClosePreparedRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -1764,7 +1764,7 @@ impl<'a> CopyDataRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Copy Data packet to extract Message Identifier field",
         )
     }
@@ -1792,7 +1792,7 @@ impl<'a> CopyDataRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length) = match (bytes.get(0), utils::get_array(bytes, 1)) {
+        let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -1859,7 +1859,7 @@ impl<'a> CopyDoneRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Copy Done packet to extract Message Identifier field",
         )
     }
@@ -1880,7 +1880,7 @@ impl<'a> CopyDoneRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length) = match (bytes.get(0), utils::get_array(bytes, 1)) {
+        let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -1937,7 +1937,7 @@ impl<'a> CopyFailRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Copy Fail packet to extract Message Identifier field",
         )
     }
@@ -1972,7 +1972,7 @@ impl<'a> CopyFailRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length) = match (bytes.get(0), utils::get_array(bytes, 1)) {
+        let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -2016,7 +2016,7 @@ impl<'a> CopyFailRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -2070,7 +2070,7 @@ impl<'a> DescribePortalRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Describe Portal packet to extract Message Identifier field")
+        *self.data.first().expect("insufficient bytes in PsqlClient Describe Portal packet to extract Message Identifier field")
     }
 
     #[inline]
@@ -2110,7 +2110,7 @@ impl<'a> DescribePortalRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length, describe_type) = match (bytes.get(0), utils::get_array(bytes, 1), bytes.get(6)) {
+        let (msg_type, msg_length, describe_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -2163,7 +2163,7 @@ impl<'a> DescribePortalRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -2217,7 +2217,7 @@ impl<'a> DescribePreparedRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect("insufficient bytes in PsqlClient Describe Prepared Statement packet to extract Message Identifier field")
+        *self.data.first().expect("insufficient bytes in PsqlClient Describe Prepared Statement packet to extract Message Identifier field")
     }
 
     #[inline]
@@ -2247,7 +2247,7 @@ impl<'a> DescribePreparedRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length, describe_type) = match (bytes.get(0), utils::get_array(bytes, 1), bytes.get(6)) {
+        let (msg_type, msg_length, describe_type) = match (bytes.first(), utils::get_array(bytes, 1), bytes.get(6)) {
             (Some(m), Some(c), Some(t)) => (*m, i32::from_be_bytes(*c), *t),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -2292,7 +2292,7 @@ impl<'a> DescribePreparedRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -2347,7 +2347,7 @@ impl<'a> ExecuteRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Execute packet to extract Message Identifier field",
         )
     }
@@ -2399,7 +2399,7 @@ impl<'a> ExecuteRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length) = match (bytes.get(0), utils::get_array(bytes, 1)) {
+        let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),
@@ -2447,7 +2447,7 @@ impl<'a> ExecuteRef<'a> {
         }
 
         match str::from_utf8(portal_name_bytes) {
-            Ok(s) => if s.find("\x00").is_some() {
+            Ok(s) => if s.find('\x00').is_some() {
                 return Err(ValidationError {
                     layer: PsqlClient::name(),
                     class: ValidationErrorClass::InvalidValue,
@@ -2492,7 +2492,7 @@ impl<'a> FlushRef<'a> {
 
     #[inline]
     pub fn msg_id(&self) -> u8 {
-        *self.data.get(0).expect(
+        *self.data.first().expect(
             "insufficient bytes in PsqlClient Flush packet to extract Message Identifier field",
         )
     }
@@ -2512,7 +2512,7 @@ impl<'a> FlushRef<'a> {
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let (msg_type, msg_length) = match (bytes.get(0), utils::get_array(bytes, 1)) {
+        let (msg_type, msg_length) = match (bytes.first(), utils::get_array(bytes, 1)) {
             (Some(m), Some(c)) => (*m, i32::from_be_bytes(*c)),
             _ => return Err(ValidationError {
                 layer: PsqlClient::name(),

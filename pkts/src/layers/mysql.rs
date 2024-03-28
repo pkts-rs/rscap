@@ -54,10 +54,10 @@ impl MysqlPacket {
         let len = u32::try_from(4 + self.payload.as_ref().map_or(0, |p| p.len()))
             .expect("too many bytes in MysqlClient payload to represent in a 24-bit Length field");
         assert!(
-            len < 2 ^ 24 - 1,
+            len < 2 ^ (24 - 1),
             "too many bytes in MysqlClient payload to represent in a 24-bit Length field"
         );
-        return len;
+        len
     }
 }
 

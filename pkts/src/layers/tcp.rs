@@ -10,14 +10,14 @@
 
 //! The Transmission Control Protocol (TCP) and related data structures.
 //!
-//! 
+//!
 //!
 
 use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::extras::*;
 use crate::layers::traits::*;
-use crate::{layers::*, Buffer};
 use crate::utils;
+use crate::{layers::*, Buffer};
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
@@ -333,7 +333,10 @@ impl FromBytesCurrent for Tcp {
             window: tcp.window(),
             chksum: None,
             urgent_ptr: tcp.urgent_ptr(),
-            options: TcpOptions { options: None, padding: None, }, // TcpOptions::from(tcp.options()), TODO: uncomment
+            options: TcpOptions {
+                options: None,
+                padding: None,
+            }, // TcpOptions::from(tcp.options()), TODO: uncomment
             payload: None,
         }
     }
@@ -552,74 +555,74 @@ impl Validate for TcpRef<'_> {
 // =============================================================================
 
 #[doc(hidden)]
-pub trait TcpBuildPhase { }
+pub trait TcpBuildPhase {}
 
 #[doc(hidden)]
 pub struct TcpBuildSrcPort;
 
-impl TcpBuildPhase for TcpBuildSrcPort { }
+impl TcpBuildPhase for TcpBuildSrcPort {}
 
 #[doc(hidden)]
 pub struct TcpBuildDstPort;
 
-impl TcpBuildPhase for TcpBuildDstPort { }
+impl TcpBuildPhase for TcpBuildDstPort {}
 
 #[doc(hidden)]
 pub struct TcpBuildSeq;
 
-impl TcpBuildPhase for TcpBuildSeq { }
+impl TcpBuildPhase for TcpBuildSeq {}
 
 #[doc(hidden)]
 pub struct TcpBuildAck;
 
-impl TcpBuildPhase for TcpBuildAck { }
+impl TcpBuildPhase for TcpBuildAck {}
 
 #[doc(hidden)]
 pub struct TcpBuildFlags;
 
-impl TcpBuildPhase for TcpBuildFlags { }
+impl TcpBuildPhase for TcpBuildFlags {}
 
 #[doc(hidden)]
 pub struct TcpBuildWindowSize;
 
-impl TcpBuildPhase for TcpBuildWindowSize { }
+impl TcpBuildPhase for TcpBuildWindowSize {}
 
 #[doc(hidden)]
 pub struct TcpBuildChksum;
 
-impl TcpBuildPhase for TcpBuildChksum { }
+impl TcpBuildPhase for TcpBuildChksum {}
 
 #[doc(hidden)]
 pub struct TcpBuildUrgentPtr;
 
-impl TcpBuildPhase for TcpBuildUrgentPtr { }
+impl TcpBuildPhase for TcpBuildUrgentPtr {}
 
 #[doc(hidden)]
 pub struct TcpBuildOptsPayload;
 
-impl TcpBuildPhase for TcpBuildOptsPayload { }
+impl TcpBuildPhase for TcpBuildOptsPayload {}
 
 #[doc(hidden)]
 pub struct TcpBuildFinal;
 
-impl TcpBuildPhase for TcpBuildFinal { }
+impl TcpBuildPhase for TcpBuildFinal {}
 
 /// A Builder type for TCP packets, with configurable maximum bytearray size.
-/// 
+///
 /// This struct employs a type-enforced Builder pattern, meaning that each step of building the
 /// TCP packet is represented by a distinct type in the generic type `T`. In practical terms,
 /// this simply means that you can build a TCP packet one field at a time without having to
 /// worry about getting ordering wrong or missing fields--any errors of this kind will be caught
 /// by the compiler.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```
 /// use pkts::prelude::*;
 /// use pkts::layers::tcp::TcpBuilder;
-/// 
+///
 /// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-/// 
+///
 /// let tcp_builder = TcpBuilder::new()
 ///     .sport(65321)
 ///     .dport(443)
@@ -634,6 +637,12 @@ pub struct TcpBuilder<T: TcpBuildPhase, const N: usize> {
     layer_start: usize,
     error: Option<ValidationError>,
     phase: T,
+}
+
+impl<const N: usize> Default for TcpBuilder<TcpBuildSrcPort, N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
@@ -762,7 +771,8 @@ impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
                 self.error = Some(ValidationError {
                     layer: Tcp::name(),
                     class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Acknowledgement Number serialization exceeded available buffer size",
+                    reason:
+                        "TCP Acknowledgement Number serialization exceeded available buffer size",
                 });
             }
         }
@@ -829,7 +839,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     pub fn option(mut self, _option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
-//                self.data.append(&chksum.to_be_bytes());
+                //                self.data.append(&chksum.to_be_bytes());
             } else {
                 self.error = Some(ValidationError {
                     layer: Tcp::name(),
@@ -856,7 +866,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<TcpBuildFinal, N> {
         'insert_data: {
             if self.error.is_some() {
-                break 'insert_data
+                break 'insert_data;
             }
 
             if self.data.remaining() < data.len() {
@@ -865,7 +875,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
                     class: ValidationErrorClass::InsufficientBytes,
                     reason: "TCP Payload serialization exceeded available buffer size",
                 });
-                break 'insert_data
+                break 'insert_data;
             }
 
             let Ok(data_len) = u16::try_from(data.len() + 8) else {
@@ -874,7 +884,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
                     class: ValidationErrorClass::InvalidSize,
                     reason: "TCP Payload serialization exceeded UDP maximum possible length",
                 });
-                break 'insert_data
+                break 'insert_data;
             };
 
             let len_start = self.layer_start + 4;
@@ -896,14 +906,17 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
     }
 
     /// Add a payload to the UDP packet.
-    /// 
+    ///
     /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
     #[inline]
-    pub fn payload(self, payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>) -> Result<Buffer<N>, ValidationError> {
+    pub fn payload(
+        self,
+        payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,
+    ) -> Result<Buffer<N>, ValidationError> {
         if let Some(error) = self.error {
-            return Err(error)
+            return Err(error);
         }
         let mut data = payload_build_fn(self.data)?;
         let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
@@ -911,7 +924,7 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
                 layer: Tcp::name(),
                 class: ValidationErrorClass::InvalidSize,
                 reason: "TCP Payload serialization exceeded UDP maximum possible length",
-            })
+            });
         };
 
         let len_start = self.layer_start + 4;
@@ -1186,7 +1199,8 @@ impl TcpOptions {
             .map(|opts| opts.iter().map(|opt| opt.byte_len()).sum())
             .unwrap_or(0);
         options_len + padding_len
-        */ // TODO: uncomment this
+        */
+        // TODO: uncomment this
         padding_len
     }
 
@@ -1216,7 +1230,6 @@ impl TcpOptions {
         &mut self.padding
     }
 
-    
     pub fn to_bytes_extended(&self, _bytes: &mut Vec<u8>) {
         /*
         match self.options.as_ref() {
@@ -1235,7 +1248,6 @@ impl TcpOptions {
 
         todo!()
     }
-    
 }
 
 /*
@@ -1398,62 +1410,61 @@ const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
 const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
 const TCP_OPT_KIND_MPTCP: u8 = 29;
 
-
 #[derive(Clone, Debug)]
 pub enum TcpOption {
     /// End of Options List.
-    /// 
+    ///
     /// This option marks the final option in the list of TCP options; any leftover bytes following
     /// this option are considered to be padding. This value is not necessary if the final TCP
     /// option consumes all remaining bytes in the TCP options field.
     Eool,
     /// No operation.
-    /// 
+    ///
     /// This may be used to align option fields on 32-bit boundaries to improve performance.
     Nop,
     /// Maximum Segment Size.
-    /// 
+    ///
     /// The MSS is the maximum amount of data (in bytes) that the sender of this option will accept
     /// within a single IP segment. Note that this value only represents the MSS of the sender, not
     /// that of intermediate routers between the sender and recipient, so large MSS values may lead
     /// to IP fragmentation.
     Mss(TcpOptionMss),
     /// Window Scaling.
-    /// 
+    ///
     /// Scales the `window` value in the TCP packet by a factor of 2^`wscale`. This option enables
     /// window sizes as large as 1 gigabyte, thereby facilitating higher bandwidth traffic over TCP.
     /// This option is only used in the SYN segment of each peer during a TCP 3-way handshake.
     Wscale(TcpOptionWscale),
     /// Selective Acknowledgement Permitted.
-    /// 
+    ///
     /// Indicates that the sender of the TCP option supports Selective Acknowledgement. This option
     /// is only used in the SYN segment of each peer during a TCP 3-way handshake, and selective
     /// acknowledgement is only enabled if both sides indicate support for it.
     SackPermitted,
     /// Selective Acknowledgement.
-    /// 
+    ///
     /// Indicates chunks of data that are acknowledged as being received by the peer.
     Sack(TcpOptionSack),
     /// TCP Timestamp.
-    /// 
+    ///
     /// Indicates when a packet was sent relative to other recieved packets. The time value is not
     /// guaranteed to be aligned to the system clock.
     Timestamp(TcpOptionTimestamp),
     /// User Timeout option.
-    /// 
+    ///
     /// Controls how long transmitted data may be left unacknowledged before a connection is
     /// dropped. See [RFC 5482](https://datatracker.ietf.org/doc/html/rfc5482) for details.
     UserTimeout(TcpOptionUserTimeout),
     /// TCP Authentication Option (TCP-AO).
-    /// 
+    ///
     /// For additional details, see [RFC 5925](https://datatracker.ietf.org/doc/html/rfc5925).
     TcpAo(TcpOptionAuthentication),
     /// Multipath TCP (MPTCP).
-    /// 
+    ///
     /// TODO fill out
     Mptcp(TcpOptionMultipath),
     /// Padding bytes following Eool.
-    /// 
+    ///
     /// This is NOT an actual TCP option; rather, it is used only after [`TcpOption::Eool`] to align
     /// TCP options to a 4-byte word boundary.
     Padding(TcpOptionPadding),
@@ -1672,7 +1683,7 @@ impl TcpOption {
             }
             TCP_OPT_KIND_SACK => todo!(), /* if length % 8 == 0 && length > 0 && length <= 32 {
                 for _ in 0..length / 8 {
-                    todo!()       
+                    todo!()
                 }
             } */
             TCP_OPT_KIND_TIMESTAMP => todo!(),

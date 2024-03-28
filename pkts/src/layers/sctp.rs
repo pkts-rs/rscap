@@ -275,14 +275,14 @@ impl FromBytesCurrent for Sctp {
         let sctp = SctpRef::from_bytes_unchecked(bytes);
 
         let mut control_chunks = Vec::new();
-        let mut control_iter = sctp.control_chunks();
-        while let Some(chunk) = control_iter.next() {
+        let control_iter = sctp.control_chunks();
+        for chunk in control_iter {
             control_chunks.push(chunk.into());
         }
 
         let mut payload_chunks = Vec::new();
-        let mut payload_iter = sctp.payload_chunks();
-        while let Some(chunk) = payload_iter.next() {
+        let payload_iter = sctp.payload_chunks();
+        for chunk in payload_iter {
             payload_chunks.push(chunk.into());
         }
 
@@ -625,13 +625,13 @@ impl<'a> Iterator for ControlChunksIterRef<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(chunk) = self.chunk_iter.next() {
+        for chunk in self.chunk_iter.by_ref() {
             match chunk {
                 ChunkRef::Control(c) => return Some(c),
                 _ => (),
             }
         }
-        return None;
+        None
     }
 }
 
@@ -646,13 +646,13 @@ impl<'a> Iterator for DataChunksIterRef<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(chunk) = self.chunk_iter.next() {
+        for chunk in self.chunk_iter.by_ref() {
             match chunk {
                 ChunkRef::Payload(c) => return Some(c),
                 _ => (),
             }
         }
-        return None;
+        None
     }
 }
 
@@ -1101,8 +1101,8 @@ impl From<&InitChunkRef<'_>> for InitChunk {
     #[inline]
     fn from(value: &InitChunkRef<'_>) -> Self {
         let mut options = Vec::new();
-        let mut iter = value.options_iter();
-        while let Some(option) = iter.next() {
+        let iter = value.options_iter();
+        for option in iter {
             options.push(option.into());
         }
 
@@ -1764,8 +1764,8 @@ impl From<&InitAckChunkRef<'_>> for InitAckChunk {
     #[inline]
     fn from(value: &InitAckChunkRef<'_>) -> Self {
         let mut options = Vec::new();
-        let mut iter = value.options_iter();
-        while let Some(option) = iter.next() {
+        let iter = value.options_iter();
+        for option in iter {
             options.push(option.into());
         }
 
@@ -3141,8 +3141,8 @@ impl From<&AbortChunkRef<'_>> for AbortChunk {
     #[inline]
     fn from(value: &AbortChunkRef<'_>) -> Self {
         let mut causes = Vec::new();
-        let mut iter = value.error_iter();
-        while let Some(error) = iter.next() {
+        let iter = value.error_iter();
+        for error in iter {
             causes.push(error.into());
         }
 
@@ -4579,8 +4579,8 @@ impl From<&UnrecognizedParamErrorRef<'_>> for UnrecognizedParamError {
     #[inline]
     fn from(value: &UnrecognizedParamErrorRef<'_>) -> Self {
         let mut params = Vec::new();
-        let mut iter = value.params_iter();
-        while let Some(param) = iter.next() {
+        let iter = value.params_iter();
+        for param in iter {
             params.push(param.into());
         }
 
@@ -4934,8 +4934,8 @@ impl From<&AssociationNewAddrErrorRef<'_>> for AssociationNewAddrError {
     #[inline]
     fn from(value: &AssociationNewAddrErrorRef<'_>) -> Self {
         let mut tlvs = Vec::new();
-        let mut iter = value.params_iter();
-        while let Some(param) = iter.next() {
+        let iter = value.params_iter();
+        for param in iter {
             tlvs.push(param.into());
         }
 
@@ -6000,8 +6000,8 @@ impl From<&ErrorChunkRef<'_>> for ErrorChunk {
     #[inline]
     fn from(value: &ErrorChunkRef<'_>) -> Self {
         let mut causes = Vec::new();
-        let mut iter = value.error_iter();
-        while let Some(error) = iter.next() {
+        let iter = value.error_iter();
+        for error in iter {
             causes.push(error.into());
         }
 

@@ -48,11 +48,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
     // let layer_type_index = quote::format_ident!("{}TypeIndex", layer_type);
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
-    if !ast
-        .attrs
-        .iter()
-        .any(|a| a.path.is_ident("owned_type"))
-    {
+    if !ast.attrs.iter().any(|a| a.path.is_ident("owned_type")) {
         let ref_type: syn::Ident = ast
             .attrs
             .iter()
@@ -97,11 +93,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                 }
             }
         }));
-    } else if !ast
-        .attrs
-        .iter()
-        .any(|a| a.path.is_ident("ref_type"))
-    {
+    } else if !ast.attrs.iter().any(|a| a.path.is_ident("ref_type")) {
         output.extend(proc_macro::TokenStream::from(quote::quote! {
             impl #impl_generics StatelessLayer for #layer_type #ty_generics #where_clause { }
         }));

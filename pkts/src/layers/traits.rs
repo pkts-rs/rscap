@@ -80,7 +80,7 @@ pub trait LayerLength {
 /// [`Tcp`] layer having no payload), then appending a `Http` layer to it would result in a
 /// structure of [`Ipv4`] / [`Tcp`] / `Http`. This is different from `set_payload()`, which would
 /// attempt (and fail) to change the layer structure to be [`Ipv4`] / `Http`.
-/// 
+///
 /// [`Ipv4`]: struct@crate::layers::ip::Ipv4
 /// [`Tcp`]: struct@crate::layers::tcp::Tcp
 pub trait BaseLayerAppend: BaseLayerAppendBoxed {
@@ -764,7 +764,7 @@ pub mod extras {
     }
 
     /// Utility method to convert a given type into a [`Box`]ed instance of [`Layer`].
-    /// 
+    ///
     /// This is primarily used internally to facilitate appending one layer to another
     /// in a type-agnostic way.
     pub trait ToBoxedLayer {
@@ -775,7 +775,7 @@ pub mod extras {
     }
 
     /// Blanket implementation of [`ToBoxedLayer`] for all types implementing [`IntoLayer`].
-    /// 
+    ///
     /// This converts the given instance into a type implementing [`Layer`] using methods from
     /// [`IntoLayer`] and returns that instance within a [`Box`].
     impl<T: IntoLayer + ToOwnedLayer> ToBoxedLayer for T {
@@ -918,7 +918,7 @@ pub mod extras {
     /// `from_bytes()`/`from_bytes_unchecked()` or by using a [`Sequence`] type. Layers that do not implement
     /// [`StatelessLayer`] can be decoded from bytes using a [`Session`] type (which keeps track of connection state)
     /// or by using constructor methods specific to that layer that require additional state information.
-    /// 
+    ///
     /// [`MysqlClient`]: struct@crate::layers::mysql::MysqlClient
     /// [`PsqlClient`]: struct@crate::layers::psql::PsqlClient
     /// [`Sequence`]: crate::sequence::Sequence

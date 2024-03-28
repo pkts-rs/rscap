@@ -127,8 +127,8 @@ impl FromBytesCurrent for Diameter {
             end_id: diam.end_id(),
             avps: {
                 let mut v = Vec::new();
-                let mut i = diam.avp_iter();
-                while let Some(avp) = i.next() {
+                let i = diam.avp_iter();
+                for avp in i {
                     v.push(avp.into());
                 }
                 v
@@ -512,8 +512,8 @@ impl FromBytesCurrent for DiamBase {
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let diam = DiamBaseRef::from_bytes_unchecked(bytes);
         let mut avps = Vec::new();
-        let mut iter = diam.avp_iter();
-        while let Some(avp) = iter.next() {
+        let iter = diam.avp_iter();
+        for avp in iter {
             avps.push(avp.into());
         }
 

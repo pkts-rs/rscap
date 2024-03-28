@@ -9,7 +9,7 @@
 // except according to those terms.
 
 //! Link-layer address structures.
-//! 
+//!
 //! Link-layer addresses may take different byte formats depending on the link-layer protocol in use.
 //! To account for this, link-layer addresses are strongly coupled to protocol by defining distinct
 //! address types for each link-layer protocol available. The union of all of these possible protocols
@@ -24,7 +24,7 @@ use crate::Interface;
 use pkts_common::Buffer;
 
 /// A link-layer protocol identifier.
-/// 
+///
 /// This value corresponds directly to `libc::ETH_P_*` protocol specifier values.
 pub type L2Protocol = i32;
 
@@ -47,8 +47,8 @@ pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
 }
 
 /// An error in converting the format of an address.
-/// 
-/// This type encompasses errors in converting various types _into_ an address as well as 
+///
+/// This type encompasses errors in converting various types _into_ an address as well as
 #[derive(Debug)]
 pub struct AddrConversionError {
     reason: &'static str,
@@ -68,7 +68,7 @@ impl AddrConversionError {
 // TODO: should the MAC address API be contained within rscap, or pkts? Leaning towards rscap...
 
 /// A MAC (Media Access Control) address.
-/// 
+///
 /// MAC addresses are the most common link-layer address type.
 pub struct MacAddr {
     addr: [u8; 6],
@@ -138,7 +138,9 @@ impl FromStr for MacAddr {
                 let mod3_idx = idx % 3;
                 if (mod3_idx) == 2 {
                     if b != *delim {
-                        return Err(AddrConversionError::new("invalid character in MAC address: expected colon/dash"));
+                        return Err(AddrConversionError::new(
+                            "invalid character in MAC address: expected colon/dash",
+                        ));
                     }
                     addr_idx += 1;
                 } else {
@@ -147,9 +149,9 @@ impl FromStr for MacAddr {
                         b'a'..=b'f' => 10 + (b - b'a'),
                         b'A'..=b'F' => 10 + (b - b'A'),
                         _ => {
-                            return Err(
-                                AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"),
-                            )
+                            return Err(AddrConversionError::new(
+                                "invalid character in MAC address: expected hexadecimal value",
+                            ))
                         }
                     };
 
@@ -179,9 +181,9 @@ impl FromStr for MacAddr {
                         b'a'..=b'f' => 10 + (b - b'a'),
                         b'A'..=b'F' => 10 + (b - b'A'),
                         _ => {
-                            return Err(
-                                AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"),
-                            )
+                            return Err(AddrConversionError::new(
+                                "invalid character in MAC address: expected hexadecimal value",
+                            ))
                         }
                     };
 
@@ -208,7 +210,9 @@ impl FromStr for MacAddr {
                     b'a'..=b'f' => 10 + (b - b'a'),
                     b'A'..=b'F' => 10 + (b - b'A'),
                     _ => {
-                        return Err(AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"))
+                        return Err(AddrConversionError::new(
+                            "invalid character in MAC address: expected hexadecimal value",
+                        ))
                     }
                 };
 
