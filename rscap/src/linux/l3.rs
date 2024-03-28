@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Network-layer packet capture/transmission utilities.
+
 pub struct L3MappedSocket {}
 
 pub struct L3TxMappedSocket {}

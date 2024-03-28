@@ -46,6 +46,25 @@ pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
     fn to_sockaddr(&self) -> libc::sockaddr_ll;
 }
 
+/// An error in converting the format of an address.
+/// 
+/// This type encompasses errors in converting various types _into_ an address as well as 
+#[derive(Debug)]
+pub struct AddrConversionError {
+    reason: &'static str,
+}
+
+impl AddrConversionError {
+    fn new(reason: &'static str) -> Self {
+        Self { reason }
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.reason
+    }
+}
+
 // TODO: should the MAC address API be contained within rscap, or pkts? Leaning towards rscap...
 
 /// A MAC (Media Access Control) address.
@@ -101,7 +120,7 @@ impl Display for MacAddr {
 }
 
 impl FromStr for MacAddr {
-    type Err = &'static str; // TODO: change to MacAddrParseError?
+    type Err = AddrConversionError; // TODO: change to MacAddrParseError?
 
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -112,14 +131,14 @@ impl FromStr for MacAddr {
             // Hexadecimal separated by colons (XX:XX:XX:XX:XX:XX) or dashes (XX-XX-XX-XX-XX-XX)
 
             if s.bytes().len() != 17 {
-                return Err("invalid length MAC address");
+                return Err(AddrConversionError::new("invalid length MAC address"));
             }
 
             for (idx, mut b) in s.bytes().enumerate() {
                 let mod3_idx = idx % 3;
                 if (mod3_idx) == 2 {
                     if b != *delim {
-                        return Err("invalid character in MAC address: expected colon/dash");
+                        return Err(AddrConversionError::new("invalid character in MAC address: expected colon/dash"));
                     }
                     addr_idx += 1;
                 } else {
@@ -129,7 +148,7 @@ impl FromStr for MacAddr {
                         b'A'..=b'F' => 10 + (b - b'A'),
                         _ => {
                             return Err(
-                                "invalid character in MAC address: expected hexadecimal value",
+                                AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"),
                             )
                         }
                     };
@@ -145,14 +164,14 @@ impl FromStr for MacAddr {
             // Hexadecimal separated by dots (XXXX.XXXX.XXXX)
 
             if s.bytes().len() != 14 {
-                return Err("invalid length MAC address");
+                return Err(AddrConversionError::new("invalid length MAC address"));
             }
 
             for (idx, mut b) in s.bytes().enumerate() {
                 let mod5_idx = idx % 5;
                 if (mod5_idx) == 4 {
                     if b != b'.' {
-                        return Err("invalid character in MAC address: expected '.' after four hexadecimal values");
+                        return Err(AddrConversionError::new("invalid character in MAC address: expected '.' after four hexadecimal values"));
                     }
                 } else {
                     b = match b {
@@ -161,7 +180,7 @@ impl FromStr for MacAddr {
                         b'A'..=b'F' => 10 + (b - b'A'),
                         _ => {
                             return Err(
-                                "invalid character in MAC address: expected hexadecimal value",
+                                AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"),
                             )
                         }
                     };
@@ -180,7 +199,7 @@ impl FromStr for MacAddr {
             // Unseparated hexadecimal (XXXXXXXXXXXX)
 
             if s.bytes().len() != 12 {
-                return Err("invalid length MAC address");
+                return Err(AddrConversionError::new("invalid length MAC address"));
             }
 
             for (idx, mut b) in s.bytes().enumerate() {
@@ -189,7 +208,7 @@ impl FromStr for MacAddr {
                     b'a'..=b'f' => 10 + (b - b'a'),
                     b'A'..=b'F' => 10 + (b - b'A'),
                     _ => {
-                        return Err("invalid character in MAC address: expected hexadecimal value")
+                        return Err(AddrConversionError::new("invalid character in MAC address: expected hexadecimal value"))
                     }
                 };
 
@@ -217,20 +236,20 @@ pub struct L2AddrIp {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
-    type Error = &'static str;
+    type Error = AddrConversionError;
 
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err("invalid sll_family (address family)--expected AF_PACKET");
+            return Err(AddrConversionError::new("invalid address family"));
         }
 
         if value.sll_protocol != libc::ETH_P_IP as u16 {
-            return Err("invalid sll_protocol (ethernet protocol)--expected ETH_P_IP");
+            return Err(AddrConversionError::new("unexpected address protocol"));
         }
 
         if value.sll_halen != 6 {
-            return Err("invalid sll_halen (address length)--expected 6 bytes");
+            return Err(AddrConversionError::new("invalid address length"));
         }
 
         let addr: [u8; 6] = array::from_fn(|i| value.sll_addr[i]);
@@ -285,7 +304,7 @@ pub enum L2AddrAny {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrAny {
-    type Error = &'static str;
+    type Error = AddrConversionError;
 
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
@@ -338,17 +357,17 @@ pub struct L2AddrUnspec {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
-    type Error = &'static str;
+    type Error = AddrConversionError;
 
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err("invalid address family (expected AF_PACKET)");
+            return Err(AddrConversionError::new("invalid address family "));
         }
 
         let mut addr = Buffer::new();
         match value.sll_addr.get(..value.sll_halen as usize) {
-            None => return Err("invalid sll_halen (address length)--out of range"),
+            None => return Err(AddrConversionError::new("invalid address length")),
             Some(s) => addr.append(s),
         }
 
