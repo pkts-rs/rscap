@@ -314,14 +314,14 @@ impl LayerObject for Sctp {
     /// Returns a reference to the first payload chunk in the [`struct@Sctp`] packet, if such a
     /// chunk exists.
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload_chunks.first().map(|c| c.payload.as_ref())
     }
 
     /// Returns a mutable reference to the first payload chunk in the [`struct@Sctp`] packet, if
     /// such a chunk exists.
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload_chunks.first_mut().map(|c| c.payload.as_mut())
     }
 
@@ -359,7 +359,7 @@ impl LayerObject for Sctp {
 }
 
 impl ToBytes for Sctp {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
@@ -370,10 +370,12 @@ impl ToBytes for Sctp {
         }
 
         for chunk in &self.payload_chunks {
-            chunk.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)));
+            chunk.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?;
         }
 
         // TODO: set checksum here
+
+        Ok(())
     }
 }
 
@@ -6936,7 +6938,7 @@ impl DataChunk {
 }
 
 impl ToBytes for DataChunk {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0); // DATA Type = 0
         bytes.push(self.flags.as_raw());
@@ -6946,8 +6948,10 @@ impl ToBytes for DataChunk {
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
         self.payload
-            .to_bytes_chksummed(bytes, Some((Sctp::layer_id(), start)));
+            .to_bytes_checksummed(bytes, Some((Sctp::layer_id(), start)))?;
         bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+
+        Ok(())
     }
 }
 

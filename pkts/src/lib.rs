@@ -14,9 +14,11 @@
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
 
 pub mod error;
 pub mod layers;
+#[doc(hidden)]
 pub mod prelude;
 pub mod sequence;
 pub mod sessions;

@@ -134,11 +134,11 @@ impl LayerObject for PsqlClient {
         false
     }
 
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         todo!()
     }
 
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         todo!()
     }
 
@@ -156,7 +156,7 @@ impl LayerObject for PsqlClient {
 }
 
 impl ToBytes for PsqlClient {
-    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         todo!()
     }
 }
@@ -2617,11 +2617,11 @@ impl LayerObject for PsqlServer {
         false
     }
 
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         todo!()
     }
 
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         todo!()
     }
 
@@ -2639,7 +2639,7 @@ impl LayerObject for PsqlServer {
 }
 
 impl ToBytes for PsqlServer {
-    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         todo!()
     }
 }

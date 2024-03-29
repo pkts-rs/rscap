@@ -10,6 +10,8 @@
 
 // TODO: make buffer a Buffer<'a> instead?
 
+#![forbid(unsafe_code)]
+
 #[derive(Clone, Debug)]
 pub struct Buffer<const N: usize> {
     buf: [u8; N],

@@ -94,12 +94,12 @@ impl LayerObject for MysqlPacket {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_mut().map(|p| p.as_mut())
     }
 
@@ -123,13 +123,13 @@ impl LayerObject for MysqlPacket {
 }
 
 impl ToBytes for MysqlPacket {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(self.sequence_id);
         bytes.extend_from_slice(&self.payload_length().to_be_bytes()[1..]);
         match &self.payload {
-            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
-            None => (),
+            Some(p) => p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start))),
+            None => Ok(()),
         }
     }
 }
@@ -252,12 +252,12 @@ impl LayerObject for MysqlClient {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_mut().map(|p| p.as_mut())
     }
 
@@ -281,7 +281,7 @@ impl LayerObject for MysqlClient {
 }
 
 impl ToBytes for MysqlClient {
-    fn to_bytes_chksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         todo!()
     }
 }

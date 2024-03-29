@@ -10,6 +10,8 @@
 
 //! Structures used for memory-mapped packet sockets.
 
+#![forbid(unsafe_code)]
+
 use syn::parse_macro_input;
 
 // ======================================================
@@ -81,13 +83,13 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
 
             impl From<&#ref_type<'_>> for #layer_type {
                 fn from(r: &#ref_type<'_>) -> Self {
-                    let mut res = Self::from_bytes_current_layer_unchecked(r.into());
+                    let mut res = Self::from_bytes_current_layer_unchecked((*r).into());
                     match r.layer_metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
-                        Some(&layer_selection) => match layer_selection.payload_to_boxed(r.into()) {
+                        Some(&layer_selection) => match layer_selection.payload_to_boxed((*r).into()) {
                             Some(payload) => { res.set_payload_unchecked(payload); },
                             None => (),
                         }
-                        None => res.payload_from_bytes_unchecked_default(r.into()),
+                        None => res.payload_from_bytes_unchecked_default((*r).into()),
                     }
                     res
                 }
@@ -156,16 +158,25 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         &metadata_type,
     ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
-        impl<T: BaseLayer + IntoLayer> core::ops::Div<T> for #layer_type {
+        impl<T: BaseLayer + ToLayer> core::ops::Div<T> for #layer_type {
             type Output = #layer_type;
 
+            /// Combines `rhs` as the next `Layer` of `self`.
+            /// 
+            /// The [`appended_with()`](BaseLayerAppend::appended_with()) method performs the same
+            /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
             #[inline]
             fn div(mut self, rhs: T) -> Self::Output {
-                self.appended_with(rhs).unwrap() // TODO: change to expect()
+                self.append_layer_unchecked(rhs);
+                self
             }
         }
 
-        impl<T: BaseLayer + IntoLayer> core::ops::DivAssign<T> for #layer_type {
+        impl<T: BaseLayer + ToLayer> core::ops::DivAssign<T> for #layer_type {
+            /// Adds `rhs` as the next `Layer` of `self`.
+            /// 
+            /// The [`append_layer()`](Layer::append_layer()) method performs the same
+            /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
             #[inline]
             fn div_assign(&mut self, rhs: T) {
                 self.append_layer(rhs).unwrap()
@@ -178,10 +189,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         }
 
-        impl IntoLayer for #layer_type {
-            type Output = #layer_type;
-        }
-
+        #[doc(hidden)]
         pub struct #layer_type_index {
             _zst: (), // Allows the StructIdentifier to be public but not recreatable
         }
@@ -193,11 +201,19 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
 
         #[allow(non_upper_case_globals)]
+        #[doc(hidden)]
         pub const #layer_type: #layer_type_index = #layer_type_index { _zst: () };
 
         impl<T: LayerIndexSingleton> core::ops::Index<T> for #layer_type {
+            /// The `Layer` returned by the indexing operation.
             type Output = T::LayerType;
 
+            /// Returns the first [`Layer`] of the given type in the packet.
+            /// 
+            /// For `Layer`s with multiple payloads, this performs a breadth-first search to return
+            /// the first `Layer` of the correct type. This operator is implemented with 
+            /// [`get_layer()`](LayerIndex::get_layer()); more information on its workings is
+            /// documented there.
             #[inline]
             fn index(&self, _: T) -> &Self::Output {
                 self.get_layer().unwrap()
@@ -205,6 +221,12 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
 
         impl<T: LayerIndexSingleton> core::ops::IndexMut<T> for #layer_type {
+            /// Returns the first [`Layer`] of the given type in the packet.
+            /// 
+            /// For `Layer`s with multiple payloads, this performs a breadth-first search to return
+            /// the first `Layer` of the correct type. This operator is implemented with 
+            /// [`get_layer_mut()`](LayerIndex::get_layer_mut()); more information on its workings
+            /// is documented there.
             #[inline]
             fn index_mut(&mut self, _: T) -> &mut Self::Output {
                 self.get_layer_mut().unwrap()
@@ -272,31 +294,6 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         &metadata_type,
     ));
     output.extend(proc_macro::TokenStream::from(quote::quote! {
-        impl IntoLayer for #layer_type<'_> {
-            type Output = #owned_type;
-        }
-
-        impl<'a> core::convert::From<&#layer_type<'a>> for &'a [u8] {
-            #[inline]
-            fn from(value: &#layer_type<'a>) -> Self {
-                value.#data_field
-            }
-        }
-
-        impl<'a> core::convert::From<#layer_type<'a>> for &'a [u8] {
-            #[inline]
-            fn from(value: #layer_type<'a>) -> Self {
-                value.#data_field
-            }
-        }
-
-        impl<'a> core::convert::From<#layer_type<'a>> for Vec<u8> {
-            #[inline]
-             fn from(value: #layer_type<'a>) -> Self {
-                Vec::from(value.#data_field)
-            }
-        }
-
         impl LayerLength for #layer_type<'_> {
             #[inline]
             fn len(&self) -> usize {
@@ -304,7 +301,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
-        impl<'a> LayerRefIndex<'a> for #layer_type<'a> {
+        impl<'a> IndexLayerRef<'a> for #layer_type<'a> {
             fn get_layer<T: LayerRef<'a> + FromBytesRef<'a>>(&'a self) -> Option<T> {
                 if <Self as LayerIdentifier>::layer_id() == T::layer_id() {
                     return Some(T::from_bytes_unchecked(self.#data_field))
@@ -386,35 +383,26 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
         }
 
-        impl<T: BaseLayer + IntoLayer> core::ops::Div<T> for #layer_type<'_> {
-            type Output = #owned_type;
-
-            #[inline]
-            fn div(mut self, rhs: T) -> Self::Output {
-                self.appended_with(rhs).unwrap()
-            }
-        }
-
-        impl<'a> LayerIdentifier for #layer_type<'a> {
+        impl LayerIdentifier for #layer_type<'_> {
             #[inline]
             fn layer_id() -> LayerId {
                 core::any::TypeId::of::<#owned_type>()
             }
         }
 
-        impl ToOwnedLayer for #layer_type<'_> {
+        impl ToLayer for #layer_type<'_> {
             type Owned = #owned_type;
 
             #[inline]
-            fn to_owned(&self) -> Self::Owned {
+            fn to_layer(&self) -> Self::Owned {
                 Self::Owned::from(self)
             }
         }
 
-        impl<'a> ToSlice for #layer_type<'a> {
-            fn to_slice(&self) -> &[u8] {
-                self.into()
-            }
+        impl<'a> From<#layer_type<'a>> for &'a [u8] {
+            fn from(value: #layer_type<'a>) -> Self {
+                value.#data_field
+            }           
         }
 
         impl<'a> LayerRef<'a> for #layer_type<'a> { }
@@ -457,6 +445,13 @@ fn derive_base_layer_impl(
             #[inline]
             fn name() -> &'static str {
                 #layer_name
+            }
+        }
+
+        impl #impl_generics ToBoxedLayer for #layer_type #ty_generics #where_clause {
+            #[inline]
+            fn to_boxed_layer(&self) -> Box<dyn LayerObject> {
+                Box::new(self.to_layer())
             }
         }
     };

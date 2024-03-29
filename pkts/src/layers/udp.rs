@@ -163,12 +163,12 @@ impl LayerObject for Udp {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_mut().map(|p| p.as_mut())
     }
 
@@ -191,7 +191,7 @@ impl LayerObject for Udp {
 }
 
 impl ToBytes for Udp {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         let len: u16 = self
             .len()
@@ -203,45 +203,51 @@ impl ToBytes for Udp {
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         match &self.payload {
             None => (),
-            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
+            Some(p) => p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?,
         }
 
         if self.chksum.is_none() {
-            if let Some((id, prev_idx)) = prev {
-                let new_chksum = if id == Ipv4::layer_id() {
-                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
-                    let addr_chksum =
-                        utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
-                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
-                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
-                    let upper_layer_len = (bytes.len() - start) as u16;
-                    data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
+            let Some((id, prev_idx)) = prev else {
+                return Err(SerializationError {
+                    reason: "",
+                    class: SerializationErrorClass::BadUpperLayer,
+                })
+            };
+            
+            let new_chksum = if id == Ipv4::layer_id() {
+                let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                let addr_chksum =
+                    utils::ones_complement_16bit(&bytes[prev_idx + 12..prev_idx + 20]);
+                data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
+                let upper_layer_len = (bytes.len() - start) as u16;
+                data_chksum = utils::ones_complement_add(data_chksum, upper_layer_len);
 
-                    data_chksum
-                } else if id == Ipv6::layer_id() {
-                    let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
-                    let addr_chksum =
-                        utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
-                    data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
-                    let upper_layer_len = (bytes.len() - start) as u32;
-                    data_chksum =
-                        utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
-                    data_chksum =
-                        utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
-                    // Omit adding 0, it does nothing anyways
-                    data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
+                data_chksum
+            } else if id == Ipv6::layer_id() {
+                let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
+                let addr_chksum =
+                    utils::ones_complement_16bit(&bytes[prev_idx + 16..prev_idx + 40]);
+                data_chksum = utils::ones_complement_add(data_chksum, addr_chksum);
+                let upper_layer_len = (bytes.len() - start) as u32;
+                data_chksum =
+                    utils::ones_complement_add(data_chksum, (upper_layer_len >> 16) as u16);
+                data_chksum =
+                    utils::ones_complement_add(data_chksum, (upper_layer_len & 0xFFFF) as u16);
+                // Omit adding 0, it does nothing anyways
+                data_chksum = utils::ones_complement_add(data_chksum, DATA_PROTO_UDP as u16);
 
-                    data_chksum
-                } else {
-                    return; // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
-                };
+                data_chksum
+            } else {
+                return Ok(()); // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
+            };
 
-                let chksum_field: &mut [u8; 2] =
-                    &mut bytes[start + 6..start + 8].try_into().unwrap();
-                *chksum_field = new_chksum.to_be_bytes();
-            }
-            // else don't bother calculating the checksum
+            let chksum_field: &mut [u8; 2] =
+                &mut bytes[start + 6..start + 8].try_into().unwrap();
+            *chksum_field = new_chksum.to_be_bytes();
         }
+
+        Ok(())
     }
 }
 
@@ -281,7 +287,7 @@ impl FromBytesCurrent for Udp {
 /// .. .                              ...                              .
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
-#[derive(Clone, Debug, LayerRef, StatelessLayer)]
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
 #[metadata_type(UdpMetadata)]
 #[owned_type(Udp)]
 pub struct UdpRef<'a> {

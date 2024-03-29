@@ -154,12 +154,12 @@ impl LayerObject for Diameter {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_deref_mut()
     }
 
@@ -182,7 +182,7 @@ impl LayerObject for Diameter {
 }
 
 impl ToBytes for Diameter {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
         let len: u32 = self
@@ -209,6 +209,8 @@ impl ToBytes for Diameter {
         for avp in self.avps() {
             avp.to_bytes_extended(bytes);
         }
+
+        Ok(())
     }
 }
 
@@ -544,12 +546,12 @@ impl LayerObject for DiamBase {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_deref_mut()
     }
 
@@ -572,7 +574,7 @@ impl LayerObject for DiamBase {
 }
 
 impl ToBytes for DiamBase {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
         let len: u32 = self

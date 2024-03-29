@@ -22,6 +22,7 @@ pub mod l2;
 pub mod l3;
 pub mod l4;
 pub mod mapped;
+#[doc(hidden)]
 pub mod prelude;
 
 // What kind of sockets does Linux support?

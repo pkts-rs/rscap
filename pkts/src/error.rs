@@ -25,3 +25,18 @@ pub enum ValidationErrorClass {
     InvalidValue,
     ExcessBytes(usize), // Packet had excess bytes at the end of it
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct SerializationError {
+    pub reason: &'static str,
+    pub class: SerializationErrorClass,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SerializationErrorClass {
+    /// Too many bytes in one of the payloads/fields to encode within a `length` constraint.
+    Oversized,
+    /// A layer expected a particular value from an upper layer (such as `Tcp` requiring `Ip` or
+    /// `Ipv6` to calculate a checksum).
+    BadUpperLayer,
+}

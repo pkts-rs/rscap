@@ -10,21 +10,19 @@
 
 //! The collection of various protocol layers implemented by this library.
 //!
-//! The `Layer` type is a fundamental abstraction used in this library for data.
-//! In general, most communication protocols make use of multiple
-//! encapsulated layers of data, where each layer performs a distinct purpose
-//! in relaying information from one peer to another. Each layer can be
-//! generalized into a header and payload, where the header contains data
-//! specific to the operation of that layer and the payload contains the
-//! next layer of data.
+//! The [`Layer`] type is a fundamental abstraction used in this library for data. In general,
+//! most communication protocols are organized into multiple encapsulated layers of data, where
+//! each layer performs a distinct purpose in relaying information from one peer to another. Each
+//! layer can be generalized into a header and one or more payloads, where the header contains data
+//! specific to the operation of that layer and the payload(s) contains the next layer(s) of data.
 //!
-//! Layers for all sorts of different data protocols are provided in this
-//! submodule, as well as traits that make operating on multiple layers easier.
+//! Layers for all sorts of different data protocols are provided in this submodule, as well as
+//! traits that make operating on multiple layers easier.
 //!
-//! The submodule is organized so that tightly related layers are each within
-//! their own modules. For instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers
-//! are all contained within the [`ip`] module. In addition to this, the [`traits`]
-//! module contains traits commonly implemented across all `Layer`s.
+//! The submodule is organized so that tightly related layers are each within their own modules. For
+//! instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers are all contained within the [`ip`]
+//! module. In addition to this, the [`traits`] module contains traits commonly implemented across
+//! all `Layer`s.
 //!
 //! [`Ipv4`]: struct@crate::layers::ip::Ipv4
 //! [`Ipv6`]: struct@crate::layers::ip::Ipv6
@@ -48,6 +46,14 @@ use crate::layers::traits::*;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
+
+/*
+pub enum Cardinal<T> {
+    None,
+    One(T),
+    Many(Vec<T>)
+}
+*/
 
 /// A raw [`Layer`] composed of unstructured bytes.
 ///
@@ -92,12 +98,12 @@ impl LayerObject for Raw {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_ref().map(|p| p.as_ref())
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_mut().map(|p| p.as_mut())
     }
 
@@ -120,12 +126,12 @@ impl LayerObject for Raw {
 }
 
 impl ToBytes for Raw {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(&self.data);
         match &self.payload {
-            None => (),
-            Some(p) => p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start))),
+            None => Ok(()),
+            Some(p) => p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start))),
         }
     }
 }
@@ -175,7 +181,7 @@ impl Raw {
 /// [`Tcp`]: struct@crate::layers::tcp::Tcp
 /// [`Udp`]: struct@crate::layers::udp::Udp
 /// [`Raw`]: struct@Raw
-#[derive(Clone, Debug, LayerRef, StatelessLayer)]
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Raw)]
 #[metadata_type(RawMetadata)]
 pub struct RawRef<'a> {

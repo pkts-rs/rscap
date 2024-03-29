@@ -752,12 +752,12 @@ impl LayerObject for Ipv4 {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_deref_mut()
     }
 
@@ -781,7 +781,7 @@ impl LayerObject for Ipv4 {
 }
 
 impl ToBytes for Ipv4 {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0x40 | self.ihl());
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
@@ -806,13 +806,15 @@ impl ToBytes for Ipv4 {
         bytes.extend(self.dst.to_be_bytes());
         self.options.to_bytes_extended(bytes);
         if let Some(payload) = self.payload.as_ref() {
-            payload.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)))
+            payload.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?;
         }
 
         if self.chksum.is_none() {
             let chksum_field: &mut [u8; 2] = &mut bytes[start + 10..start + 12].try_into().unwrap();
             *chksum_field = utils::ones_complement_16bit(&bytes[start..]).to_be_bytes();
         }
+
+        Ok(())
     }
 }
 
@@ -2096,12 +2098,12 @@ impl LayerObject for Ipv6 {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_deref_mut()
     }
 
@@ -2125,7 +2127,7 @@ impl LayerObject for Ipv6 {
 }
 
 impl ToBytes for Ipv6 {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0b_0110_0000 | ((self.traffic_class.value & 0xF0) >> 4));
         bytes.push(
@@ -2136,7 +2138,7 @@ impl ToBytes for Ipv6 {
         bytes.push((self.flow_label.value & 0x_00_00_00_FF) as u8);
         bytes.extend(
             u16::try_from(self.payload.as_ref().map_or(0, |p| p.len()))
-                .unwrap_or(u16::MAX)
+                .map_err(|_| SerializationError { reason: "", class: SerializationErrorClass::Oversized })?
                 .to_be_bytes(),
         );
         bytes.push(match self.payload.as_ref() {
@@ -2152,8 +2154,10 @@ impl ToBytes for Ipv6 {
         bytes.extend(self.src.to_be_bytes());
         bytes.extend(self.dst.to_be_bytes());
         if let Some(p) = self.payload.as_ref() {
-            p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)));
+            p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?;
         }
+
+        Ok(())
     }
 }
 

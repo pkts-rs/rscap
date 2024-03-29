@@ -255,7 +255,7 @@ impl SequenceLayer {
 }
 
 #[cfg(feature = "alloc")]
-pub struct LayeredSequence<T: BaseLayer + ToSlice> {
+pub struct LayeredSequence<T: BaseLayer> {
     first: Box<dyn SequenceObject>,
     first_streambuf: Option<Vec<u8>>,
     layers: Vec<SequenceLayer>,
@@ -263,7 +263,7 @@ pub struct LayeredSequence<T: BaseLayer + ToSlice> {
 }
 
 #[cfg(feature = "alloc")]
-impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
+impl<'b, T: LayerRef<'b>> LayeredSequence<T> {
     /// Creates a new [`LayeredSequence`] and sets `seq` as its first (outermost) layer.
     #[inline]
     pub fn new<'a, S: Sequence<In<'a> = T> + 'static>(seq: S, has_msg_bounds: bool) -> Self {
@@ -319,7 +319,7 @@ impl<T: BaseLayer + ToSlice> LayeredSequence<T> {
     /// Add another packet to the sequence for processing
     #[inline]
     pub fn put(&mut self, pkt: T) -> Result<(), ValidationError> {
-        let pkt_ref: &[u8] = pkt.to_slice();
+        let pkt_ref: &[u8] = pkt.into();
         self.put_unchecked(pkt_ref)
     }
 

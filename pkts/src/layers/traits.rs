@@ -25,7 +25,7 @@ use pkts_macros::layer_metadata;
 ///
 /// The [`BaseLayer`] trait enables packet layers of different implementations (e.g. [`Layer`],
 /// [`LayerRef`]) to be used interchangably for certain operations. For instance,
-/// concatenation of packets is achieved via this type in the [`BaseLayerAppend`]
+/// concatenation of packets is achieved via this type in the [`Layer`]
 /// and [`core::ops::Div`] traits.
 pub trait BaseLayer: ToBoxedLayer + LayerLength {
     /// The name of the layer, usually (though not guaranteed to be) the same as the name of the
@@ -67,70 +67,6 @@ pub trait LayerLength {
     fn len(&self) -> usize;
 }
 
-/// Enables protocol layers of different types to be appended to each other.
-///
-/// We define _appending_ a new layer as setting the innermost empty payload of an existing layer
-/// to the value of the new layer. This means that _appending_ a layer is different from setting
-/// a layer's payload. While the `set_payload()` family of methods replace whatever underlayer(s)
-/// existed before with the new protocol layer, appending a layer involves traversing through each
-/// underlayer until one with an empty payload is reached, and then replacing the empty payload
-/// with the new layer.
-///
-/// For instance, if one had an [`Ipv4`] layer that had a structure of [`Ipv4`] / [`Tcp`] (with the
-/// [`Tcp`] layer having no payload), then appending a `Http` layer to it would result in a
-/// structure of [`Ipv4`] / [`Tcp`] / `Http`. This is different from `set_payload()`, which would
-/// attempt (and fail) to change the layer structure to be [`Ipv4`] / `Http`.
-///
-/// [`Ipv4`]: struct@crate::layers::ip::Ipv4
-/// [`Tcp`]: struct@crate::layers::tcp::Tcp
-pub trait BaseLayerAppend: BaseLayerAppendBoxed {
-    /// Determines whether a given new layer can be appended to an existing one.
-    ///
-    /// Some `Layer` types have restrictions on what other layers can follow it. As an example of
-    /// this, the IPv4 header has a field that explicitly denotes the Transport layer in use above
-    /// it; as such, layers that have a defined value for that field are permitted to be a payload
-    /// for and `Ipv4` type, while those that don't (such as Application layer protocols) are not.
-    ///
-    /// A note for performance: the current implementation of this function allocates `Layer`
-    /// instances that are then destroyed at the end of the method invocation.
-    /// Because of this, it is generally much more efficient to use the `appended_with()` method than to
-    /// use `can_append_with()` and `appended_with_unchecked()` separately.
-    #[inline]
-    fn can_append_with<T: BaseLayer + IntoLayer>(&self, other: &T) -> bool {
-        self.can_append_with_boxed(other.to_boxed_layer().as_ref())
-    }
-
-    /// Append the layer to the existing packet, returning an error if the layer is not permitted as
-    /// a payload.
-    #[inline]
-    fn appended_with<T: BaseLayer + IntoLayer>(
-        self,
-        other: T,
-    ) -> Result<Self::Output, &'static str> {
-        self.appended_with_boxed(other.into_boxed_layer())
-    }
-
-    /// Appends the provided new layer to the existing one without checking whether it is a
-    /// permitted layer type.
-    ///
-    /// # Panics
-    ///
-    /// Using this method can lead to a panic condition later on in the lifetime of the layer if
-    /// the provided layer is not permitted as a payload for the innermost underlayer.
-    #[inline]
-    fn appended_with_unchecked<T: BaseLayer + IntoLayer>(self, other: T) -> Self::Output {
-        self.appended_with_boxed_unchecked(other.into_boxed_layer())
-    }
-}
-
-impl<T: BaseLayerAppendBoxed> BaseLayerAppend for T {}
-
-/// Obtains a slice of bytes representing the instance.
-pub trait ToSlice {
-    /// Returns the protocol layer as a reference to a slice of bytes.
-    fn to_slice(&self) -> &[u8];
-}
-
 /// A trait for serializing a [`Layer`] type into its binary representation.
 pub trait ToBytes {
     /// Appends the layer's byte representation to the given byte vector and
@@ -139,7 +75,7 @@ pub trait ToBytes {
     /// NOTE: this API is unstable, and should not be relied upon. It may be
     /// modified or removed at any point.
     #[doc(hidden)]
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>);
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError>;
 
     /*
     /// Appends the layer's byte representation to the given byte vector.
@@ -150,10 +86,10 @@ pub trait ToBytes {
 
     /// Serializes the given layer into bytes stored in a vector.
     #[inline]
-    fn to_bytes(&self) -> Vec<u8> {
+    fn to_bytes(&self) -> Result<Vec<u8>, SerializationError> {
         let mut bytes = Vec::new();
-        self.to_bytes_chksummed(&mut bytes, None);
-        bytes
+        self.to_bytes_checksummed(&mut bytes, None)?;
+        Ok(bytes)
     }
 }
 
@@ -180,13 +116,14 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
     /// and should only be used in cases where custom layer validation is enabled but
     /// the developer still wants to run the built-in default layer validation. If you're
     /// uncertain what all this means, just use `can_set_payload()`.
+    #[doc(hidden)]
     fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool;
 
-    /// Returns an immutable reference to the current layer's payload, or `None` if the layer has no payload.
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject>;
+    /// Returns the current layer's payload, or `None` if the layer has no payload.
+    fn payload(&self) -> Option<&dyn LayerObject>;
 
     /// Returns a mutable reference to the current layer's payload, or `None` if the layer has no payload.
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject>;
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject>;
 
     /// Sets the payload of the current layer, returning an error if the payload type is
     /// incompatible with the current layer.
@@ -203,7 +140,15 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
         }
     }
 
-    /// Returns `true` if the current layer has a payload, or `false` if not.
+    /// Sets the payload of the current layer without checking the payload type's compatibility.
+    ///
+    /// # Panics
+    ///
+    /// Future invocations of `to_bytes()` and other layer methods may panic if an incompatible
+    /// payload is passed in this method.
+    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>);
+
+    /// Indicates whether the current `Layer` has any payload(s)
     fn has_payload(&self) -> bool;
 
     /// Removes the layer's payload, returning it.
@@ -220,18 +165,10 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
             self.remove_payload();
         }
     }
-
-    /// Sets the payload of the current layer without checking the payload type's compatibility.
-    ///
-    /// # Panics
-    ///
-    /// Future invocations of `to_bytes()` and other layer methods may panic if an incompatible
-    /// payload is passed in this method.
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>);
 }
 
 /// A trait for indexing into sublayers of a [`Layer`] type.
-pub trait LayerIndex: LayerObject {
+pub trait IndexLayer: LayerObject {
     /// Retrieves a reference to the first sublayer of type `T`, if such a sublayer exists.
     ///
     /// If the layer type `T` is the same type as the base layer (`self`), this method will
@@ -242,12 +179,12 @@ pub trait LayerIndex: LayerObject {
             return Some(t);
         };
 
-        let mut next_layer = self.get_payload_ref();
+        let mut next_layer = self.payload();
         while let Some(layer) = next_layer {
             if let Some(t) = layer.as_any().downcast_ref::<T>() {
                 return Some(t);
             }
-            next_layer = layer.get_payload_ref()
+            next_layer = layer.payload()
         }
 
         None
@@ -272,7 +209,7 @@ pub trait LayerIndex: LayerObject {
             }
         };
 
-        let mut next_layer = self.get_payload_ref();
+        let mut next_layer = self.payload();
         while let Some(layer) = next_layer {
             if let Some(t) = layer.as_any().downcast_ref::<T>() {
                 match n.checked_sub(1) {
@@ -280,7 +217,7 @@ pub trait LayerIndex: LayerObject {
                     Some(new_n) => n = new_n,
                 }
             }
-            next_layer = layer.get_payload_ref()
+            next_layer = layer.payload()
         }
 
         None
@@ -296,7 +233,7 @@ pub trait LayerIndex: LayerObject {
             return self.as_any_mut().downcast_mut::<T>();
         }
 
-        let mut next_layer = self.get_payload_mut();
+        let mut next_layer = self.payload_mut();
         let mut layer;
         loop {
             match next_layer {
@@ -306,7 +243,7 @@ pub trait LayerIndex: LayerObject {
                     if layer.as_any_mut().downcast_mut::<T>().is_some() {
                         break;
                     }
-                    next_layer = layer.get_payload_mut();
+                    next_layer = layer.payload_mut();
                 }
             }
         }
@@ -334,7 +271,7 @@ pub trait LayerIndex: LayerObject {
             }
         }
 
-        let mut next_layer = self.get_payload_mut();
+        let mut next_layer = self.payload_mut();
         let mut layer;
         loop {
             match next_layer {
@@ -347,7 +284,7 @@ pub trait LayerIndex: LayerObject {
                             Some(n_decremented) => n = n_decremented,
                         }
                     }
-                    next_layer = layer.get_payload_mut();
+                    next_layer = layer.payload_mut();
                 }
             }
         }
@@ -356,20 +293,50 @@ pub trait LayerIndex: LayerObject {
     }
 }
 
-impl<T: LayerObject> LayerIndex for T {}
+impl<T: LayerObject> IndexLayer for T {}
 
-/// A trait for appending a new layer to an existing one.
-pub trait LayerAppend: BaseLayerAppend + LayerObject {
-    /// Append the given layer to the existing packet layer, returning an error if the given layer
-    /// is not permitted as a payload for the innermose underlayer.
-    fn append_layer<T: BaseLayer + IntoLayer>(&mut self, other: T) -> Result<(), ValidationError> {
-        if let Some(mut curr) = self.get_payload_mut() {
-            while curr.get_payload_ref().is_some() {
-                curr = curr.get_payload_mut().unwrap();
+/// Represents a distinct protocol layer that may encapsulate data and/or other layers.
+///
+/// This is one of two layer trait variants: [`Layer`] and [`LayerRef`].
+/// This general layer type is distinct from the others in that it does not reference an external
+/// byte slice--all of its internal types are owned by the layer. Individual data fields can be
+/// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
+/// layers can be crafted using methods related to this type.
+pub trait Layer: IndexLayer + LayerName + LayerObject {
+    /*
+    /// Determines whether a given new layer can be appended to an existing one.
+    ///
+    /// Some `Layer` types have restrictions on what other layers can follow it. As an example of
+    /// this, the IPv4 header has a field that explicitly denotes the Transport layer in use above
+    /// it; as such, layers that have a defined value for that field are permitted to be a payload
+    /// for and `Ipv4` type, while those that don't (such as Application layer protocols) are not.
+    /// 
+    /// NOTE: This function requires a rather expensive and unavoidable conversion of `other` into
+    /// a `Box<dyn LayerObject>` just to check if a `Layer` or `LayerRef` can be appended, so we
+    /// currently disable it.
+    #[inline]
+    fn can_append<T: BaseLayer + ToLayer>(&self, other: &T) -> bool {
+        if let Some(mut curr) = self.payload() {
+            while let Some(payload) = curr.payload() {
+                curr = payload;
             }
-            curr.set_payload(other.into_boxed_layer())?;
+            curr.can_set_payload(other.to_boxed_layer().as_ref()) // TODO: expensive :(
         } else {
-            self.set_payload(other.into_boxed_layer())?;
+            self.can_set_payload(other.to_boxed_layer().as_ref())
+        }
+    }
+    */
+
+    /// Append the given layer to the existing packet layer, returning an error if the given layer
+    /// is not permitted as a payload for the innermose sublayer.
+    fn append_layer<T: BaseLayer + ToLayer>(&mut self, other: T) -> Result<(), ValidationError> {
+        if let Some(mut curr) = self.payload_mut() {
+            while curr.payload().is_some() {
+                curr = curr.payload_mut().unwrap();
+            }
+            curr.set_payload(other.to_boxed_layer())?;
+        } else {
+            self.set_payload(other.to_boxed_layer())?;
         }
 
         Ok(())
@@ -381,32 +348,21 @@ pub trait LayerAppend: BaseLayerAppend + LayerObject {
     /// # Panics
     ///
     /// Using this method can lead to a panic condition later on in the lifetime of the layer if
-    /// the provided layer is not permitted as a payload for the innermost underlayer.
+    /// the provided layer is not permitted as a payload for the innermost sublayer.
     fn append_layer_unchecked<T: BaseLayer>(&mut self, other: T) {
-        if let Some(mut curr) = self.get_payload_mut() {
-            while curr.get_payload_ref().is_some() {
-                curr = curr.get_payload_mut().unwrap();
+        if let Some(mut curr) = self.payload_mut() {
+            while curr.payload().is_some() {
+                curr = curr.payload_mut().unwrap();
             }
-            curr.set_payload_unchecked(other.into_boxed_layer());
+            curr.set_payload_unchecked(other.to_boxed_layer());
         } else {
-            self.set_payload_unchecked(other.into_boxed_layer());
+            self.set_payload_unchecked(other.to_boxed_layer());
         }
     }
 }
 
-impl<T: BaseLayerAppend + LayerObject> LayerAppend for T {}
-
-/// Represents a distinct protocol layer that may encapsulate data and/or other layers.
-///
-/// This is one of two layer trait variants: [`Layer`] and [`LayerRef`].
-/// This general layer type is distinct from the others in that it does not reference an external
-/// byte slice--all of its internal types are owned by the layer. Individual data fields can be
-/// modified or replaced in a simple and type-safe manner, and a packet comprising several distinct
-/// layers can be crafted using methods related to this type.
-pub trait Layer: IntoLayer + LayerAppend + LayerIndex + LayerName + LayerObject {}
-
 /// A trait for indexing into sublayers of a [`LayerRef`] type.
-pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
+pub trait IndexLayerRef<'a>: LayerOffset + BaseLayer {
     /// Retrieves a reference to the first sublayer of type `T`, if such a sublayer exists.
     ///
     /// If the layer type `T` is the same type as the base layer (`self`), this method will
@@ -478,24 +434,22 @@ pub trait LayerRefIndex<'a>: LayerOffset + BaseLayer {
 /// converted into its corresponding [`Layer`] type if desired.
 pub trait LayerRef<'a>:
     LayerIdentifier
-    + BaseLayerAppend
-    + Into<&'a [u8]>
-    + Into<Vec<u8>>
     + LayerName
-    + LayerRefIndex<'a>
-    + ToOwnedLayer
+    + IndexLayerRef<'a>
+    + ToLayer
+    + Copy
+    + Into<&'a [u8]>
 {
 }
 
 /// A Trait for validating a byte slice against the expected structure of a layer type.
 pub trait Validate: BaseLayer + StatelessLayer {
-    /// Attempts to validate that `bytes` represents a well-formed serialized version of the layer
-    /// type.
+    /// Checks that `bytes` represents a valid serialization of the layer type.
     ///
     /// Validation errors are returned in a special order, such that the library user may still
-    /// inspect or otherwise use the contents of a packet despite the existence of errors in the
-    /// fields of that packet. This is achieved by using the `from_bytes_unchecked()` method in any
-    /// of the layer types.
+    /// inspect or otherwise use the contents of a packet despite the existence of certain errors in
+    /// the fields of that packet. This is achieved by using the `from_bytes_unchecked()` method in
+    /// any of the layer types.
     ///
     /// 1. [`ValidationErrorClass::InvalidSize`] errors are checked for and returned first and in
     /// order from parent layer to sublayer. An `InvalidSize` error indicates that there are
@@ -557,7 +511,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
     fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError>;
 
     /// Validates the payload (underlayers) of the given layer without validating the layer itself.
-    /// Has the same error ordering properties as `validate()`.
+    /// Has the same error ordering properties as [`validate()`](Self::validate()).
     #[doc(hidden)]
     fn validate_payload(curr_layer: &[u8]) -> Result<(), ValidationError> {
         #[cfg(feature = "custom_layer_selection")]
@@ -579,15 +533,14 @@ pub trait Validate: BaseLayer + StatelessLayer {
 
 /// A trait for converting a slice of byets into a [`Layer`] type.
 pub trait FromBytes: Sized + Validate + StatelessLayer + FromBytesCurrent {
-    /// Converts a slice of bytes into a [`Layer`] type, returning an error if the bytes would
-    /// not form a valid layer.
+    /// Converts a slice of bytes into a [`Layer`] type.
     #[inline]
     fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    /// Converts a slice of bytes into a [`Layer`] type.
+    /// Converts a slice of bytes into a [`Layer`] type, `panic`ing on failure.
     ///
     /// # Panics
     ///
@@ -621,8 +574,7 @@ pub trait FromBytesRef<'a>: Sized + Validate + StatelessLayer {
 //                     Macros to Parse Custom Layer Order
 // =============================================================================
 
-/// Creates a [`Layer`] from the given layer types with the specified order of layering, returning
-/// an error if any sublayer is an incompatible payload for a given layer.
+/// Parses bytes into a specified sequence of [`Layer`]s.
 #[macro_export]
 macro_rules! parse_layers {
     ($bytes:expr, $first:ty, $($next:tt),+) => {{
@@ -665,7 +617,7 @@ macro_rules! parse_layers {
     }};
 }
 
-/// Creates a [`Layer`] from the given layer types with the specified order of layering.
+/// Parses bytes into a specified sequence of [`Layer`]s, `panic`ing on error.
 ///
 /// # Panic
 #[macro_export]
@@ -728,36 +680,19 @@ pub mod extras {
         }
     }
 
-    /// Utility method to convert a given type into some type implementing [`Layer`].
-    ///
-    /// This is used for converting a type implementing [`LayerRef`] into its corresponding owned
-    /// type. For example, the [`IPv4Ref`](crate::layers::ip::Ipv4Ref) type implements
-    /// [`IntoLayer<Output=IPv4>`]. Because of this, it can be converted into its owned
-    /// variant, the [`IPv4`](struct@crate::layers::ip::Ipv4) type.
-    #[doc(hidden)]
-    pub trait IntoLayer: Into<Self::Output> {
-        type Output: LayerObject;
-    }
-
     /// A trait for creating an owned layer type [`Layer`] from an instance of a protocol layer
     /// (a [`Layer`] or [`LayerRef`]).
-    pub trait ToOwnedLayer {
+    pub trait ToLayer {
         type Owned: LayerObject;
 
         /// Creates a new [`Layer`] out of the given layer instance.
-        fn to_owned(&self) -> Self::Owned;
-
-        /// Creates a new [`Layer`] out of the given layer instance and moves it into `target`.
-        #[inline]
-        fn clone_into(&self, target: &mut Self::Owned) {
-            *target = self.to_owned();
-        }
+        fn to_layer(&self) -> Self::Owned;
     }
 
-    impl<T: LayerObject + Clone> ToOwnedLayer for T {
+    impl<T: LayerObject + Clone> ToLayer for T {
         type Owned = Self;
         #[inline]
-        fn to_owned(&self) -> Self::Owned {
+        fn to_layer(&self) -> Self::Owned {
             self.clone()
         }
     }
@@ -766,27 +701,10 @@ pub mod extras {
     ///
     /// This is primarily used internally to facilitate appending one layer to another
     /// in a type-agnostic way.
+    #[doc(hidden)]
     pub trait ToBoxedLayer {
-        /// Put the given instance in a [`Box`] and return it as a `dyn Layer` type.
-        fn into_boxed_layer(self) -> Box<dyn LayerObject>;
-
+        /// Clone the given instance in a [`Box`] and return it as a `dyn Layer` type.
         fn to_boxed_layer(&self) -> Box<dyn LayerObject>;
-    }
-
-    /// Blanket implementation of [`ToBoxedLayer`] for all types implementing [`IntoLayer`].
-    ///
-    /// This converts the given instance into a type implementing [`Layer`] using methods from
-    /// [`IntoLayer`] and returns that instance within a [`Box`].
-    impl<T: IntoLayer + ToOwnedLayer> ToBoxedLayer for T {
-        #[inline]
-        fn into_boxed_layer(self) -> Box<dyn LayerObject> {
-            Box::new(self.into())
-        }
-
-        #[inline]
-        fn to_boxed_layer(&self) -> Box<dyn LayerObject> {
-            Box::new(self.to_owned())
-        }
     }
 
     // If we wanted to, we could pull out the `layer_metadata(&self)` function from BaseLayer and put it in an internal trait like so:
@@ -828,52 +746,6 @@ pub mod extras {
         fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self;
     }
 
-    pub trait BaseLayerAppendBoxed: BaseLayer + IntoLayer + Sized + ToOwnedLayer {
-        fn can_append_with_boxed(&self, other: &dyn LayerObject) -> bool {
-            let base: Self::Owned = self.to_owned(); // Ouch. Heavy allocation here, and just for a check!
-            if let Some(mut curr) = base.get_payload_ref() {
-                while curr.get_payload_ref().is_some() {
-                    curr = curr.get_payload_ref().unwrap();
-                }
-                curr.can_set_payload(other)
-            } else {
-                base.can_set_payload(other)
-            }
-        }
-
-        fn appended_with_boxed(
-            self,
-            other: Box<dyn LayerObject>,
-        ) -> Result<Self::Output, &'static str> {
-            if self.can_append_with_boxed(other.as_ref()) {
-                Ok(self.appended_with_boxed_unchecked(other))
-            } else {
-                Err("nope")
-            }
-        }
-
-        /// Appends the provided new layer to the existing one without check if it is an acceptable
-        /// underlayer.
-        ///
-        /// Note that using this method can lead to a `panic` later on in the lifetime of the
-        /// layer if the provided new layer is not permitted as a payload for the innermost underlayer.
-        fn appended_with_boxed_unchecked(self, other: Box<dyn LayerObject>) -> Self::Output {
-            let mut base: Self::Output = self.into();
-            if let Some(mut curr) = base.get_payload_mut() {
-                while curr.get_payload_ref().is_some() {
-                    curr = curr.get_payload_mut().unwrap();
-                }
-                curr.set_payload_unchecked(other);
-            } else {
-                base.set_payload_unchecked(other);
-            }
-
-            base
-        }
-    }
-
-    impl<T: BaseLayer + IntoLayer + Sized + ToOwnedLayer> BaseLayerAppendBoxed for T {}
-
     /// Assigns a unique identifier to the layer.
     ///
     /// Each protocol layer must have the same LayerId returned by this trait across [`Layer`]
@@ -896,6 +768,8 @@ pub mod extras {
         fn payload_byte_index_default(bytes: &[u8], layer_type: LayerId) -> Option<usize>;
     }
 
+    /// A singleton associated with a `Layer` that enables indexing by that layer's type name.
+    #[doc(hidden)]
     pub trait LayerIndexSingleton: crate::private::Sealed {
         type LayerType: LayerObject;
     }

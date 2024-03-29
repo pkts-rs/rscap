@@ -114,12 +114,12 @@ impl LayerObject for Ether {
     }
 
     #[inline]
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         self.payload.as_deref()
     }
 
     #[inline]
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         self.payload.as_deref_mut()
     }
 
@@ -143,12 +143,15 @@ impl LayerObject for Ether {
 }
 
 impl ToBytes for Ether {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(self.src);
         bytes.extend(self.dst);
         match self.payload.as_ref() {
-            None => bytes.extend(ETH_PROTOCOL_EXPERIMENTAL.to_be_bytes()),
+            None => {
+                bytes.extend(ETH_PROTOCOL_EXPERIMENTAL.to_be_bytes());
+                Ok(())
+            }   
             Some(p) => {
                 bytes.extend(
                     match p
@@ -161,7 +164,7 @@ impl ToBytes for Ether {
                     }
                     .to_be_bytes(),
                 );
-                p.to_bytes_chksummed(bytes, Some((Self::layer_id(), start)))
+                p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))
             }
         }
     }

@@ -45,11 +45,11 @@ impl LayerObject for Example {
         todo!()
     }
 
-    fn get_payload_ref(&self) -> Option<&dyn LayerObject> {
+    fn payload(&self) -> Option<&dyn LayerObject> {
         todo!()
     }
 
-    fn get_payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
         todo!()
     }
 
@@ -68,7 +68,7 @@ impl LayerObject for Example {
 
 #[allow(unused_variables)]
 impl ToBytes for Example {
-    fn to_bytes_chksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) {
+    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
         todo!()
     }
 }
