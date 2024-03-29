@@ -13,7 +13,8 @@
 //! 
 //! 
 
-use std::io;
+use std::{io, mem, ptr};
+use std::net::SocketAddrV4;
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +65,32 @@ impl L4Socket {
         }
     }
 
+    /// Bind the transport-layer socket to a particular address.
+    pub fn bind(&self, addr: &SocketAddrV4) -> io::Result<()> {
+        let ip_addr = addr.ip();
+        let port = addr.port();
 
+        let sockaddr = libc::sockaddr_in {
+            sin_family: libc::AF_INET as u16,
+            sin_addr: libc::in_addr {
+                s_addr: u32::from_be_bytes(ip_addr.octets()) // TODO: check endianness of this
+            },
+            sin_port: port,
+            sin_zero: [0u8; 8],
+        };
+
+        // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
+        // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
+        match unsafe {
+            libc::bind(
+                self.fd,
+                ptr::addr_of!(sockaddr) as *const libc::sockaddr,
+                mem::size_of::<libc::sockaddr_in>() as u32,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
 }
 
