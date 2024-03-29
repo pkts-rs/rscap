@@ -596,7 +596,7 @@ impl<'a> PacketRxFrameIter<'a> {
         self.curr_offset = new_offset;
         Some(frame)
     }
-    
+
     fn next_with_offset(
         frames: &'a mut [u8],
         frame_cnt: usize,

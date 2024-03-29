@@ -10,12 +10,11 @@
 
 //! Transport-layer (IPv4-only) packet capture/transmission utilities.
 //!
-//! 
-//! 
+//!
+//!
 
-use std::{io, mem, ptr};
 use std::net::SocketAddrV4;
-
+use std::{io, mem, ptr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum L4Protocol {
@@ -42,7 +41,7 @@ impl L4Socket {
     /// Create a new transport-layer socket.
     ///
     /// By default, transport-layer sockets do not listen or receive packets on any protocol or
-    /// interface; to begin receiving packets, call [`bind()`](L3Socket::bind()).
+    /// interface; to begin receiving packets, call [`bind()`](L4Socket::bind()).
     ///
     /// # Permissions
     ///
@@ -73,7 +72,7 @@ impl L4Socket {
         let sockaddr = libc::sockaddr_in {
             sin_family: libc::AF_INET as u16,
             sin_addr: libc::in_addr {
-                s_addr: u32::from_be_bytes(ip_addr.octets()) // TODO: check endianness of this
+                s_addr: u32::from_be_bytes(ip_addr.octets()), // TODO: check endianness of this
             },
             sin_port: port,
             sin_zero: [0u8; 8],
@@ -93,4 +92,3 @@ impl L4Socket {
         }
     }
 }
-
