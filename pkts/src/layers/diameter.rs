@@ -14,7 +14,7 @@
 
 use std::slice;
 
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;

@@ -38,9 +38,10 @@ pub mod sctp;
 pub mod tcp;
 pub mod traits;
 pub mod udp;
+pub mod dev_traits;
 
 use crate::error::*;
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};

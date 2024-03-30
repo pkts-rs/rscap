@@ -17,7 +17,7 @@ use std::slice;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::{Raw, RawRef};
 use crate::{error::*, utils};

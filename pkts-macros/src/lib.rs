@@ -467,6 +467,7 @@ pub fn layer_metadata(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         "{}_METADATA_RSCAP_INTERNAL",
         struct_name.to_string().to_uppercase()
     );
+
     //#[cfg(not(feature = "custom_layer_selection"))]
     let expanded = quote::quote! {
         pub struct #struct_name {
@@ -487,28 +488,6 @@ pub fn layer_metadata(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         #[cfg(feature = "custom_layer_selection")]
         impl BaseLayerSelection for #struct_name { }
     };
-
-    /*
-    #[cfg(feature = "custom_layer_selection")]
-    let expanded = quote::quote! {
-        pub struct #struct_name {
-            _zst: (),
-        }
-
-        const #metadata_const: #struct_name = #struct_name { _zst: () };
-
-        impl LayerMetadata for #struct_name { }
-
-        impl ConstSingleton for #struct_name {
-            #[inline]
-            fn instance() -> &'static Self {
-                & #metadata_const
-            }
-        }
-
-        impl BaseLayerSelection for #struct_name { }
-    };
-    */
 
     proc_macro::TokenStream::from(expanded)
 }

@@ -14,7 +14,7 @@
 //!
 
 use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::utils;
 use crate::{layers::*, Buffer};

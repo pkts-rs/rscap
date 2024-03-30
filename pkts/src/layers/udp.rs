@@ -19,7 +19,7 @@
 //! with [`UdpRef`]. UDP packets can be constructed from scratch using either [`Udp::new()`] (which
 //! may use heap allocations) or [`UdpBuilder`], which constructs a UDP packet entirely within
 //! a stack-allocated byte array.
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::Raw;
 use crate::Buffer;

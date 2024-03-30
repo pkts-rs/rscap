@@ -12,7 +12,7 @@
 //!
 //!
 
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
@@ -309,10 +309,12 @@ impl LayerObject for Sctp {
     #[inline]
     fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         true // SCTP can handle arbitrary protocols
+        // TODO: change so that `Tcp`, `Udp` are rejected (due to checksumming issues)
     }
 
     #[inline]
     fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
+
         todo!()
         //self.payload_chunks
     }
@@ -6847,7 +6849,10 @@ impl<'a> UnknownChunkRef<'a> {
 /// .. .                              ...                              .
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
+//#[derive(Clone, Debug, Layer, StatelessLayer)]
+//#[metadata_type(DataChunkMetadata)]
 #[derive(Clone, Debug)]
+//#[ref_type(DataChunkRef)]
 pub struct DataChunk {
     flags: DataChunkFlags,
     tsn: u32,

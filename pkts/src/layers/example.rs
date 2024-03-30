@@ -11,7 +11,7 @@
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use crate::error::*;
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 
 #[derive(Clone, Debug, Layer, StatelessLayer)]

@@ -16,7 +16,7 @@ use std::cmp::Ordering;
 
 use super::Raw;
 use crate::error::*;
-use crate::layers::traits::extras::*;
+use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
