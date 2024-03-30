@@ -17,8 +17,10 @@ use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
 use core::iter::Iterator;
+use core::mem;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
+use std::slice;
 
 use core::{cmp, iter};
 
@@ -104,8 +106,8 @@ pub struct Sctp {
     dport: u16,
     verify_tag: u32,
     chksum: Option<u32>,
-    control_chunks: Vec<ControlChunk>,
-    payload_chunks: Vec<DataChunk>,
+    control_chunks: Vec<SctpControlChunk>,
+    payload_chunks: Vec<Box<dyn LayerObject>>,
 }
 
 impl Sctp {
@@ -201,15 +203,15 @@ impl Sctp {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
+    /// - [`SctpControlChunk::Shutdown`] and [`SctpControlChunk::ShutdownAck`] must not be bundled with any [`struct@SctpDataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
-    /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
+    /// - [`SctpControlChunk::Init`], [`SctpControlChunk::InitAck`], and [`SctpControlChunk::ShutdownComplete`] must not be bundled
     /// with any other control or payload chunks.
     ///
     /// These constraints will be enforced by this library by default.
     #[inline]
-    pub fn control_chunks(&self) -> &Vec<ControlChunk> {
+    pub fn control_chunks(&self) -> &Vec<SctpControlChunk> {
         &self.control_chunks
     }
 
@@ -219,33 +221,34 @@ impl Sctp {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
+    /// - [`SctpControlChunk::Shutdown`] and [`SctpControlChunk::ShutdownAck`] must not be bundled with any [`struct@SctpDataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
-    /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
+    /// - [`SctpControlChunk::Init`], [`SctpControlChunk::InitAck`], and [`SctpControlChunk::ShutdownComplete`] must not be bundled
     /// with any other control or payload chunks.
     ///
     /// Although the `rscap` library enforces these constraints where it can, this particular API may be used in such a way that
     /// they are violated. It is the responsibility of the caller of this method to ensure that the above constraints are upheld.
     #[inline]
-    pub fn control_chunks_mut(&mut self) -> &mut Vec<ControlChunk> {
+    pub fn control_chunks_mut(&mut self) -> &mut Vec<SctpControlChunk> {
         &mut self.control_chunks
     }
 
+    /*
     /// The list of Payload Data (DATA) Chunks contained within the packet.
     ///
     /// These chunks are ordered by increasing TSN value, and are always placed after any control chunks in the packet.
     /// A packet MUST NOT have any Payload Data Chunks when any of the below Control Chunks are present:
     ///
-    /// - [`ControlChunk::Shutdown`]
-    /// - [`ControlChunk::ShutdownAck`]
-    /// - [`ControlChunk::Init`]
-    /// - [`ControlChunk::InitAck`]
-    /// - [`ControlChunk::ShutdownComplete`]
+    /// - [`SctpControlChunk::Shutdown`]
+    /// - [`SctpControlChunk::ShutdownAck`]
+    /// - [`SctpControlChunk::Init`]
+    /// - [`SctpControlChunk::InitAck`]
+    /// - [`SctpControlChunk::ShutdownComplete`]
     ///
     /// These constraints will be enforced by this library by default.
     #[inline]
-    pub fn payload_chunks(&self) -> &Vec<DataChunk> {
+    pub fn payload_chunks(&self) -> &Vec<SctpDataChunk> {
         &self.payload_chunks
     }
 
@@ -254,18 +257,19 @@ impl Sctp {
     /// Payload DATA chunks are ordered by increasing TSN value, and are always placed after any Control Chunks in the packet.
     /// A packet MUST NOT have any Payload Data Chunks when any of the below Control Chunks are present:
     ///
-    /// - [`ControlChunk::Shutdown`]
-    /// - [`ControlChunk::ShutdownAck`]
-    /// - [`ControlChunk::Init`]
-    /// - [`ControlChunk::InitAck`]
-    /// - [`ControlChunk::ShutdownComplete`]
+    /// - [`SctpControlChunk::Shutdown`]
+    /// - [`SctpControlChunk::ShutdownAck`]
+    /// - [`SctpControlChunk::Init`]
+    /// - [`SctpControlChunk::InitAck`]
+    /// - [`SctpControlChunk::ShutdownComplete`]
     ///
     /// Although the `rscap` library enforces these constraints where it can, this particular API may be used in such a way that
     /// they are violated. It is the responsibility of the caller of this method to ensure that the above constraints are upheld.
     #[inline]
-    pub fn payload_chunks_mut(&mut self) -> &mut Vec<DataChunk> {
+    pub fn payload_chunks_mut(&mut self) -> &mut Vec<SctpDataChunk> {
         &mut self.payload_chunks
     }
+    */
 }
 
 #[doc(hidden)]
@@ -282,7 +286,7 @@ impl FromBytesCurrent for Sctp {
         let mut payload_chunks = Vec::new();
         let payload_iter = sctp.payload_chunks();
         for chunk in payload_iter {
-            payload_chunks.push(chunk.into());
+            payload_chunks.push(chunk.to_boxed_layer());
         }
 
         Sctp {
@@ -307,110 +311,47 @@ impl LayerLength for Sctp {
 
 impl LayerObject for Sctp {
     #[inline]
-    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
-        true // SCTP can handle arbitrary protocols
-        // TODO: change so that `Tcp`, `Udp` are rejected (due to checksumming issues)
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        payload.as_any().downcast_ref::<&SctpDataChunk>().is_some()
     }
 
     #[inline]
-    fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
-
-        todo!()
-        //self.payload_chunks
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload_chunks.push(payload);
     }
 
     #[inline]
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
-        todo!()
-        /*
-        self.payload_chunks.as_slice()
-        */
+        &self.payload_chunks
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
-        todo!()
-        /*
-        match &mut self.payload {
-            Some(payload) => slice::from_mut(payload),
-            None => &mut []
-        }
-        */
-    }
-    
-    fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
-        todo!()
-        /*
-        if index != 0 {
-            return None
-        }
-
-        let mut ret = None;
-        core::mem::swap(&mut ret, &mut self.payload);
-        ret
-        */
+        &mut self.payload_chunks
     }
 
-
-    /*
-
-    /// Returns a reference to the first payload chunk in the [`struct@Sctp`] packet, if such a
-    /// chunk exists.
-    #[inline]
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        self.payload_chunks.first().map(|c| c.payload.as_ref())
-    }
-
-    /// Returns a mutable reference to the first payload chunk in the [`struct@Sctp`] packet, if
-    /// such a chunk exists.
-    #[inline]
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload_chunks.first_mut().map(|c| c.payload.as_mut())
-    }
-
-    /// Replaces the first payload chunk in the [`struct@Sctp`] packet with the given payload, or
-    /// adds a new payload chunk with all associated fields set to 0 if there were none.
-    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
-        if let Some(payload_chunk) = self.payload_chunks.first_mut() {
-            payload_chunk.payload = payload
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
+        if index < self.payload_chunks.len() {
+            Some(self.payload_chunks.remove(index))
         } else {
-            self.payload_chunks.push(DataChunk {
-                flags: DataChunkFlags { data: 0 },
-                tsn: 0,
-                stream_id: 0,
-                stream_seq: 0,
-                proto_id: 0,
-                payload,
-            })
+            None
         }
     }
-
-    /// Determines whether one or more payload chunks exist in the [`struct@Sctp`] packet.
-    #[inline]
-    fn has_payload(&self) -> bool {
-        !self.payload_chunks.is_empty()
-    }
-
-    /// Removes and returns the first payload chunk from the [`struct@Sctp`] packet.
-    #[inline]
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
-        self.payload_chunks
-            .pop()
-            .map(|c| c.payload)
-            .expect("attempted to remove payload where none existed in SCTP packet")
-    }
-    */
 }
 
 impl ToBytes for Sctp {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(self.verify_tag.to_be_bytes());
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         for chunk in &self.control_chunks {
-            chunk.to_bytes_extended(bytes);
+            chunk.to_bytes_extended(bytes)?;
         }
 
         for chunk in &self.payload_chunks {
@@ -453,19 +394,13 @@ impl<'a> SctpRef<'a> {
     /// The SCTP port number from which the packet has been sent (i.e. Source Port).
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in SctpRef to retrieve Source Port field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     /// The SCTP port number to which the packet is destined (i.e. Destination Port).
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SctpRef to retrieve Destination Port field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     /// The Verification Tag assigned to the packet.
@@ -473,19 +408,13 @@ impl<'a> SctpRef<'a> {
     /// The recipient of an SCTP packet uses the Verification Tag to validate the packet's source.
     #[inline]
     pub fn verify_tag(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SctpRef to retrieve Verify Tag field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     /// The CRC32c Checksum of the SCTP packet.
     #[inline]
     pub fn chksum(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SctpRef to retrieve Verify Checksum field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     /// An iterator over the list of Control Chunks contained within the packet.
@@ -494,10 +423,10 @@ impl<'a> SctpRef<'a> {
     /// same order that they are sent. All control chunks are ordered before payload chunks. Some
     /// control chunks have restrictions on what other chunks they can be bundled in the same message with:
     ///
-    /// - [`ControlChunk::Shutdown`] and [`ControlChunk::ShutdownAck`] must not be bundled with any [`DataChunk`].
+    /// - [`SctpControlChunk::Shutdown`] and [`SctpControlChunk::ShutdownAck`] must not be bundled with any [`struct@SctpDataChunk`].
     /// This is because the Shutdown is evaulated first, and data cannot be sent after a Shutdown message.
     ///
-    /// - [`ControlChunk::Init`], [`ControlChunk::InitAck`], and [`ControlChunk::ShutdownComplete`] must not be bundled
+    /// - [`SctpControlChunk::Init`], [`SctpControlChunk::InitAck`], and [`SctpControlChunk::ShutdownComplete`] must not be bundled
     /// with any other control or payload chunks.
     ///
     /// These constraints will be enforced by this library by default.
@@ -513,11 +442,11 @@ impl<'a> SctpRef<'a> {
     /// These chunks are ordered by increasing TSN value, and are always placed after any control chunks in the packet.
     /// A packet MUST NOT have any Payload Data Chunks when any of the below Control Chunks are present:
     ///
-    /// - [`ControlChunk::Shutdown`]
-    /// - [`ControlChunk::ShutdownAck`]
-    /// - [`ControlChunk::Init`]
-    /// - [`ControlChunk::InitAck`]
-    /// - [`ControlChunk::ShutdownComplete`]
+    /// - [`SctpControlChunk::Shutdown`]
+    /// - [`SctpControlChunk::ShutdownAck`]
+    /// - [`SctpControlChunk::Init`]
+    /// - [`SctpControlChunk::InitAck`]
+    /// - [`SctpControlChunk::ShutdownComplete`]
     ///
     /// These constraints will be enforced by this library by default.
     #[inline]
@@ -579,7 +508,7 @@ impl Validate for SctpRef<'_> {
             let chunk_validation = match chunk_type {
                 CHUNK_TYPE_DATA => {
                     data_reached = true;
-                    DataChunk::validate(remaining)
+                    SctpDataChunk::validate(remaining)
                 }
                 _ if data_reached => {
                     return Err(ValidationError {
@@ -663,7 +592,7 @@ pub struct ControlChunksIterRef<'a> {
 }
 
 impl<'a> Iterator for ControlChunksIterRef<'a> {
-    type Item = ControlChunkRef<'a>;
+    type Item = SctpControlChunkRef<'a>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -683,7 +612,7 @@ pub struct DataChunksIterRef<'a> {
 }
 
 impl<'a> Iterator for DataChunksIterRef<'a> {
-    type Item = DataChunkRef<'a>;
+    type Item = SctpDataChunkRef<'a>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -699,8 +628,8 @@ impl<'a> Iterator for DataChunksIterRef<'a> {
 /// An SCTP chunk (may be a Control chunk or a Payload chunk).
 #[derive(Clone, Copy, Debug)]
 pub enum ChunkRef<'a> {
-    Control(ControlChunkRef<'a>),
-    Payload(DataChunkRef<'a>),
+    Control(SctpControlChunkRef<'a>),
+    Payload(SctpDataChunkRef<'a>),
 }
 
 /// An iterator over all the chunks of an SCTP packet.
@@ -724,13 +653,13 @@ impl<'a> Iterator for ChunksIterRef<'a> {
             (Some(chunk_bytes), Some(rem)) => {
                 self.bytes = rem;
                 if chunk_type == CHUNK_TYPE_DATA {
-                    Some(ChunkRef::Payload(DataChunkRef::from_bytes_unchecked(
+                    Some(ChunkRef::Payload(SctpDataChunkRef::from_bytes_unchecked(
                         chunk_bytes,
                     )))
                 } else {
-                    Some(ChunkRef::Control(ControlChunkRef::from_bytes_unchecked(
-                        chunk_bytes,
-                    )))
+                    Some(ChunkRef::Control(
+                        SctpControlChunkRef::from_bytes_unchecked(chunk_bytes),
+                    ))
                 }
             }
             _ => {
@@ -746,7 +675,7 @@ impl<'a> Iterator for ChunksIterRef<'a> {
 
 /// An SCTP Control chunk.
 #[derive(Clone, Debug)]
-pub enum ControlChunk {
+pub enum SctpControlChunk {
     Init(InitChunk),
     InitAck(InitAckChunk),
     Sack(SackChunk),
@@ -762,7 +691,7 @@ pub enum ControlChunk {
     Unknown(UnknownChunk),
 }
 
-impl ControlChunk {
+impl SctpControlChunk {
     #[inline]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
@@ -771,99 +700,103 @@ impl ControlChunk {
 
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
-        Self::from(ControlChunkRef::from_bytes_unchecked(bytes))
+        Self::from(SctpControlChunkRef::from_bytes_unchecked(bytes))
     }
 
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        ControlChunkRef::validate(bytes)
+        SctpControlChunkRef::validate(bytes)
     }
 
     pub fn chunk_type(&self) -> u8 {
         match self {
-            ControlChunk::Init(c) => c.chunk_type(),
-            ControlChunk::InitAck(c) => c.chunk_type(),
-            ControlChunk::Sack(c) => c.chunk_type(),
-            ControlChunk::Heartbeat(c) => c.chunk_type(),
-            ControlChunk::HeartbeatAck(c) => c.chunk_type(),
-            ControlChunk::Abort(c) => c.chunk_type(),
-            ControlChunk::Shutdown(c) => c.chunk_type(),
-            ControlChunk::ShutdownAck(c) => c.chunk_type(),
-            ControlChunk::Error(c) => c.chunk_type(),
-            ControlChunk::CookieEcho(c) => c.chunk_type(),
-            ControlChunk::CookieAck(c) => c.chunk_type(),
-            ControlChunk::ShutdownComplete(c) => c.chunk_type(),
-            ControlChunk::Unknown(c) => c.chunk_type(),
+            SctpControlChunk::Init(c) => c.chunk_type(),
+            SctpControlChunk::InitAck(c) => c.chunk_type(),
+            SctpControlChunk::Sack(c) => c.chunk_type(),
+            SctpControlChunk::Heartbeat(c) => c.chunk_type(),
+            SctpControlChunk::HeartbeatAck(c) => c.chunk_type(),
+            SctpControlChunk::Abort(c) => c.chunk_type(),
+            SctpControlChunk::Shutdown(c) => c.chunk_type(),
+            SctpControlChunk::ShutdownAck(c) => c.chunk_type(),
+            SctpControlChunk::Error(c) => c.chunk_type(),
+            SctpControlChunk::CookieEcho(c) => c.chunk_type(),
+            SctpControlChunk::CookieAck(c) => c.chunk_type(),
+            SctpControlChunk::ShutdownComplete(c) => c.chunk_type(),
+            SctpControlChunk::Unknown(c) => c.chunk_type(),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            ControlChunk::Init(c) => c.len(),
-            ControlChunk::InitAck(c) => c.len(),
-            ControlChunk::Sack(c) => c.len(),
-            ControlChunk::Heartbeat(c) => c.len(),
-            ControlChunk::HeartbeatAck(c) => c.len(),
-            ControlChunk::Abort(c) => c.len(),
-            ControlChunk::Shutdown(c) => c.len(),
-            ControlChunk::ShutdownAck(c) => c.len(),
-            ControlChunk::Error(c) => c.len(),
-            ControlChunk::CookieEcho(c) => c.len(),
-            ControlChunk::CookieAck(c) => c.len(),
-            ControlChunk::ShutdownComplete(c) => c.len(),
-            ControlChunk::Unknown(c) => c.len(),
+            SctpControlChunk::Init(c) => c.len(),
+            SctpControlChunk::InitAck(c) => c.len(),
+            SctpControlChunk::Sack(c) => c.len(),
+            SctpControlChunk::Heartbeat(c) => c.len(),
+            SctpControlChunk::HeartbeatAck(c) => c.len(),
+            SctpControlChunk::Abort(c) => c.len(),
+            SctpControlChunk::Shutdown(c) => c.len(),
+            SctpControlChunk::ShutdownAck(c) => c.len(),
+            SctpControlChunk::Error(c) => c.len(),
+            SctpControlChunk::CookieEcho(c) => c.len(),
+            SctpControlChunk::CookieAck(c) => c.len(),
+            SctpControlChunk::ShutdownComplete(c) => c.len(),
+            SctpControlChunk::Unknown(c) => c.len(),
         }
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         match self {
-            ControlChunk::Init(c) => c.to_bytes_extended(bytes),
-            ControlChunk::InitAck(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Sack(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Heartbeat(c) => c.to_bytes_extended(bytes),
-            ControlChunk::HeartbeatAck(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Abort(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Shutdown(c) => c.to_bytes_extended(bytes),
-            ControlChunk::ShutdownAck(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Error(c) => c.to_bytes_extended(bytes),
-            ControlChunk::CookieEcho(c) => c.to_bytes_extended(bytes),
-            ControlChunk::CookieAck(c) => c.to_bytes_extended(bytes),
-            ControlChunk::ShutdownComplete(c) => c.to_bytes_extended(bytes),
-            ControlChunk::Unknown(c) => c.to_bytes_extended(bytes),
+            SctpControlChunk::Init(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::InitAck(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::Sack(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::Heartbeat(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::HeartbeatAck(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::Abort(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::Shutdown(c) => c.to_bytes_extended(bytes),
+            SctpControlChunk::ShutdownAck(c) => c.to_bytes_extended(bytes),
+            SctpControlChunk::Error(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::CookieEcho(c) => c.to_bytes_extended(bytes)?,
+            SctpControlChunk::CookieAck(c) => c.to_bytes_extended(bytes),
+            SctpControlChunk::ShutdownComplete(c) => c.to_bytes_extended(bytes),
+            SctpControlChunk::Unknown(c) => c.to_bytes_extended(bytes)?,
         }
+
+        Ok(())
     }
 }
 
-impl From<ControlChunkRef<'_>> for ControlChunk {
+impl From<SctpControlChunkRef<'_>> for SctpControlChunk {
     #[inline]
-    fn from(value: ControlChunkRef<'_>) -> Self {
-        ControlChunk::from(&value)
+    fn from(value: SctpControlChunkRef<'_>) -> Self {
+        SctpControlChunk::from(&value)
     }
 }
 
-impl From<&ControlChunkRef<'_>> for ControlChunk {
-    fn from(value: &ControlChunkRef<'_>) -> Self {
+impl From<&SctpControlChunkRef<'_>> for SctpControlChunk {
+    fn from(value: &SctpControlChunkRef<'_>) -> Self {
         match value {
-            ControlChunkRef::Init(c) => ControlChunk::Init(c.into()),
-            ControlChunkRef::InitAck(c) => ControlChunk::InitAck(c.into()),
-            ControlChunkRef::Sack(c) => ControlChunk::Sack(c.into()),
-            ControlChunkRef::Heartbeat(c) => ControlChunk::Heartbeat(c.into()),
-            ControlChunkRef::HeartbeatAck(c) => ControlChunk::HeartbeatAck(c.into()),
-            ControlChunkRef::Abort(c) => ControlChunk::Abort(c.into()),
-            ControlChunkRef::Shutdown(c) => ControlChunk::Shutdown(c.into()),
-            ControlChunkRef::ShutdownAck(c) => ControlChunk::ShutdownAck(c.into()),
-            ControlChunkRef::Error(c) => ControlChunk::Error(c.into()),
-            ControlChunkRef::CookieEcho(c) => ControlChunk::CookieEcho(c.into()),
-            ControlChunkRef::CookieAck(c) => ControlChunk::CookieAck(c.into()),
-            ControlChunkRef::ShutdownComplete(c) => ControlChunk::ShutdownComplete(c.into()),
-            ControlChunkRef::Unknown(c) => ControlChunk::Unknown(c.into()),
+            SctpControlChunkRef::Init(c) => SctpControlChunk::Init(c.into()),
+            SctpControlChunkRef::InitAck(c) => SctpControlChunk::InitAck(c.into()),
+            SctpControlChunkRef::Sack(c) => SctpControlChunk::Sack(c.into()),
+            SctpControlChunkRef::Heartbeat(c) => SctpControlChunk::Heartbeat(c.into()),
+            SctpControlChunkRef::HeartbeatAck(c) => SctpControlChunk::HeartbeatAck(c.into()),
+            SctpControlChunkRef::Abort(c) => SctpControlChunk::Abort(c.into()),
+            SctpControlChunkRef::Shutdown(c) => SctpControlChunk::Shutdown(c.into()),
+            SctpControlChunkRef::ShutdownAck(c) => SctpControlChunk::ShutdownAck(c.into()),
+            SctpControlChunkRef::Error(c) => SctpControlChunk::Error(c.into()),
+            SctpControlChunkRef::CookieEcho(c) => SctpControlChunk::CookieEcho(c.into()),
+            SctpControlChunkRef::CookieAck(c) => SctpControlChunk::CookieAck(c.into()),
+            SctpControlChunkRef::ShutdownComplete(c) => {
+                SctpControlChunk::ShutdownComplete(c.into())
+            }
+            SctpControlChunkRef::Unknown(c) => SctpControlChunk::Unknown(c.into()),
         }
     }
 }
 
 /// An SCTP Control chunk reference.
 #[derive(Clone, Copy, Debug)]
-pub enum ControlChunkRef<'a> {
+pub enum SctpControlChunkRef<'a> {
     Init(InitChunkRef<'a>),
     InitAck(InitAckChunkRef<'a>),
     Sack(SackChunkRef<'a>),
@@ -879,7 +812,7 @@ pub enum ControlChunkRef<'a> {
     Unknown(UnknownChunkRef<'a>),
 }
 
-impl<'a> ControlChunkRef<'a> {
+impl<'a> SctpControlChunkRef<'a> {
     #[inline]
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
         Self::validate(bytes)?;
@@ -887,9 +820,7 @@ impl<'a> ControlChunkRef<'a> {
     }
 
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        let chunk_type = *bytes.first().expect(
-            "insufficient bytes to create SCTP Control chunk from bytes (Chunk Type field missing)",
-        );
+        let chunk_type = bytes[0];
         match chunk_type {
             CHUNK_TYPE_INIT => Self::Init(InitChunkRef { data: bytes }),
             CHUNK_TYPE_INIT_ACK => Self::InitAck(InitAckChunkRef { data: bytes }),
@@ -910,9 +841,7 @@ impl<'a> ControlChunkRef<'a> {
     }
 
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let chunk_type = *bytes
-            .first()
-            .expect("insufficient bytes in SCTP Control Chunk to extract Chunk Type field");
+        let chunk_type = bytes[0];
         match chunk_type {
             CHUNK_TYPE_INIT => InitChunkRef::validate(bytes),
             CHUNK_TYPE_INIT_ACK => InitAckChunkRef::validate(bytes),
@@ -1013,15 +942,14 @@ impl InitChunk {
 
     /// The length (without padding) of the INIT chunk.
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(20 + self.options.iter().map(|o| o.len()).sum::<usize>())
-            .expect("too many bytes in SCTP INIT chunk to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        20 + self.options.iter().map(|o| o.len()).sum::<usize>()
     }
 
     /// The length (including padding) of the INIT chunk.
     #[inline]
     pub fn len(&self) -> usize {
-        20 + self.options.iter().map(|o| o.len()).sum::<usize>()
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     /// The Initiate Tag of the chunk.
@@ -1106,7 +1034,7 @@ impl InitChunk {
         &mut self.options
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_INIT);
         bytes.push(self.flags);
         bytes.extend(self.unpadded_len().to_be_bytes());
@@ -1116,9 +1044,11 @@ impl InitChunk {
         bytes.extend(self.istreams.to_be_bytes());
         bytes.extend(self.init_tsn.to_be_bytes());
         for option in &self.options {
-            option.to_bytes_extended(bytes);
+            option.to_bytes_extended(bytes)?;
         }
         // No padding needed--options are guaranteed to be padded to 4 bytes.
+
+        Ok(())
     }
 }
 
@@ -1256,26 +1186,17 @@ impl<'a> InitChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP INIT chunk to retrieve Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP INIT chunk to retrieve Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP INIT chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -1285,42 +1206,27 @@ impl<'a> InitChunkRef<'a> {
 
     #[inline]
     pub fn init_tag(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in SCTP INIT chunk to extract Init Tag field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn a_rwnd(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 8)
-                .expect("insufficient bytes in SCTP INIT chunk to extract a_rwnd field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     #[inline]
     pub fn ostreams(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 12)
-                .expect("insufficient bytes in SCTP INIT chunk to extract Outbound Streams field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     #[inline]
     pub fn istreams(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 14)
-                .expect("insufficient bytes in SCTP INIT chunk to extract Inbound Streams field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 14).unwrap())
     }
 
     #[inline]
     pub fn init_tsn(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in SCTP INIT chunk to extract Initial TSN field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 16).unwrap())
     }
 
     #[inline]
@@ -1427,23 +1333,23 @@ impl InitOption {
         }
     }
 
-    pub fn unpadded_len(&self) -> u16 {
+    pub fn unpadded_len(&self) -> usize {
         match self {
             Self::Ipv4Address(_) => 8,
             Self::Ipv6Address(_) => 20,
             Self::CookiePreservative(_) => 8,
-            Self::HostnameAddress(h) => (4 + h.len()).try_into().expect("too many bytes in SCTP INIT chunk Hostname Address option to represent in a 16-bit Length field"),
-            Self::SupportedAddressTypes(addr_types) => (4 + addr_types.len()).try_into().expect("too many bytes in SCTP INIT chunk Supported Address Types option to represent in a 16-bit Length field"),
-            Self::Unknown(_,d) => (4 + d.len()).try_into().expect("too many bytes in SCTP INIT chunk <unknown> option to represent in a 16-bit Length field"),
+            Self::HostnameAddress(h) => 4 + h.len(),
+            Self::SupportedAddressTypes(addr_types) => 4 + (2 * addr_types.len()),
+            Self::Unknown(_, d) => 4 + d.len(),
         }
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         match self {
             Self::Ipv4Address(ipv4) => {
                 bytes.extend(INIT_OPT_IPV4_ADDRESS.to_be_bytes());
@@ -1461,7 +1367,8 @@ impl InitOption {
                 bytes.extend(cookie_lifespan.to_be_bytes());
             }
             Self::HostnameAddress(addr) => {
-                let unpadded_len = u16::try_from(4 + addr.len()).expect("too many bytes in SCTP INIT chunk Host Name Address option to represent in a 16-bit Length field");
+                let unpadded_len = u16::try_from(self.unpadded_len())
+                    .map_err(|_| SerializationError::oversized())?;
                 bytes.extend(INIT_OPT_HOSTNAME_ADDR.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 bytes.extend(addr);
@@ -1470,7 +1377,8 @@ impl InitOption {
                 ));
             }
             Self::SupportedAddressTypes(addr_types) => {
-                let unpadded_len = u16::try_from(4 + (2 * addr_types.len())).expect("too many bytes in SCTP INIT chunk Supported Address Types option to represent in a 16-bit length field");
+                let unpadded_len = u16::try_from(self.unpadded_len())
+                    .map_err(|_| SerializationError::oversized())?;
                 bytes.extend(INIT_OPT_SUPP_ADDR_TYPES.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 for addr_type in addr_types {
@@ -1481,7 +1389,8 @@ impl InitOption {
                 ));
             }
             Self::Unknown(opt_type, data) => {
-                let unpadded_len = u16::try_from(4 + data.len()).expect("too many bytes in SCTP INIT chunk <unknown> option to represent in a 16-bit length field");
+                let unpadded_len = u16::try_from(self.unpadded_len())
+                    .map_err(|_| SerializationError::oversized())?;
                 bytes.extend(opt_type.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 bytes.extend(data);
@@ -1490,6 +1399,7 @@ impl InitOption {
                 ));
             }
         }
+        Ok(())
     }
 }
 
@@ -1607,18 +1517,12 @@ impl<'a> InitOptionRef<'a> {
 
     #[inline]
     pub fn opt_type(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in SCTP option to extract Option Type field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP option to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -1628,12 +1532,31 @@ impl<'a> InitOptionRef<'a> {
 
     pub fn payload(&self) -> InitOptionPayloadRef<'a> {
         match self.opt_type() {
-            INIT_OPT_IPV4_ADDRESS => InitOptionPayloadRef::Ipv4Address(u32::from_be_bytes(utils::to_array(self.data, 4).expect("insufficent bytes in SCTP INIT Option to extract IPv4 Address payload"))),
-            INIT_OPT_IPV6_ADDRESS => InitOptionPayloadRef::Ipv6Address(u128::from_be_bytes(utils::to_array::<16>(self.data, 4).expect("insufficent bytes in SCTP INIT Option to extract IPv6 Address payload"))),
-            INIT_OPT_COOKIE_PRESERVATIVE => InitOptionPayloadRef::CookiePreservative(u32::from_be_bytes(utils::to_array(self.data, 4).expect("insufficent bytes in SCTP INIT Option to extract Cookie Preservative payload"))),
-            INIT_OPT_HOSTNAME_ADDR => InitOptionPayloadRef::HostnameAddress(self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT Option (Hostname Address)") as usize).expect("insufficent bytes in SCTP INIT Option to extract Hostname Address payload")),
-            INIT_OPT_SUPP_ADDR_TYPES => InitOptionPayloadRef::SupportedAddressTypes(self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT Option (Supported Address Types)") as usize).expect("insufficent bytes in SCTP INIT Option to extract Supported Address Types payload")),
-            _ => InitOptionPayloadRef::Unknown(self.opt_type(), self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT Option (unknown option type)") as usize).expect("insufficent bytes in SCTP INIT Option to extract <unknown type> payload"))
+            INIT_OPT_IPV4_ADDRESS => InitOptionPayloadRef::Ipv4Address(u32::from_be_bytes(
+                utils::to_array(self.data, 4).unwrap(),
+            )),
+            INIT_OPT_IPV6_ADDRESS => InitOptionPayloadRef::Ipv6Address(u128::from_be_bytes(
+                utils::to_array::<16>(self.data, 4).unwrap(),
+            )),
+            INIT_OPT_COOKIE_PRESERVATIVE => InitOptionPayloadRef::CookiePreservative(
+                u32::from_be_bytes(utils::to_array(self.data, 4).unwrap()),
+            ),
+            INIT_OPT_HOSTNAME_ADDR => InitOptionPayloadRef::HostnameAddress(
+                self.data
+                    .get(4..4 + self.unpadded_len().checked_sub(4).unwrap() as usize)
+                    .unwrap(),
+            ),
+            INIT_OPT_SUPP_ADDR_TYPES => InitOptionPayloadRef::SupportedAddressTypes(
+                self.data
+                    .get(4..4 + self.unpadded_len().checked_sub(4).unwrap() as usize)
+                    .unwrap(),
+            ),
+            _ => InitOptionPayloadRef::Unknown(
+                self.opt_type(),
+                self.data
+                    .get(4..4 + self.unpadded_len().checked_sub(4).unwrap() as usize)
+                    .unwrap(),
+            ),
         }
     }
 }
@@ -1691,13 +1614,13 @@ impl InitAckChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(20 + self.options.iter().map(|o| o.len()).sum::<usize>()).expect("too many bytes in SCTP INIT ACK chunk Options field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        20 + self.options.iter().map(|o| o.len()).sum::<usize>()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -1760,18 +1683,24 @@ impl InitAckChunk {
         &mut self.options
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_INIT_ACK);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(self.init_tag.to_be_bytes());
         bytes.extend(self.a_rwnd.to_be_bytes());
         bytes.extend(self.ostreams.to_be_bytes());
         bytes.extend(self.istreams.to_be_bytes());
         bytes.extend(self.init_tsn.to_be_bytes());
         for option in &self.options {
-            option.to_bytes_extended(bytes);
+            option.to_bytes_extended(bytes)?;
         }
+
+        Ok(())
     }
 }
 
@@ -1882,26 +1811,17 @@ impl<'a> InitAckChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP INIT ACK chunk to retrieve Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP INIT ACK chunk to retrieve Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP INIT ACK chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -1911,53 +1831,33 @@ impl<'a> InitAckChunkRef<'a> {
 
     #[inline]
     pub fn init_tag(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in SCTP INIT ACK chunk to extract Init Tag field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn a_rwnd(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 8)
-                .expect("insufficient bytes in SCTP INIT ACK chunk to extract a_rwnd field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     #[inline]
     pub fn ostreams(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 12).expect(
-                "insufficient bytes in SCTP INIT ACK chunk to extract Outbound Streams field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     #[inline]
     pub fn istreams(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 14).expect(
-                "insufficient bytes in SCTP INIT ACK chunk to extract Inbound Streams field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 14).unwrap())
     }
 
     #[inline]
     pub fn init_tsn(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in SCTP INIT ACK chunk to extract Initial TSN field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 16).unwrap())
     }
 
     #[inline]
     pub fn options_iter(&self) -> InitAckOptionsIterRef<'a> {
         InitAckOptionsIterRef {
-            bytes: self
-                .data
-                .get(20..)
-                .expect("insufficient bytes in SCTP INIT ACK chunk for header and options"),
+            bytes: &self.data[20..],
         }
     }
 }
@@ -2047,60 +1947,66 @@ impl InitAckOption {
         }
     }
 
-    pub fn unpadded_len(&self) -> u16 {
+    pub fn unpadded_len(&self) -> usize {
         match self {
-            Self::StateCookie(s) => (4 + s.len()).try_into().expect("too many bytes in SCTP INIT ACK State Cookie option to represent in a 16-bit Length field"),
+            Self::StateCookie(s) => 4 + s.len(),
             Self::Ipv4Address(_) => 8,
             Self::Ipv6Address(_) => 20,
-            Self::UnrecognizedParameter(p) => p.len().checked_add(4).and_then(|r| r.try_into().ok()).expect("too many bytes in SCTP INIT ACK Unrecognized Parameter option to represent in a 16-bit Length field"),
+            Self::UnrecognizedParameter(p) => 4 + p.len(),
             // TODO: ^^ what if the parameter in question is between 65532-65535 bytes long? Unlikely, but could affect other implementations
-            Self::HostnameAddress(h) => (4 + h.len()).try_into().expect("too many bytes in SCTP INIT ACK Hostname Address option to represent in a 16-bit Length field"),
-            Self::Unknown(_, v) => (4 + v.len()).try_into().expect("too many bytes in SCTP INIT ACK <unknown> option to represent in a 16-bit Length field"),
+            Self::HostnameAddress(h) => 4 + h.len(),
+            Self::Unknown(_, v) => 4 + v.len(),
         }
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
+        let unpadded_len = u16::try_from(self.unpadded_len())
+            .map_err(|_| SerializationError::oversized())?
+            .to_be_bytes();
+
         match self {
             InitAckOption::StateCookie(c) => {
                 bytes.extend(INIT_ACK_OPT_STATE_COOKIE.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
+                bytes.extend(unpadded_len);
                 bytes.extend(c);
-                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
             }
             InitAckOption::Ipv4Address(ipv4) => {
                 bytes.extend(INIT_ACK_OPT_IPV4_ADDRESS.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
+                bytes.extend(unpadded_len);
                 bytes.extend(ipv4.to_be_bytes());
             }
             InitAckOption::Ipv6Address(ipv6) => {
                 bytes.extend(INIT_ACK_OPT_IPV6_ADDRESS.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
+                bytes.extend(unpadded_len);
                 bytes.extend(ipv6.to_be_bytes());
             }
             InitAckOption::UnrecognizedParameter(param) => {
                 bytes.extend(INIT_ACK_OPT_UNRECOGNIZED_PARAM.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
-                param.to_bytes_extended(bytes);
+                bytes.extend(unpadded_len);
+                param.to_bytes_extended(bytes)?;
                 // No need for padding--parameter is type-checked and guaranteed to be padded
             }
             InitAckOption::HostnameAddress(host) => {
                 bytes.extend(INIT_ACK_OPT_HOSTNAME_ADDR.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
+                bytes.extend(unpadded_len);
                 bytes.extend(host);
-                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
             }
             InitAckOption::Unknown(t, v) => {
                 bytes.extend(t.to_be_bytes());
-                bytes.extend(self.unpadded_len().to_be_bytes());
+                bytes.extend(unpadded_len);
                 bytes.extend(v);
-                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+                bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
             }
         }
+
+        Ok(())
     }
 }
 
@@ -2218,18 +2124,12 @@ impl<'a> InitAckOptionRef<'a> {
 
     #[inline]
     pub fn opt_type(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in SCTP INIT ACK option to extract Option Type field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP INIT ACK option to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -2239,12 +2139,25 @@ impl<'a> InitAckOptionRef<'a> {
 
     pub fn payload(&self) -> InitAckOptionPayloadRef<'a> {
         match self.opt_type() {
-            INIT_ACK_OPT_IPV4_ADDRESS => InitAckOptionPayloadRef::Ipv4Address(u32::from_be_bytes(utils::to_array(self.data, 4).expect("insufficent bytes in SCTP INIT ACK option to extract IPv4 Address payload"))),
-            INIT_ACK_OPT_IPV6_ADDRESS => InitAckOptionPayloadRef::Ipv6Address(u128::from_be_bytes(utils::to_array::<16>(self.data, 4).expect("insufficent bytes in SCTP INIT ACK option to extract IPv6 Address payload"))),
-            INIT_ACK_OPT_HOSTNAME_ADDR => InitAckOptionPayloadRef::HostnameAddress(self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT ACK option (Hostname Address)") as usize).expect("insufficent bytes in SCTP INIT ACK opion to extract Hostname Address payload")),
-            INIT_ACK_OPT_STATE_COOKIE => InitAckOptionPayloadRef::StateCookie(self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT ACK option (State Cookie)") as usize).expect("insufficent bytes in SCTP INIT ACK option to extract State Cookie payload")),
-            INIT_ACK_OPT_UNRECOGNIZED_PARAM => InitAckOptionPayloadRef::UnrecognizedParameter(InitOptionRef::from_bytes_unchecked(self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid Length field in SCTP INIT ACK option (Unrecognized Parameter)") as usize).expect("insufficent bytes in SCTP INIT ACK option to extract Unrecognized Parameter payload"))),
-            _ => InitAckOptionPayloadRef::Unknown(self.opt_type(), self.data.get(4..4 + self.unpadded_len().checked_sub(4).expect("invalid length field in SCTP INIT ACK option (<unknown> Option Type)") as usize).expect("insufficent bytes in SCTP INIT ACK option to extract <unknown> option payload"))
+            INIT_ACK_OPT_IPV4_ADDRESS => InitAckOptionPayloadRef::Ipv4Address(u32::from_be_bytes(
+                utils::to_array(self.data, 4).unwrap(),
+            )),
+            INIT_ACK_OPT_IPV6_ADDRESS => InitAckOptionPayloadRef::Ipv6Address(u128::from_be_bytes(
+                utils::to_array::<16>(self.data, 4).unwrap(),
+            )),
+            INIT_ACK_OPT_HOSTNAME_ADDR => InitAckOptionPayloadRef::HostnameAddress(
+                &self.data[4..self.unpadded_len() as usize],
+            ),
+            INIT_ACK_OPT_STATE_COOKIE => InitAckOptionPayloadRef::StateCookie(
+                &self.data[4..4 + self.unpadded_len() as usize],
+            ),
+            INIT_ACK_OPT_UNRECOGNIZED_PARAM => InitAckOptionPayloadRef::UnrecognizedParameter(
+                InitOptionRef::from_bytes_unchecked(&self.data[4..self.unpadded_len() as usize]),
+            ),
+            _ => InitAckOptionPayloadRef::Unknown(
+                self.opt_type(),
+                &self.data[4..self.unpadded_len() as usize],
+            ),
         }
     }
 }
@@ -2300,14 +2213,13 @@ impl SackChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(16 + (self.gap_ack_blocks.len() * 4) + (self.duplicate_tsns.len() * 4))
-            .expect("too many bytes in SCTP SACK chunk to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        16 + (self.gap_ack_blocks.len() * 4) + (self.duplicate_tsns.len() * 4)
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -2350,14 +2262,26 @@ impl SackChunk {
         &mut self.duplicate_tsns
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_SACK);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(self.cum_tsn_ack.to_be_bytes());
         bytes.extend(self.a_rwnd.to_be_bytes());
-        bytes.extend(u16::try_from(self.gap_ack_blocks.len()).expect("too many Gap Ack Blocks in SCTP SACK chunk to represent in a 16-bit Length field").to_be_bytes());
-        bytes.extend(u16::try_from(self.duplicate_tsns.len()).expect("too many Duplicate TSNs in SCTP SACK chunk to represent in a 16-bit Length field").to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.gap_ack_blocks.len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
+        bytes.extend(
+            u16::try_from(self.duplicate_tsns.len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         for (gap_ack_start, gap_ack_end) in &self.gap_ack_blocks {
             bytes.extend(gap_ack_start.to_be_bytes());
             bytes.extend(gap_ack_end.to_be_bytes());
@@ -2367,6 +2291,8 @@ impl SackChunk {
             bytes.extend(dup_tsn.to_be_bytes());
         }
         // All parameters are multiples of 4, so no padding at end
+
+        Ok(())
     }
 }
 
@@ -2482,26 +2408,17 @@ impl<'a> SackChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP SACK chunk to retrieve Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP SACK chunk to retrieve Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP SACK chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -2511,43 +2428,28 @@ impl<'a> SackChunkRef<'a> {
 
     #[inline]
     pub fn ack(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4).expect(
-                "insufficient bytes in SCTP SACK chunk to extract Cumulative TSN Ack field",
-            ),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn a_rwnd(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 8).expect("insufficient bytes in SCTP SACK chunk to extract Advertised Receiver Window Credit (a_rwnd) field"))
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     #[inline]
     pub fn gap_ack_block_cnt(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 12).expect(
-                "insufficient bytes in SCTP SACK chunk to extract Gap Ack Blocks Count field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     #[inline]
     pub fn dup_tsn_cnt(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 14).expect(
-                "insufficient bytes in SCTP SACK chunk to extract Duplicate TSN Count field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 14).unwrap())
     }
 
     #[inline]
     pub fn gap_ack_blocks_iter(&self) -> GapAckBlockIterRef<'a> {
         GapAckBlockIterRef {
-            bytes: self
-                .data
-                .get(16..)
-                .expect("insufficient bytes in SCTP SACK chunk to extract header values"),
+            bytes: &self.data[16..],
             block_idx: 0,
             block_total: self.gap_ack_block_cnt() as usize,
         }
@@ -2556,10 +2458,7 @@ impl<'a> SackChunkRef<'a> {
     #[inline]
     pub fn duplicate_tsn_iter(&self) -> DuplicateTsnIterRef {
         DuplicateTsnIterRef {
-            bytes: self
-                .data
-                .get(16 + (4 * self.gap_ack_block_cnt() as usize)..)
-                .expect("insufficient bytes in SCTP SACK chunk to extract Gap Ack Block fields"),
+            bytes: &self.data[16 + (4 * self.gap_ack_block_cnt() as usize)..],
             tsn_idx: 0,
             tsn_total: self.dup_tsn_cnt() as usize,
         }
@@ -2581,12 +2480,8 @@ impl<'b> Iterator for GapAckBlockIterRef<'b> {
             return None;
         }
 
-        let start = u16::from_be_bytes(utils::to_array(self.bytes, 0).expect(
-            "insufficient bytes in SCTP SACK chunk to extract all Gap Ack Block Start fields",
-        ));
-        let end = u16::from_be_bytes(utils::to_array(self.bytes, 2).expect(
-            "insufficient bytes in SCTP SACK chunk to extract all Gap Ack Block End fields",
-        ));
+        let start = u16::from_be_bytes(utils::to_array(self.bytes, 0).unwrap());
+        let end = u16::from_be_bytes(utils::to_array(self.bytes, 2).unwrap());
         self.bytes = &self.bytes[4..];
         self.block_idx += 1;
 
@@ -2609,10 +2504,7 @@ impl<'b> Iterator for DuplicateTsnIterRef<'b> {
             return None;
         }
 
-        let dup_tsn =
-            u32::from_be_bytes(utils::to_array(self.bytes, 0).expect(
-                "insufficient bytes in SCTP SACK chunk to extract all Duplicate TSN fields",
-            ));
+        let dup_tsn = u32::from_be_bytes(utils::to_array(self.bytes, 0).unwrap());
         self.bytes = &self.bytes[4..];
         self.tsn_idx += 1;
 
@@ -2654,14 +2546,13 @@ impl HeartbeatChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(8 + utils::padded_length::<4>(self.heartbeat.len()))
-            .expect("too many bytes in SCTP HEARTBEAT chunk to represent in 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        8 + self.heartbeat.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        8 + utils::padded_length::<4>(self.heartbeat.len())
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -2674,14 +2565,24 @@ impl HeartbeatChunk {
         &mut self.heartbeat
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_HEARTBEAT);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(1u16.to_be_bytes()); // HEARTBEAT_OPT_HEARTBEAT_INFO (the only option available for HEARTBEAT chunks)
-        bytes.extend(u16::try_from(self.heartbeat.len()).expect("too many bytes in SCTP HEARTBEAT chunk Heartbeat Info option to represent in a 16-bit Length field").to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.heartbeat.len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.heartbeat);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize))
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -2771,26 +2672,17 @@ impl<'a> HeartbeatChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP HEARTBEAT chunk to retreive Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP HEARTBEAT chunk to retreive Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP HEARTBEAT chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -2800,7 +2692,9 @@ impl<'a> HeartbeatChunkRef<'a> {
 
     #[inline]
     pub fn heartbeat_info(&self) -> HeartbeatInfoRef<'a> {
-        HeartbeatInfoRef { data: self.data.get(4..).expect("insufficient bytes in SCTP HEARTBEAT chunk to retreive Heartbeat Information field") }
+        HeartbeatInfoRef {
+            data: self.data.get(4..).unwrap(),
+        }
     }
 }
 
@@ -2856,19 +2750,12 @@ impl<'a> HeartbeatInfoRef<'a> {
 
     #[inline]
     pub fn opt_type(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0).expect(
-                "insufficient bytes in SCTP HEARTBEAT chunk Heartbeat Info option to extract Option Type field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP HEARTBEAT chunk Heartbeat Info option to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -2876,16 +2763,9 @@ impl<'a> HeartbeatInfoRef<'a> {
         utils::padded_length::<4>(self.unpadded_len() as usize)
     }
 
+    #[inline]
     pub fn heartbeat(&self) -> &'a [u8] {
-        self.data
-            .get(
-                4..4 + self
-                    .unpadded_len()
-                    .checked_sub(4)
-                    .expect("invalid length field in SCTP HEARTBEAT chunk Heartbeat Info option")
-                    as usize,
-            )
-            .expect("insufficent bytes in SCTP HEARTBEAT chunk Heartbeat Info option to extract payload")
+        &self.data[4..self.unpadded_len() as usize]
     }
 }
 
@@ -2923,15 +2803,13 @@ impl HeartbeatAckChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(8 + utils::padded_length::<4>(self.heartbeat.len())).expect(
-            "too many bytes in SCTP HEARTBEAT ACK chunk to represent in a 16-bit Length field",
-        )
+    pub fn unpadded_len(&self) -> usize {
+        8 + self.heartbeat.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        8 + utils::padded_length::<4>(self.heartbeat.len())
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -2944,14 +2822,24 @@ impl HeartbeatAckChunk {
         &mut self.heartbeat
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_HEARTBEAT_ACK);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(1u16.to_be_bytes()); // HEARTBEAT_ACK_OPT_HEARTBEAT_INFO - the only option available, so we don't define it
-        bytes.extend(u16::try_from(self.heartbeat.len()).expect("too many bytes in SCTP HEARTBEAT ACK chunk Heartbeat Info option to represent in a 16-bit Length field").to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.heartbeat.len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.heartbeat);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize))
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -3032,26 +2920,17 @@ impl<'a> HeartbeatAckChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP HEARTBEAT ACK chunk to retreive Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP HEARTBEAT ACK chunk to retreive Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP HEARTBEAT ACK chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -3061,7 +2940,7 @@ impl<'a> HeartbeatAckChunkRef<'a> {
 
     #[inline]
     pub fn heartbeat_info(&self) -> HeartbeatInfoRef<'a> {
-        HeartbeatInfoRef::from_bytes_unchecked(self.data.get(4..).expect("insufficient bytes in SCTP HEARTBEAT ACK chunk to retreive Heartbeat Information field"))
+        HeartbeatInfoRef::from_bytes_unchecked(&self.data[4..])
     }
 }
 
@@ -3105,14 +2984,13 @@ impl AbortChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.causes.iter().map(|c| c.len()).sum::<usize>())
-            .expect("too many bytes in SCTP ABORT chunk to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.causes.iter().map(|c| c.len()).sum::<usize>()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -3126,13 +3004,19 @@ impl AbortChunk {
     }
 
     #[inline]
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_ABORT);
         bytes.push(self.flags.raw());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         for cause in &self.causes {
-            cause.to_bytes_extended(bytes);
+            cause.to_bytes_extended(bytes)?;
         }
+
+        Ok(())
     }
 }
 
@@ -3217,10 +3101,7 @@ impl<'a> AbortChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP ABORT chunk to retreive Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
@@ -3232,18 +3113,12 @@ impl<'a> AbortChunkRef<'a> {
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP ABORT chunk to retreive Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP ABORT chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -3254,10 +3129,7 @@ impl<'a> AbortChunkRef<'a> {
     #[inline]
     pub fn error_iter(&self) -> ErrorCauseIterRef {
         ErrorCauseIterRef {
-            bytes: self
-                .data
-                .get(4..self.len())
-                .expect("insufficient bytes in SCTP ABORT chunk to retrieve Error Cause fields"),
+            bytes: &self.data[4..self.unpadded_len() as usize],
         }
     }
 }
@@ -3381,32 +3253,33 @@ impl ErrorCause {
         }
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         match self {
             ErrorCause::InvalidStreamIdentifier(e) => e.to_bytes_extended(bytes),
-            ErrorCause::MissingMandatoryParameter(e) => e.to_bytes_extended(bytes),
+            ErrorCause::MissingMandatoryParameter(e) => e.to_bytes_extended(bytes)?,
             ErrorCause::StaleCookie(e) => e.to_bytes_extended(bytes),
             ErrorCause::OutOfResource => {
                 bytes.extend(ERR_CODE_OUT_OF_RESOURCE.to_be_bytes());
                 bytes.extend(4u16.to_be_bytes());
             }
-            ErrorCause::UnresolvableAddress(e) => e.to_bytes_extended(bytes),
+            ErrorCause::UnresolvableAddress(e) => e.to_bytes_extended(bytes)?,
             ErrorCause::UnrecognizedChunkType(e) => e.to_bytes_extended(bytes),
             ErrorCause::InvalidMandatoryParameter => {
                 bytes.extend(ERR_CODE_INVALID_MAND_PARAM.to_be_bytes());
                 bytes.extend(4u16.to_be_bytes());
             }
-            ErrorCause::UnrecognizedParameters(e) => e.to_bytes_extended(bytes),
+            ErrorCause::UnrecognizedParameters(e) => e.to_bytes_extended(bytes)?,
             ErrorCause::NoUserData(e) => e.to_bytes_extended(bytes),
             ErrorCause::CookieDuringShutdown => {
                 bytes.extend(ERR_CODE_COOKIE_RCVD_SHUTTING_DOWN.to_be_bytes());
                 bytes.extend(4u16.to_be_bytes());
             }
-            ErrorCause::AssociationNewAddress(e) => e.to_bytes_extended(bytes),
-            ErrorCause::UserInitiatedAbort(e) => e.to_bytes_extended(bytes),
-            ErrorCause::ProtocolViolation(e) => e.to_bytes_extended(bytes),
-            ErrorCause::Unknown(e) => e.to_bytes_extended(bytes),
+            ErrorCause::AssociationNewAddress(e) => e.to_bytes_extended(bytes)?,
+            ErrorCause::UserInitiatedAbort(e) => e.to_bytes_extended(bytes)?,
+            ErrorCause::ProtocolViolation(e) => e.to_bytes_extended(bytes)?,
+            ErrorCause::Unknown(e) => e.to_bytes_extended(bytes)?,
         }
+        Ok(())
     }
 }
 
@@ -3495,10 +3368,7 @@ impl<'a> ErrorCauseRef<'a> {
     }
 
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        let cause_code = u16::from_be_bytes(
-            utils::to_array(bytes, 0)
-                .expect("insufficient bytes in SCTP Error Cause to extract Cause Code field"),
-        );
+        let cause_code = u16::from_be_bytes(utils::to_array(bytes, 0).unwrap());
         match cause_code {
             ERR_CODE_INVALID_STREAM_ID => {
                 Self::InvalidStreamIdentifier(StreamIdentifierErrorRef::from_bytes_unchecked(bytes))
@@ -3538,10 +3408,7 @@ impl<'a> ErrorCauseRef<'a> {
     }
 
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let cause_code = u16::from_be_bytes(
-            utils::to_array(bytes, 0)
-                .expect("insufficient bytes in SCTP Error Cause to extract Cause Code field"),
-        );
+        let cause_code = u16::from_be_bytes(utils::to_array(bytes, 0).unwrap());
         match cause_code {
             ERR_CODE_INVALID_STREAM_ID => StreamIdentifierErrorRef::validate(bytes),
             ERR_CODE_MISSING_MAND_PARAM => MissingParameterErrorRef::validate(bytes),
@@ -3770,18 +3637,12 @@ impl<'a> StreamIdentifierErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0).expect(
-                "insufficient bytes in SCTP Invalid Stream Identifier option to extract Cause Code field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 2).expect(
-            "insufficient bytes in SCTP Invalid Stream Identifier option to extract Length field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -3791,16 +3652,12 @@ impl<'a> StreamIdentifierErrorRef<'a> {
 
     #[inline]
     pub fn stream_id(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 4).expect(
-            "insufficient bytes in SCTP Invalid Stream Identifier option to extract Stream Identifier field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn reserved(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 4).expect(
-            "insufficient bytes in SCTP Invalid Stream Identifier option to extract Reserved field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 }
 
@@ -3826,15 +3683,14 @@ impl MissingParameterError {
         MissingParameterErrorRef::validate(bytes)
     }
 
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(8 + (2 * self.missing_params.len())).expect(
-            "too many bytes in SCTP Missing Parameter option to encode in a 16-bit Length field",
-        )
+    #[inline]
+    pub fn unpadded_len(&self) -> usize {
+        8 + (2 * self.missing_params.len())
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -3847,10 +3703,18 @@ impl MissingParameterError {
         &mut self.missing_params
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_MISSING_MAND_PARAM.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
-        bytes.extend((u32::try_from(self.missing_params.len()).expect("too many Missing Params in SCTP Missing Parameter Error option to represent in a 32-bit Length field")).to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
+        bytes.extend(
+            (u32::try_from(self.missing_params.len())
+                .map_err(|_| SerializationError::oversized())?)
+            .to_be_bytes(),
+        );
         for param in &self.missing_params {
             bytes.extend(param.to_be_bytes());
         }
@@ -3858,6 +3722,7 @@ impl MissingParameterError {
             bytes.push(0);
             bytes.push(0);
         }
+        Ok(())
     }
 }
 
@@ -3963,16 +3828,12 @@ impl<'a> MissingParameterErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Missing Mandatory Parameter option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 2).expect(
-            "insufficient bytes in SCTP Missing Mandatory Parameter option to extract Length field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -3982,12 +3843,17 @@ impl<'a> MissingParameterErrorRef<'a> {
 
     #[inline]
     pub fn missing_params_cnt(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 2).expect("insufficient bytes in SCTP Missing Mandatory Parameter option to extract Missing Parameters Count field"))
+        u32::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
     pub fn missing_params_iter(&self) -> MissingParameterIterRef<'a> {
-        MissingParameterIterRef { data: self.data.get(4..cmp::min(4 + (2 * self.missing_params_cnt() as usize), self.data.len())).expect("insufficient bytes in SCTP Missing Mandatory Parameter option for header + Missing Parameter values") }
+        MissingParameterIterRef {
+            data: &self.data[4..cmp::min(
+                4 + (2 * self.missing_params_cnt() as usize),
+                self.data.len(),
+            )],
+        }
     }
 }
 
@@ -4145,19 +4011,12 @@ impl<'a> StaleCookieErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0).expect(
-                "insufficient bytes in SCTP Stale Cookie option to extract Cause Code field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP Stale Cookie option to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -4167,11 +4026,7 @@ impl<'a> StaleCookieErrorRef<'a> {
 
     #[inline]
     pub fn staleness(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4).expect(
-                "insufficient bytes in SCTP Stale Cookie option to extract Staleness field",
-            ),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 }
 
@@ -4202,13 +4057,13 @@ impl UnresolvableAddrError {
         ERR_CODE_UNRESOLVABLE_ADDRESS
     }
 
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.addr.len()).expect("too many bytes in SCTP Unresolvable Address Error option Address field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.addr.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -4221,11 +4076,17 @@ impl UnresolvableAddrError {
         &mut self.addr
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_UNRESOLVABLE_ADDRESS.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.addr);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize))
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -4323,16 +4184,12 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Unresolvable Address option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 2).expect(
-            "insufficient bytes in SCTP Unresolvable Address option to extract Length field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -4342,7 +4199,7 @@ impl<'a> UnresolvableAddrErrorRef<'a> {
 
     #[inline]
     pub fn addr(&self) -> &[u8] {
-        self.data.get(4..).expect("insufficient bytes in SCTP Unresolvable Address option to extract Unresolvable Address field")
+        &self.data[4..self.unpadded_len() as usize]
     }
 }
 
@@ -4374,13 +4231,13 @@ impl UnrecognizedChunkError {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.chunk.len()).expect("too many bytes in SCTP Unrecognized Chunk option Chunk field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.chunk.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        4 + self.chunk.len()
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -4476,18 +4333,12 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Unrecognized Chunk option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2).expect(
-                "insufficient bytes in SCTP Unrecognized Chunk option to extract Length field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -4497,7 +4348,7 @@ impl<'a> UnrecognizedChunkErrorRef<'a> {
 
     #[inline]
     pub fn chunk(&self) -> &[u8] {
-        self.data.get(8..).expect("insufficient bytes in SCTP Unrecognized Chunk option to extract header and Unrecognized Chunk field")
+        &self.data[8..self.unpadded_len() as usize]
     }
 }
 
@@ -4529,13 +4380,13 @@ impl UnrecognizedParamError {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.params.iter().map(|p| p.len()).sum::<usize>()).expect("too many bytes in SCTP Unrecognized Parameters option to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.params.iter().map(|p| p.len()).sum::<usize>()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -4548,12 +4399,18 @@ impl UnrecognizedParamError {
         &mut self.params
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_UNRECOGNIZED_PARAMS.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         for param in self.params.iter() {
-            param.to_bytes_extended(bytes);
+            param.to_bytes_extended(bytes)?;
         }
+
+        Ok(())
     }
 }
 
@@ -4635,18 +4492,12 @@ impl<'a> UnrecognizedParamErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Unrecognized Parameters option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2).expect(
-                "insufficient bytes in SCTP Unrecognized Parameters to extract Length field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -4821,19 +4672,12 @@ impl<'a> NoUserDataErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0).expect(
-                "insufficient bytes in SCTP No User Data option to extract Cause Code field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP No User Data option to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -4843,10 +4687,7 @@ impl<'a> NoUserDataErrorRef<'a> {
 
     #[inline]
     pub fn tsn(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in SCTP No User Data option to extract TSN field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 }
 
@@ -4878,13 +4719,13 @@ impl AssociationNewAddrError {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.tlvs.iter().map(|p| p.len()).sum::<usize>()).expect("too many bytes in SCTP Restart of Association with New Address option New Address TLVs field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.tlvs.iter().map(|p| p.len()).sum::<usize>()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -4897,12 +4738,18 @@ impl AssociationNewAddrError {
         &mut self.tlvs
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_RESTART_ASSOC_NEW_ADDR.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         for tlv in self.tlvs.iter() {
-            tlv.to_bytes_extended(bytes);
+            tlv.to_bytes_extended(bytes)?;
         }
+
+        Ok(())
     }
 }
 
@@ -4985,18 +4832,12 @@ impl<'a> AssociationNewAddrErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Restart of Association with New Address option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2).expect(
-                "insufficient bytes in SCTP Restart of Association with New Address option to extract Length field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5038,13 +4879,13 @@ impl UserInitiatedAbortError {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.reason.len()).expect("too many bytes in SCTP User-Initiated Abort option to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.reason.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -5057,11 +4898,17 @@ impl UserInitiatedAbortError {
         &mut self.reason
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_USER_INITIATED_ABORT.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.reason);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -5140,16 +4987,12 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP User-Initiated Abort option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 2).expect(
-            "insufficient bytes in SCTP User-Initiated Abort option to extract Length field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5159,7 +5002,7 @@ impl<'a> UserInitiatedAbortErrorRef<'a> {
 
     #[inline]
     pub fn reason(&self) -> &[u8] {
-        self.data.get(8..).expect("insufficient bytes in SCTP User-Initiated Abort option to extract header + Reason field")
+        &self.data[8..self.unpadded_len() as usize]
     }
 }
 
@@ -5191,13 +5034,13 @@ impl ProtocolViolationError {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.information.len()).expect("too many bytes in SCTP Protocol Violation option Information field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.information.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -5210,11 +5053,17 @@ impl ProtocolViolationError {
         &mut self.information
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(ERR_CODE_PROTOCOL_VIOLATION.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.information);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -5293,18 +5142,12 @@ impl<'a> ProtocolViolationErrorRef<'a> {
 
     #[inline]
     pub fn cause_code(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 0).expect(
-            "insufficient bytes in SCTP Protocol Violation option to extract Cause Code field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2).expect(
-                "insufficient bytes in SCTP Protocol Violation option to extract Length field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5314,7 +5157,7 @@ impl<'a> ProtocolViolationErrorRef<'a> {
 
     #[inline]
     pub fn information(&self) -> &[u8] {
-        self.data.get(8..).expect("insufficient bytes in SCTP Protocol Violation option to extract header + Additional Information field")
+        &self.data[8..self.unpadded_len() as usize]
     }
 }
 
@@ -5366,15 +5209,13 @@ impl GenericParam {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.value.len()).expect(
-            "too many bytes in SCTP Parameter Value field to represent in a 16-bit Length field",
-        )
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.value.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -5387,11 +5228,17 @@ impl GenericParam {
         &mut self.value
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.extend(self.param_type.to_be_bytes());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(self.value.iter());
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -5496,18 +5343,12 @@ impl<'a> GenericParamRef<'a> {
 
     #[inline]
     pub fn param_type(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in SCTP Parameter to extract Parameter Type field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP Parameter to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5517,9 +5358,7 @@ impl<'a> GenericParamRef<'a> {
 
     #[inline]
     pub fn value(&self) -> &[u8] {
-        self.data
-            .get(4..)
-            .expect("insufficient bytes in SCTP Parameter to extract Value field")
+        &self.data[4..self.unpadded_len() as usize]
     }
 }
 
@@ -5706,26 +5545,17 @@ impl<'a> ShutdownChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP SHUTDOWN chunk to extract Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP SHUTDOWN chunk to extract Chunk Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP SHUTDOWN chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5735,9 +5565,7 @@ impl<'a> ShutdownChunkRef<'a> {
 
     #[inline]
     pub fn cum_tsn_ack(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 4).expect(
-            "insufficient bytes in SCTP SHUTDOWN chunk to extract Cumulative TSN Ack field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 }
 
@@ -5863,26 +5691,17 @@ impl<'a> ShutdownAckChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP SHUTDOWN ACK chunk to extract Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP SHUTDOWN ACK chunk to extract Chunk Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP SHUTDOWN ACK chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -5930,14 +5749,13 @@ impl ErrorChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.causes.iter().map(|c| c.len()).sum::<usize>())
-            .expect("too many bytes in SCTP ERROR chunk to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.causes.iter().map(|c| c.len()).sum::<usize>()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.unpadded_len() as usize
+        self.unpadded_len()
     }
 
     #[inline]
@@ -5950,13 +5768,19 @@ impl ErrorChunk {
         &mut self.causes
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_ERROR);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         for cause in &self.causes {
-            cause.to_bytes_extended(bytes)
+            cause.to_bytes_extended(bytes)?
         }
+
+        Ok(())
     }
 }
 
@@ -6040,26 +5864,17 @@ impl<'a> ErrorChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP ERROR chunk to retrieve Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP ERROR chunk to retrieve Flags field")
+        self.data[0]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP ERROR chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -6070,10 +5885,7 @@ impl<'a> ErrorChunkRef<'a> {
     #[inline]
     pub fn error_iter(&self) -> ErrorCauseIterRef {
         ErrorCauseIterRef {
-            bytes: self
-                .data
-                .get(4..self.len())
-                .expect("insufficient bytes in SCTP ERROR chunk to retrieve Error Cause fields"),
+            bytes: &self.data[4..self.unpadded_len() as usize],
         }
     }
 }
@@ -6117,13 +5929,13 @@ impl CookieEchoChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(4 + self.cookie.len()).expect("too many bytes in SCTP COOKIE ECHO chunk Cookie field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        4 + self.cookie.len()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -6136,12 +5948,18 @@ impl CookieEchoChunk {
         &mut self.cookie
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_COOKIE_ECHO);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.cookie);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -6241,26 +6059,17 @@ impl<'a> CookieEchoChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP COOKIE ECHO chunk to retreive Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP COOKIE ECHO chunk to retreive Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP COOKIE ECHO chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -6270,9 +6079,7 @@ impl<'a> CookieEchoChunkRef<'a> {
 
     #[inline]
     pub fn cookie(&self) -> &[u8] {
-        self.data
-            .get(4..)
-            .expect("insufficient bytes in SCTP COOKIE ECHO chunk to extract Cookie field")
+        &self.data[4..self.unpadded_len() as usize]
     }
 }
 
@@ -6400,26 +6207,17 @@ impl<'a> CookieAckChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP COOKIE ACK chunk to extract Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP COOKIE ACK chunk to extract Chunk Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP COOKIE ACK chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -6552,27 +6350,17 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self.data.first().expect(
-            "insufficient bytes in SCTP SHUTDOWN COMPLETE chunk to extract Chunk Type field",
-        )
+        self.data[0]
     }
 
     #[inline]
     pub fn flags(&self) -> ShutdownCompleteFlags {
-        ShutdownCompleteFlags {
-            data: *self.data.get(1).expect(
-                "insufficient bytes in SCTP SHUTDOWN COMPLETE chunk to extract Chunk Flags field",
-            ),
-        }
+        ShutdownCompleteFlags { data: self.data[1] }
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2).expect(
-                "insufficient bytes in SCTP SHUTDOWN COMPLETE chunk to extract Length field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -6664,13 +6452,13 @@ impl UnknownChunk {
     }
 
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        u16::try_from(self.value.len() + 4).expect("too many bytes in SCTP <unknown> chunk Value field to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        self.value.len() + 4
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     #[inline]
@@ -6683,12 +6471,18 @@ impl UnknownChunk {
         &mut self.value
     }
 
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(self.chunk_type);
         bytes.push(self.flags);
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(
+            u16::try_from(self.unpadded_len())
+                .map_err(|_| SerializationError::oversized())?
+                .to_be_bytes(),
+        );
         bytes.extend(&self.value);
-        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        bytes.extend(iter::repeat(0).take(self.len() - self.unpadded_len()));
+
+        Ok(())
     }
 }
 
@@ -6794,26 +6588,17 @@ impl<'a> UnknownChunkRef<'a> {
 
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP <unknown> chunk to retreive Chunk Type field")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags_raw(&self) -> u8 {
-        *self
-            .data
-            .get(1)
-            .expect("insufficient bytes in SCTP <unknown> chunk to retreive Flags field")
+        self.data[1]
     }
 
     #[inline]
     pub fn unpadded_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP <unknown> chunk to extract Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     #[inline]
@@ -6823,9 +6608,7 @@ impl<'a> UnknownChunkRef<'a> {
 
     #[inline]
     pub fn value(&self) -> &[u8] {
-        self.data
-            .get(4..)
-            .expect("insufficient bytes in SCTP <unknown> chunk to extract Value field")
+        &self.data[4..self.unpadded_len() as usize]
     }
 }
 
@@ -6849,21 +6632,20 @@ impl<'a> UnknownChunkRef<'a> {
 /// .. .                              ...                              .
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
-//#[derive(Clone, Debug, Layer, StatelessLayer)]
-//#[metadata_type(DataChunkMetadata)]
-#[derive(Clone, Debug)]
-//#[ref_type(DataChunkRef)]
-pub struct DataChunk {
+#[derive(Clone, Debug, Layer, StatelessLayer)]
+#[metadata_type(SctpDataChunkMetadata)]
+#[ref_type(SctpDataChunkRef)]
+pub struct SctpDataChunk {
     flags: DataChunkFlags,
     tsn: u32,
     stream_id: u16,
     stream_seq: u16,
     proto_id: u32,
-    payload: Box<dyn LayerObject>,
+    payload: Option<Box<dyn LayerObject>>,
 }
 
-impl DataChunk {
-    /// Converts the given bytes into a [`DataChunk`] instance, returning an error if the bytes are
+impl SctpDataChunk {
+    /// Converts the given bytes into a [`struct@SctpDataChunk`] instance, returning an error if the bytes are
     /// not well-formed.
     #[inline]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
@@ -6871,15 +6653,15 @@ impl DataChunk {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    /// Converts the given bytes into a [`DataChunk`] instance without validating the bytes.
+    /// Converts the given bytes into a [`struct@SctpDataChunk`] instance without validating the bytes.
     ///
     /// # Panics
     ///
     /// The following method may panic if the bytes being passed in do not represent a well-formed
-    /// DATA chunk (i.e. if a call to [`DataChunk::validate()`] would return an error).
+    /// DATA chunk (i.e. if a call to [`struct@SctpDataChunk::validate()`] would return an error).
     #[inline]
     pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
-        Self::from(DataChunkRef::from_bytes_unchecked(bytes))
+        Self::from(SctpDataChunkRef::from_bytes_unchecked(bytes))
     }
 
     /// Validates the given bytes against the expected structure and syntactic values of a
@@ -6888,7 +6670,7 @@ impl DataChunk {
     /// chunk was invalid.
     #[inline]
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        DataChunkRef::validate(bytes)
+        SctpDataChunkRef::validate(bytes)
     }
 
     /// The Type field of the DATA chunk.
@@ -6911,16 +6693,18 @@ impl DataChunk {
 
     /// The length (without padding) of the DATA chunk.
     #[inline]
-    pub fn unpadded_len(&self) -> u16 {
-        (20 + self.payload.len())
-            .try_into()
-            .expect("too many bytes in SCTP DATA Chunk to represent in a 16-bit Length field")
+    pub fn unpadded_len(&self) -> usize {
+        // TODO: chunk min length is 17. Enforce at to_bytes()
+        16 + match &self.payload {
+            Some(p) => p.len(),
+            None => 0,
+        }
     }
 
     /// The length (including padding) of the DATA chunk.
     #[inline]
     pub fn len(&self) -> usize {
-        utils::padded_length::<4>(self.unpadded_len() as usize)
+        utils::padded_length::<4>(self.unpadded_len())
     }
 
     /// The Transmission Sequence Number (TSN) of the DATA chunk.
@@ -6970,22 +6754,61 @@ impl DataChunk {
     pub fn set_proto_id(&mut self, proto_id: u32) {
         self.proto_id = proto_id;
     }
+}
 
-    /// The User Data payload of the DATA chunk.
+impl LayerLength for SctpDataChunk {
     #[inline]
-    pub fn payload(&self) -> &dyn LayerObject {
-        self.payload.as_ref()
-    }
-
-    /// A mutable reference to the User Data payload of the DATA chunk.
-    #[inline]
-    pub fn payload_mut(&mut self) -> &mut Box<dyn LayerObject> {
-        &mut self.payload
+    fn len(&self) -> usize {
+        16 + match &self.payload {
+            Some(p) => utils::padded_length::<4>(p.len()),
+            None => 0,
+        }
     }
 }
 
-impl ToBytes for DataChunk {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+#[allow(unused_variables)]
+impl LayerObject for SctpDataChunk {
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool {
+        true // SCTP supports arbitrary payloads
+    }
+
+    #[inline]
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+        self.payload = Some(payload);
+    }
+
+    #[inline]
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        match &self.payload {
+            Some(p) => slice::from_ref(p),
+            None => &[],
+        }
+    }
+
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        match &mut self.payload {
+            Some(p) => slice::from_mut(p),
+            None => &mut [],
+        }
+    }
+
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
+        if index == 0 {
+            let mut ret = None;
+            mem::swap(&mut ret, &mut self.payload);
+            ret
+        } else {
+            None
+        }
+    }
+}
+
+impl ToBytes for SctpDataChunk {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0); // DATA Type = 0
         bytes.push(self.flags.as_raw());
@@ -6994,31 +6817,33 @@ impl ToBytes for DataChunk {
         bytes.extend(self.stream_id.to_be_bytes());
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
-        self.payload
-            .to_bytes_checksummed(bytes, Some((Sctp::layer_id(), start)))?;
-        bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len() as usize));
+        if let Some(p) = &self.payload {
+            p.to_bytes_checksummed(bytes, Some((Sctp::layer_id(), start)))?;
+        }
+        bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len()));
 
         Ok(())
     }
 }
 
-impl From<&DataChunkRef<'_>> for DataChunk {
-    fn from(value: &DataChunkRef<'_>) -> Self {
-        DataChunk {
-            flags: value.flags(),
-            tsn: value.tsn(),
-            stream_id: value.stream_id(),
-            stream_seq: value.stream_seq(),
-            proto_id: value.proto_id(),
-            payload: Box::new(Raw::from_bytes_unchecked(value.user_data())),
+#[doc(hidden)]
+impl FromBytesCurrent for SctpDataChunk {
+    fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
+        let data = SctpDataChunkRef::from_bytes_unchecked(bytes);
+        SctpDataChunk {
+            flags: data.flags(),
+            tsn: data.tsn(),
+            stream_id: data.stream_id(),
+            stream_seq: data.stream_seq(),
+            proto_id: data.proto_id(),
+            payload: None,
         }
     }
-}
 
-impl From<DataChunkRef<'_>> for DataChunk {
     #[inline]
-    fn from(value: DataChunkRef<'_>) -> Self {
-        Self::from(&value)
+    fn payload_from_bytes_unchecked_default(&mut self, bytes: &[u8]) {
+        let data = SctpDataChunkRef::from_bytes_unchecked(bytes);
+        self.payload = Some(Box::new(Raw::from_bytes_unchecked(data.user_data())));
     }
 }
 
@@ -7042,13 +6867,16 @@ impl From<DataChunkRef<'_>> for DataChunk {
 /// .. .                              ...                              .
 ///    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
-#[derive(Clone, Copy, Debug)]
-pub struct DataChunkRef<'a> {
+#[derive(Clone, Copy, Debug, LayerRef, StatelessLayer)]
+#[owned_type(SctpDataChunk)]
+#[metadata_type(SctpDataChunkMetadata)]
+pub struct SctpDataChunkRef<'a> {
+    #[data_field]
     data: &'a [u8],
 }
 
-impl<'a> DataChunkRef<'a> {
-    /// Converts the given bytes into a [`DataChunkRef`] instance, returning an error if they are
+impl<'a> SctpDataChunkRef<'a> {
+    /// Converts the given bytes into a [`struct@SctpDataChunkRef`] instance, returning an error if they are
     /// not well-formed.
     #[inline]
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, ValidationError> {
@@ -7056,110 +6884,34 @@ impl<'a> DataChunkRef<'a> {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    /// Converts the given bytes into a [`DataChunkRef`] instance without validating the bytes.
+    /// Converts the given bytes into a [`struct@SctpDataChunkRef`] instance without validating the bytes.
     ///
     /// # Panics
     ///
     /// The following method may panic or cause a panic at some future method invocation on the
     /// instance if the bytes being passed in do not represent a well-formed DATA chunk (i.e. if a
-    /// call to [`DataChunk::validate()`] would return an error).
+    /// call to [`validate()`](Validate::validate()) would return an error).
     #[inline]
     pub fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        DataChunkRef { data: bytes }
-    }
-
-    /// Validates the given bytes against the expected structure and syntactic values of a
-    /// DATA chunk. If the bytes represent a well-formed DATA chunk, this method will return
-    /// `Ok()`; otherwise, it will return a [`ValidationError`] indicating what part of the
-    /// chunk was invalid.
-    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        let len = match utils::to_array(bytes, 2) {
-            None => {
-                return Err(ValidationError {
-                    layer: Sctp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "SCTP DATA chunk must have a minimum of 16 bytes for its header",
-                })
-            }
-            Some(arr) => u16::from_be_bytes(arr) as usize,
-        };
-
-        let padded_len = utils::padded_length::<4>(len);
-        if padded_len > bytes.len() {
-            return Err(ValidationError {
-                layer: Sctp::name(),
-                class: ValidationErrorClass::InsufficientBytes,
-                reason: "insufficient bytes for User Data portion of SCTP DATA chunk",
-            });
-        }
-
-        let payload_type = bytes[0]; // This won't panic because we've already retrieved bytes at index 2
-        if payload_type != 0 {
-            return Err(ValidationError {
-                layer: Sctp::name(),
-                class: ValidationErrorClass::InvalidValue,
-                reason: "invalid Chunk Type field in SCTP DATA chunk (must be equal to 0)",
-            });
-        }
-
-        if len < 20 {
-            return Err(ValidationError {
-                layer: Sctp::name(),
-                class: ValidationErrorClass::InvalidValue,
-                reason: "packet length field had invalid value (insufficient length to cover packet header, at least one byte of data and padding) for SCTP DATA chunk",
-            });
-        }
-
-        // The payload is considered valid by default, since we count it as a [`Raw`] packet type.
-
-        for b in bytes.iter().take(padded_len).skip(len) {
-            if *b != 0 {
-                return Err(ValidationError {
-                    layer: Sctp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "padding at end of SCTP DATA chunk had a non-zero value",
-                });
-            }
-        }
-
-        if padded_len < bytes.len() {
-            Err(ValidationError {
-                layer: Sctp::name(),
-                class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
-                reason: "SCTP DATA chunk had additional trailing bytes at the end of its data",
-            })
-        } else {
-            Ok(())
-        }
+        SctpDataChunkRef { data: bytes }
     }
 
     /// The Type field of the DATA chunk.
     #[inline]
     pub fn chunk_type(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in SCTP DATA chunk to extrack Chunk Type field")
+        self.data[0]
     }
 
     /// The flags of the DATA chunk.
     #[inline]
     pub fn flags(&self) -> DataChunkFlags {
-        DataChunkFlags {
-            data: *self
-                .data
-                .get(1)
-                .expect("insufficient bytes in SCTP DATA chunk to extrack Chunk Flags field"),
-        }
+        DataChunkFlags { data: self.data[1] }
     }
 
     /// The length (without padding) of the DATA chunk.
     #[inline]
     pub fn chunk_len(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in SCTP DATA chunk to retrieve Chunk Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     /// The length (including padding) of the DATA chunk.
@@ -7171,52 +6923,119 @@ impl<'a> DataChunkRef<'a> {
     /// The Transmission Sequence Number (TSN) of the DATA chunk.
     #[inline]
     pub fn tsn(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in SCTP DATA chunk to retrieve TSN field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     /// Sets the Stream Identifier of the DATA chunk.
     #[inline]
     pub fn stream_id(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 8).expect(
-                "insufficient bytes in SCTP DATA chunk to retrieve Stream Identifier field",
-            ),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     /// The Stream Sequence Number (SSN) of the DATA chunk.
     #[inline]
     pub fn stream_seq(&self) -> u16 {
-        u16::from_be_bytes(utils::to_array(self.data, 10).expect(
-            "insufficient bytes in SCTP DATA chunk to retrieve Stream Sequence Number field",
-        ))
+        u16::from_be_bytes(utils::to_array(self.data, 10).unwrap())
     }
 
     /// The Payload Protocol Identifier (PPID) of the DATA chunk.
     #[inline]
     pub fn proto_id(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 12).expect(
-            "insufficient bytes in SCTP DATA chunk to retrieve Payload Protocol Identifier field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     /// The User Data payload of the DATA chunk.
     #[inline]
     pub fn user_data(&self) -> &[u8] {
-        self.data
-            .get(16..self.chunk_len() as usize)
-            .expect("insufficient bytes in SCTP DATA chunk to retrieve User Data field")
+        self.data.get(16..self.chunk_len() as usize).unwrap()
     }
 
     /// The padding at the end of the DATA chunk.
     #[inline]
     pub fn padding(&self) -> &[u8] {
-        self.data
-            .get(self.chunk_len() as usize..self.chunk_len_padded())
-            .expect("insufficient bytes in SCTP DATA chunk to retrieve padding bytes")
+        &self.data[self.chunk_len() as usize..self.chunk_len_padded()]
+    }
+}
+
+impl LayerOffset for SctpDataChunkRef<'_> {
+    #[inline]
+    fn payload_byte_index_default(bytes: &[u8], _layer_type: LayerId) -> Option<usize> {
+        if bytes.len() > 16 {
+            Some(16)
+        } else {
+            None
+        }
+    }
+}
+
+impl Validate for SctpDataChunkRef<'_> {
+    fn validate_current_layer(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        let len = match utils::to_array(curr_layer, 2) {
+            None => {
+                return Err(ValidationError {
+                    layer: Sctp::name(),
+                    class: ValidationErrorClass::InsufficientBytes,
+                    reason: "SCTP DATA chunk must have a minimum of 16 bytes for its header",
+                })
+            }
+            Some(arr) => u16::from_be_bytes(arr) as usize,
+        };
+
+        let payload_type = curr_layer[0]; // This won't panic because we've already retrieved bytes at index 2
+        if payload_type != 0 {
+            return Err(ValidationError {
+                layer: Sctp::name(),
+                class: ValidationErrorClass::InvalidValue,
+                reason: "invalid Chunk Type field in SCTP DATA chunk (must be equal to 0)",
+            });
+        }
+
+        if len < 17 {
+            return Err(ValidationError {
+                layer: Sctp::name(),
+                class: ValidationErrorClass::InvalidValue,
+                reason: "packet length field had invalid value (insufficient length to cover packet header and at least one byte of data) for SCTP DATA chunk",
+            });
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn validate_payload_default(curr_layer: &[u8]) -> Result<(), ValidationError> {
+        let data = SctpDataChunkRef::from_bytes_unchecked(curr_layer);
+        let padded_len = data.chunk_len_padded();
+        if padded_len > curr_layer.len() {
+            return Err(ValidationError {
+                layer: Sctp::name(),
+                class: ValidationErrorClass::InsufficientBytes,
+                reason: "insufficient bytes for User Data portion of SCTP DATA chunk",
+            });
+        }
+
+        let len = data.chunk_len() as usize;
+
+        // The payload is considered valid by default, since we count it as a [`Raw`] packet type.
+
+        for b in curr_layer.iter().take(padded_len).skip(len) {
+            if *b != 0 {
+                return Err(ValidationError {
+                    layer: Sctp::name(),
+                    class: ValidationErrorClass::UnusualPadding,
+                    reason: "padding at end of SCTP DATA chunk had a non-zero value",
+                });
+            }
+        }
+
+        if padded_len < curr_layer.len() {
+            Err(ValidationError {
+                layer: Sctp::name(),
+                class: ValidationErrorClass::ExcessBytes(curr_layer.len() - padded_len),
+                reason: "SCTP DATA chunk had additional trailing bytes at the end of its data",
+            })
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -7261,7 +7080,7 @@ impl DataChunkFlags {
     /// The Unordered ('U') flag.
     ///
     /// When set, this flag indicates that the instance is an unordered DATA chunk (i.e. no stream
-    /// sequence number associated with it).
+    /// sequence number is associated with it).
     #[inline]
     pub fn unordered(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_UNORDERED_BIT > 0
@@ -7281,7 +7100,7 @@ impl DataChunkFlags {
     ///
     /// When set, this flag indicates that the chunk contains the first fragment of user data.
     /// If combined with the Ending ('E') flag, this indicates that the payload of the DATA
-    /// chunk instance is unfragmented.
+    /// chunk instance is whole and unfragmented.
     #[inline]
     pub fn beginning_fragment(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_BEGINNING_BIT > 0
@@ -7301,7 +7120,7 @@ impl DataChunkFlags {
     ///
     /// When set, this flag indicates that the chunk contains the last fragment of user data.
     /// If combined with the Beginning ('B') flag, this indicates that the payload of the DATA
-    /// chunk instance is unfragmented.
+    /// chunk instance is whole and unfragmented.
     #[inline]
     pub fn ending_fragment(&self) -> bool {
         self.data & DATA_CHUNK_FLAGS_ENDING_BIT > 0

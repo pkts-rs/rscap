@@ -13,8 +13,8 @@
 //!
 //!
 
-use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::dev_traits::*;
+use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::*;
 use crate::utils;
 use crate::{layers::*, Buffer};
@@ -242,20 +242,20 @@ impl LayerObject for Tcp {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -265,7 +265,11 @@ impl LayerObject for Tcp {
 }
 
 impl ToBytes for Tcp {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
@@ -283,10 +287,7 @@ impl ToBytes for Tcp {
 
         if self.chksum.is_none() {
             let Some((id, prev_idx)) = prev else {
-                return Err(SerializationError {
-                    reason: "",
-                    class: SerializationErrorClass::BadUpperLayer,
-                })
+                return Err(SerializationError::bad_upper_layer());
             };
 
             let new_chksum = if id == Ipv4::layer_id() {
@@ -314,11 +315,10 @@ impl ToBytes for Tcp {
 
                 data_chksum
             } else {
-                return Ok(()) // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
+                return Ok(()); // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
             };
 
-            let chksum_field: &mut [u8; 2] =
-                &mut bytes[start + 16..start + 18].try_into().unwrap();
+            let chksum_field: &mut [u8; 2] = &mut bytes[start + 16..start + 18].try_into().unwrap();
             *chksum_field = new_chksum.to_be_bytes();
             // else don't bother calculating the checksum
         }

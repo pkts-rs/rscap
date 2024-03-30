@@ -12,9 +12,9 @@
 //!
 //!
 
-use core::{cmp, slice};
 use core::fmt::Debug;
 use core::iter::Iterator;
+use core::{cmp, slice};
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
@@ -760,20 +760,20 @@ impl LayerObject for Ipv4 {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -783,7 +783,11 @@ impl LayerObject for Ipv4 {
 }
 
 impl ToBytes for Ipv4 {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0x40 | self.ihl());
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
@@ -2108,21 +2112,21 @@ impl LayerObject for Ipv6 {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -2132,7 +2136,11 @@ impl LayerObject for Ipv6 {
 }
 
 impl ToBytes for Ipv6 {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0b_0110_0000 | ((self.traffic_class.value & 0xF0) >> 4));
         bytes.push(
@@ -2143,7 +2151,7 @@ impl ToBytes for Ipv6 {
         bytes.push((self.flow_label.value & 0x_00_00_00_FF) as u8);
         bytes.extend(
             u16::try_from(self.payload.as_ref().map_or(0, |p| p.len()))
-                .map_err(|_| SerializationError { reason: "", class: SerializationErrorClass::Oversized })?
+                .map_err(|_| SerializationError::oversized())?
                 .to_be_bytes(),
         );
         bytes.push(match self.payload.as_ref() {
@@ -2153,7 +2161,7 @@ impl ToBytes for Ipv6 {
                 .as_any()
                 .downcast_ref::<&dyn Ipv6PayloadMetadata>()
                 .map(|m| m.ip_data_protocol())
-                .expect("unknown payload protocol found in IPv6 packet"),
+                .ok_or(SerializationError::bad_upper_layer())?,
         });
         bytes.push(self.hop_limit);
         bytes.extend(self.src.to_be_bytes());

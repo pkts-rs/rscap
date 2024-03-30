@@ -16,8 +16,8 @@ use std::slice;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
 use crate::layers::dev_traits::*;
+use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
 use crate::layers::traits::*;
 use crate::layers::{Raw, RawRef};
 use crate::{error::*, utils};
@@ -124,21 +124,21 @@ impl LayerObject for Ether {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -148,7 +148,11 @@ impl LayerObject for Ether {
 }
 
 impl ToBytes for Ether {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.extend(self.src);
         bytes.extend(self.dst);
@@ -156,7 +160,7 @@ impl ToBytes for Ether {
             None => {
                 bytes.extend(ETH_PROTOCOL_EXPERIMENTAL.to_be_bytes());
                 Ok(())
-            }   
+            }
             Some(p) => {
                 bytes.extend(
                     match p

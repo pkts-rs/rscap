@@ -171,20 +171,20 @@ impl LayerObject for Udp {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -194,7 +194,11 @@ impl LayerObject for Udp {
 }
 
 impl ToBytes for Udp {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         let start = bytes.len();
         let len: u16 = self
             .len()
@@ -211,12 +215,9 @@ impl ToBytes for Udp {
 
         if self.chksum.is_none() {
             let Some((id, prev_idx)) = prev else {
-                return Err(SerializationError {
-                    reason: "",
-                    class: SerializationErrorClass::BadUpperLayer,
-                })
+                return Err(SerializationError::bad_upper_layer());
             };
-            
+
             let new_chksum = if id == Ipv4::layer_id() {
                 let mut data_chksum: u16 = utils::ones_complement_16bit(&bytes[start..]);
                 let addr_chksum =
@@ -245,8 +246,7 @@ impl ToBytes for Udp {
                 return Ok(()); // Leave the checksum as 0--we don't have an IPv4/IPv6 pseudo-header, so we can't calculate it
             };
 
-            let chksum_field: &mut [u8; 2] =
-                &mut bytes[start + 6..start + 8].try_into().unwrap();
+            let chksum_field: &mut [u8; 2] = &mut bytes[start + 6..start + 8].try_into().unwrap();
             *chksum_field = new_chksum.to_be_bytes();
         }
 

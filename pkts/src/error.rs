@@ -23,13 +23,30 @@ pub enum ValidationErrorClass {
     InsufficientBytes, // Packet needs more bytes to be well-formed
     InvalidSize, // A size field in a packet conflicts with the actual composition of its contents; or two size fields conflict
     InvalidValue,
+    /// Indicates that padding has a non-standard length or value.
+    UnusualPadding,
     ExcessBytes(usize), // Packet had excess bytes at the end of it
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct SerializationError {
-    pub reason: &'static str,
-    pub class: SerializationErrorClass,
+    class: SerializationErrorClass,
+}
+
+impl SerializationError {
+    #[inline]
+    pub(crate) fn oversized() -> Self {
+        SerializationError {
+            class: SerializationErrorClass::Oversized,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn bad_upper_layer() -> Self {
+        SerializationError {
+            class: SerializationErrorClass::BadUpperLayer,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

@@ -54,11 +54,11 @@ impl LayerObject for Example {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         todo!()
     }
-    
+
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
     }
@@ -66,7 +66,11 @@ impl LayerObject for Example {
 
 #[allow(unused_variables)]
 impl ToBytes for Example {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         todo!()
     }
 }

@@ -149,7 +149,7 @@ impl LayerObject for PsqlClient {
         }
         */
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
@@ -160,7 +160,7 @@ impl LayerObject for PsqlClient {
         }
         */
     }
-    
+
     fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
         /*
@@ -176,7 +176,11 @@ impl LayerObject for PsqlClient {
 }
 
 impl ToBytes for PsqlClient {
-    fn to_bytes_checksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        _bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         todo!()
     }
 }
@@ -2653,7 +2657,7 @@ impl LayerObject for PsqlServer {
         }
         */
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
@@ -2664,7 +2668,7 @@ impl LayerObject for PsqlServer {
         }
         */
     }
-    
+
     fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
         /*
@@ -2680,7 +2684,11 @@ impl LayerObject for PsqlServer {
 }
 
 impl ToBytes for PsqlServer {
-    fn to_bytes_checksummed(&self, _bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        _bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         todo!()
     }
 }

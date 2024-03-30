@@ -48,10 +48,10 @@
 //!
 //! [`Tcp`]: struct@crate::layers::tcp::Tcp
 //! [`MysqlClient`]: struct@crate::layers::mysql::MysqlClient
-//! [`StatelessLayer`]: crate::layers::traits::extras::StatelessLayer
+//! [`StatelessLayer`]: crate::layers::dev_traits::StatelessLayer
 //! [`Validate`]: crate::layers::traits::Validate
 //! [`FromBytes`]: crate::layers::traits::FromBytes
-//! [`FromBytesCurrent`]: crate::layers::traits::extras::FromBytesCurrent
+//! [`FromBytesCurrent`]: crate::layers::dev_traits::FromBytesCurrent
 //! [`FromBytesRef`]: crate::layers::traits::FromBytesRef
 
 use crate::error::ValidationError;

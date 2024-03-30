@@ -162,7 +162,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             type Output = #layer_type;
 
             /// Combines `rhs` as the next `Layer` of `self`.
-            /// 
+            ///
             /// The [`appended_with()`](BaseLayerAppend::appended_with()) method performs the same
             /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
             #[inline]
@@ -174,7 +174,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         impl<T: BaseLayer + ToLayer> core::ops::DivAssign<T> for #layer_type {
             /// Adds `rhs` as the next `Layer` of `self`.
-            /// 
+            ///
             /// The [`append_layer()`](Layer::append_layer()) method performs the same
             /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
             #[inline]
@@ -209,9 +209,9 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             type Output = T::LayerType;
 
             /// Returns the first [`Layer`] of the given type in the packet.
-            /// 
+            ///
             /// For `Layer`s with multiple payloads, this performs a breadth-first search to return
-            /// the first `Layer` of the correct type. This operator is implemented with 
+            /// the first `Layer` of the correct type. This operator is implemented with
             /// [`get_layer()`](LayerIndex::get_layer()); more information on its workings is
             /// documented there.
             #[inline]
@@ -222,9 +222,9 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         impl<T: LayerIndexSingleton> core::ops::IndexMut<T> for #layer_type {
             /// Returns the first [`Layer`] of the given type in the packet.
-            /// 
+            ///
             /// For `Layer`s with multiple payloads, this performs a breadth-first search to return
-            /// the first `Layer` of the correct type. This operator is implemented with 
+            /// the first `Layer` of the correct type. This operator is implemented with
             /// [`get_layer_mut()`](LayerIndex::get_layer_mut()); more information on its workings
             /// is documented there.
             #[inline]
@@ -402,7 +402,7 @@ pub fn derive_layer_ref(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         impl<'a> From<#layer_type<'a>> for &'a [u8] {
             fn from(value: #layer_type<'a>) -> Self {
                 value.#data_field
-            }           
+            }
         }
 
         impl<'a> LayerRef<'a> for #layer_type<'a> { }

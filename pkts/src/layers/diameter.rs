@@ -159,25 +159,25 @@ impl LayerObject for Diameter {
     fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         self.payload = Some(payload);
     }
-    
+
     #[inline]
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -187,7 +187,11 @@ impl LayerObject for Diameter {
 }
 
 impl ToBytes for Diameter {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
         let len: u32 = self
@@ -559,21 +563,21 @@ impl LayerObject for DiamBase {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         match &self.payload {
             Some(payload) => slice::from_ref(payload),
-            None => &[]
+            None => &[],
         }
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
-            None => &mut []
+            None => &mut [],
         }
     }
-    
+
     fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         if index != 0 {
-            return None
+            return None;
         }
 
         let mut ret = None;
@@ -583,7 +587,11 @@ impl LayerObject for DiamBase {
 }
 
 impl ToBytes for DiamBase {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
         let len: u32 = self

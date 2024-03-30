@@ -59,8 +59,8 @@ use core::marker::PhantomData;
 #[cfg(feature = "alloc")]
 use core::mem;
 
-use crate::layers::dev_traits::*;
 use crate::error::*;
+use crate::layers::dev_traits::*;
 use crate::layers::ip::Ipv4Ref;
 #[cfg(feature = "alloc")]
 use crate::layers::sctp::{DataChunkFlags, SctpRef};

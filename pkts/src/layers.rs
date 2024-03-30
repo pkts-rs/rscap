@@ -27,6 +27,7 @@
 //! [`Ipv4`]: struct@crate::layers::ip::Ipv4
 //! [`Ipv6`]: struct@crate::layers::ip::Ipv6
 
+pub mod dev_traits;
 pub mod diameter;
 pub(crate) mod example;
 pub mod icmp;
@@ -38,7 +39,6 @@ pub mod sctp;
 pub mod tcp;
 pub mod traits;
 pub mod udp;
-pub mod dev_traits;
 
 use crate::error::*;
 use crate::layers::dev_traits::*;
@@ -85,10 +85,10 @@ impl LayerLength for Raw {
     #[inline]
     fn len(&self) -> usize {
         self.data.len()
-//            + match &self.payload {
-//                Some(i) => i.len(),
-//                None => 0,
-//            }
+        //            + match &self.payload {
+        //                Some(i) => i.len(),
+        //                None => 0,
+        //            }
     }
 }
 
@@ -107,12 +107,12 @@ impl LayerObject for Raw {
     fn payloads(&self) -> &[Box<dyn LayerObject>] {
         &[]
     }
-    
+
     #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         &mut []
     }
-    
+
     #[inline]
     fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
         None
@@ -120,7 +120,11 @@ impl LayerObject for Raw {
 }
 
 impl ToBytes for Raw {
-    fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
+    fn to_bytes_checksummed(
+        &self,
+        bytes: &mut Vec<u8>,
+        _prev: Option<(LayerId, usize)>,
+    ) -> Result<(), SerializationError> {
         bytes.extend(&self.data);
         Ok(())
     }

@@ -9,13 +9,12 @@
 // except according to those terms.
 
 //! Traits that are only needed for developing new `Layer` types.
-//! 
-//! 
+//!
+//!
 
 use core::any;
 
-use super::traits::{LayerLength, LayerObject, Validate};
-use crate::error::ValidationError;
+use crate::prelude::*;
 
 use pkts_macros::layer_metadata;
 
@@ -252,6 +251,8 @@ impl Ipv6PayloadMetadata for SctpMetadata {
         crate::layers::ip::DATA_PROTO_SCTP
     }
 }
+
+layer_metadata!(SctpDataChunkMetadata);
 
 layer_metadata!(TcpMetadata);
 
