@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Ethernet and similar link-layer protocols.
+//! Ethernet and associated link-layer protocols.
 //!
 //!
 
@@ -25,10 +25,11 @@ use crate::{error::*, utils};
 const ETH_PROTOCOL_IP: u16 = 0x0800;
 const ETH_PROTOCOL_EXPERIMENTAL: u16 = 0x88B5;
 
-/// The basic 802.3 Ethernet frame, consisting of source and destination
-/// Ethernet addresses, Ether Type and payload. This `Layer` matches the
-/// structure of "cooked" L2 frames in Linux, as well as that of general
-/// 802.3 Ethernet packets, provided they do not contain an 802.1Q VLAN
+/// A basic 802.3 Ethernet frame.
+///
+/// An 802.3 Ethernet frame consists of source and destination MAC addresses, Ether Type and
+/// payload. This `Layer` matches the structure of "cooked" L2 frames in Linux, as well as that
+/// of general 802.3 Ethernet packets. Note that `Ether` does not include any 802.1Q VLAN tags
 /// within the header or a checksum at the end of the payload.
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(EtherMetadata)]
@@ -179,12 +180,12 @@ impl ToBytes for Ether {
     }
 }
 
-/// A reference to the basic 802.3 Ethernet frame, which consists of
-/// source and destination Ethernet addresses, Ether Type and payload.
-/// This `Layer` matches the structure of "cooked" L2 frames in Linux,
-/// as well as that of general 802.3 Ethernet packets, provided they do
-/// not contain an 802.1Q VLAN within the header or a checksum at the
-/// end of the payload.
+/// A reference to a basic 802.3 Ethernet frame.
+///
+/// An 802.3 Ethernet frame consists of source and destination MAC addresses, Ether Type and
+/// payload. This `Layer` matches the structure of "cooked" L2 frames in Linux, as well as that
+/// of general 802.3 Ethernet packets. Note that `Ether` does not include any 802.1Q VLAN tags
+/// within the header or a checksum at the end of the payload.
 #[derive(Copy, Clone, Debug, LayerRef, StatelessLayer)]
 #[owned_type(Ether)]
 #[metadata_type(EtherMetadata)]

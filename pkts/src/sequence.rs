@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Packet defragmentation and re-ordering via [`Sequence`]s.
+//!
 //! Some protocols allow for messages to be fragmented into several
 //! packets, and others additionally account for re-ordering of packets
 //! after they have arrived at an endpoint. The [`Sequence`] type can be

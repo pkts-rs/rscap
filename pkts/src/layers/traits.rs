@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Traits common among all `Layer` types.
+//! Traits used to provide [`Layer`] functionality.
 //!
 //!
 
@@ -119,7 +119,7 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
             Err(ValidationError {
                 layer: self.layer_name(),
                 class: ValidationErrorClass::InvalidPayloadLayer,
-                reason: "", // TODO: fixme
+                reason: "requested payload layer type incompatible with the current layer",
             })
         } else {
             self.add_payload_unchecked(payload);
@@ -466,8 +466,6 @@ pub trait IndexLayer: LayerObject + Sized {
     */
 }
 
-impl<T: LayerObject> IndexLayer for T {}
-
 /// Represents a distinct protocol layer that may encapsulate data and/or other layers.
 ///
 /// This is one of two layer trait variants: [`Layer`] and [`LayerRef`].
@@ -708,7 +706,7 @@ pub trait FromBytes: Sized + Validate + StatelessLayer + FromBytesCurrent {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    /// Converts a slice of bytes into a [`Layer`] type, `panic`ing on failure.
+    /// Converts a slice of bytes into a [`Layer`] type, `panic`king on failure.
     ///
     /// # Panics
     ///
@@ -802,7 +800,7 @@ macro_rules! parse_layers {
     }};
 }
 
-/// Parses bytes into a specified sequence of [`Layer`]s, `panic`ing on error.
+/// Parses bytes into a specified sequence of [`Layer`]s, `panic`king on error.
 ///
 /// # Panic
 #[macro_export]

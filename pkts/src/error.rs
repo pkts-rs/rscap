@@ -8,26 +8,42 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Error types for [`pkts`](crate).
+//!
+//!
+
+/// Indicates an error in validating a packet.
 #[derive(Copy, Clone, Debug)]
 pub struct ValidationError {
     /// The layer in which the validation error occurred
     pub layer: &'static str,
     /// The general class of error that occurred
     pub class: ValidationErrorClass,
+    /// A more descriptive string describing the nature of the error.
     pub reason: &'static str,
 }
 
+/// The general class of error encountered while validating a packet.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorClass {
     InvalidPayloadLayer,
-    InsufficientBytes, // Packet needs more bytes to be well-formed
-    InvalidSize, // A size field in a packet conflicts with the actual composition of its contents; or two size fields conflict
+    /// The packet was cut short and needed more bytes to be whole.
+    InsufficientBytes,
+    /// A size field conflicts with the actual size of the field's contents.
+    ///
+    /// This error also manifests when two size fields conflict.
+    InvalidSize,
+    /// A field was outside the range of expected values.
     InvalidValue,
     /// Indicates that padding has a non-standard length or value.
     UnusualPadding,
-    ExcessBytes(usize), // Packet had excess bytes at the end of it
+    /// The data had a number of unused excess bytes following the packet.
+    ExcessBytes(usize),
 }
 
+/// An error in serializing a packet into its byte representation.
+///
+/// This error is nearly always the result
 #[derive(Copy, Clone, Debug)]
 pub struct SerializationError {
     class: SerializationErrorClass,
@@ -51,9 +67,13 @@ impl SerializationError {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SerializationErrorClass {
-    /// Too many bytes in one of the payloads/fields to encode within a `length` constraint.
+    /// Packet contained too many bytes to encode within some `length` field.
     Oversized,
-    /// A layer expected a particular value from an upper layer (such as `Tcp` requiring `Ip` or
-    /// `Ipv6` to calculate a checksum).
+    /// A layer expected a particular value from an upper layer (such as [`Tcp`] requiring [`Ipv4`]
+    /// or [`Ipv6`] to calculate a checksum).
+    ///
+    /// [`Ipv4`]: struct@crate::layers::ip::Ipv4
+    /// [`Ipv6`]: struct@crate::layers::ip::Ipv6
+    /// [`Tcp`]: struct@crate::layers::tcp::Tcp
     BadUpperLayer,
 }

@@ -21,8 +21,9 @@
 //!
 //! The submodule is organized so that tightly related layers are each within their own modules. For
 //! instance, [`Ipv4`], [`Ipv6`], and IPSec-related layers are all contained within the [`ip`]
-//! module. In addition to this, the [`traits`] module contains traits commonly implemented across
-//! all `Layer`s.
+//! module. In addition to this, the [`traits`] module contains traits that enable `Layer` use,
+//! while [`dev_traits`] contains `Layer` traits that are only useful for developing new `Layer`
+//! types.
 //!
 //! [`Ipv4`]: struct@crate::layers::ip::Ipv4
 //! [`Ipv6`]: struct@crate::layers::ip::Ipv6
@@ -66,7 +67,7 @@ pub enum Cardinal<T> {
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
+/// [`pkts`](crate) can't infer every possible layer combination.
 ///
 /// [`Raw`]: struct@Raw
 /// [`Ipv4`]: struct@crate::layers::ip::Ipv4
@@ -168,7 +169,7 @@ impl Raw {
 /// depending on how the user interprets its content. For instance, a [`Ipv4`]/[`Tcp`]
 /// packet may contain a tunneled [`Ipv4`]/[`Udp`] packet as its payload, but decoding
 /// such a packet from raw bytes would only yield [`Ipv4`]/[`Tcp`]/[`Raw`] since
-/// `rscap` generally doesn't infer `Layer` types beyond the Transport layer.
+/// [`pkts`](crate) can't infer every possible layer combination.
 ///
 /// [`Ipv4`]: struct@crate::layers::ip::Ipv4
 /// [`Tcp`]: struct@crate::layers::tcp::Tcp

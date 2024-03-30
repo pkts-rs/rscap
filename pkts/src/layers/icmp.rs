@@ -8,6 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Internet Control Message Protocol layers (V4/V6) and related fields.
+//! Internet Control Message Protocol and related fields.
 //!
 //!

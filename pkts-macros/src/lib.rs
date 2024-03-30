@@ -164,7 +164,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             /// Combines `rhs` as the next `Layer` of `self`.
             ///
             /// The [`appended_with()`](BaseLayerAppend::appended_with()) method performs the same
-            /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
+            /// operation as indexing, but returns a `Result` instead of `panic`king on failure.
             #[inline]
             fn div(mut self, rhs: T) -> Self::Output {
                 self.append_layer_unchecked(rhs);
@@ -176,7 +176,7 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             /// Adds `rhs` as the next `Layer` of `self`.
             ///
             /// The [`append_layer()`](Layer::append_layer()) method performs the same
-            /// operation as indexing, but returns a `Result` instead of `panic`ing on failure.
+            /// operation as indexing, but returns a `Result` instead of `panic`king on failure.
             #[inline]
             fn div_assign(&mut self, rhs: T) {
                 self.append_layer(rhs).unwrap()
@@ -242,6 +242,8 @@ pub fn derive_layer_owned(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
 
         impl Layer for #layer_type { }
+
+        impl IndexLayer for #layer_type {}
     }));
 
     output
