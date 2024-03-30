@@ -21,7 +21,7 @@ use crate::{layers::*, Buffer};
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use core::{cmp, mem};
+use core::{cmp, mem, slice};
 
 /// A TCP (Transmission Control Protocol) packet.
 ///
@@ -229,35 +229,38 @@ impl LayerLength for Tcp {
 
 impl LayerObject for Tcp {
     #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         true // any protocol may be served over TCP
     }
 
     #[inline]
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        self.payload.as_ref().map(|p| p.as_ref())
-    }
-
-    #[inline]
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload.as_mut().map(|p| p.as_mut())
-    }
-
-    #[inline]
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         self.payload = Some(payload);
     }
 
     #[inline]
-    fn has_payload(&self) -> bool {
-        self.payload.is_some()
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        match &self.payload {
+            Some(payload) => slice::from_ref(payload),
+            None => &[]
+        }
     }
+    
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+    }
+    
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
+        if index != 0 {
+            return None
+        }
 
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
-        self.payload = None;
-        ret.expect("remove_payload() called on TCP layer when layer had no payload")
+        ret
     }
 }
 

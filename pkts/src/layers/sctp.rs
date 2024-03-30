@@ -307,9 +307,50 @@ impl LayerLength for Sctp {
 
 impl LayerObject for Sctp {
     #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         true // SCTP can handle arbitrary protocols
     }
+
+    #[inline]
+    fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
+        todo!()
+        //self.payload_chunks
+    }
+
+    #[inline]
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        todo!()
+        /*
+        self.payload_chunks.as_slice()
+        */
+    }
+    
+    #[inline]
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        todo!()
+        /*
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+        */
+    }
+    
+    fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
+        todo!()
+        /*
+        if index != 0 {
+            return None
+        }
+
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        ret
+        */
+    }
+
+
+    /*
 
     /// Returns a reference to the first payload chunk in the [`struct@Sctp`] packet, if such a
     /// chunk exists.
@@ -327,7 +368,7 @@ impl LayerObject for Sctp {
 
     /// Replaces the first payload chunk in the [`struct@Sctp`] packet with the given payload, or
     /// adds a new payload chunk with all associated fields set to 0 if there were none.
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         if let Some(payload_chunk) = self.payload_chunks.first_mut() {
             payload_chunk.payload = payload
         } else {
@@ -356,6 +397,7 @@ impl LayerObject for Sctp {
             .map(|c| c.payload)
             .expect("attempted to remove payload where none existed in SCTP packet")
     }
+    */
 }
 
 impl ToBytes for Sctp {

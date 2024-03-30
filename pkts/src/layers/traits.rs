@@ -96,98 +96,321 @@ pub trait ToBytes {
 /// An object-safe subtrait of [`Layer`], suitable for internal operations involving
 /// generic layer payloads.
 pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
-    /// Determines whether the given new payload can be used as a payload for the layer.
+    /// Determines whether `payload` can be used as a payload for the layer.
     #[inline]
-    fn can_set_payload(&self, payload: &dyn LayerObject) -> bool {
+    fn can_add_payload(&self, payload: &dyn LayerObject) -> bool {
         #[cfg(feature = "custom_layer_selection")]
         if let Some(&custom_selection) = self
             .layer_metadata()
             .as_any()
             .downcast_ref::<&dyn CustomLayerSelection>()
         {
-            return custom_selection.can_set_payload(payload);
+            return custom_selection.can_add_payload(payload);
         }
 
-        self.can_set_payload_default(payload)
+        self.can_add_payload_default(payload)
     }
 
     /// Determines whether the given new payload can be used as a payload for the layer.
+    /// 
     /// This method is unaffected by custom layer selection (see [`CustomLayerSelection`]),
     /// and should only be used in cases where custom layer validation is enabled but
     /// the developer still wants to run the built-in default layer validation. If you're
-    /// uncertain what all this means, just use `can_set_payload()`.
+    /// uncertain what all this means, just use `can_add_payload()`.
     #[doc(hidden)]
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool;
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool;
 
     /// Returns the current layer's payload, or `None` if the layer has no payload.
-    fn payload(&self) -> Option<&dyn LayerObject>;
+    #[inline]
+    fn payload(&self) -> Option<&dyn LayerObject> {
+        self.payloads().get(0).map(|p| p.as_ref())
+    }
 
-    /// Returns a mutable reference to the current layer's payload, or `None` if the layer has no payload.
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject>;
+    /// Returns a slice over all of the layers payloads.
+    fn payloads(&self) -> &[Box<dyn LayerObject>];
+
+    /// Returns a mutable reference to the current layer's payload, or `None` if the layer has no
+    /// payload.
+    #[inline]
+    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+        self.payloads_mut().get_mut(0).map(|p| p.as_mut())
+    }
+
+    /// Returns a mutable slice over all of the layers payloads.
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>];
 
     /// Sets the payload of the current layer, returning an error if the payload type is
     /// incompatible with the current layer.
-    fn set_payload(&mut self, payload: Box<dyn LayerObject>) -> Result<(), ValidationError> {
-        if !self.can_set_payload(payload.as_ref()) {
+    /// 
+    /// If the layer allows multiple payloads, this appends the payload as the last payload of the
+    /// layer.
+    fn add_payload(&mut self, payload: Box<dyn LayerObject>) -> Result<(), ValidationError> {
+        if !self.can_add_payload(payload.as_ref()) {
             Err(ValidationError {
                 layer: self.layer_name(),
                 class: ValidationErrorClass::InvalidPayloadLayer,
                 reason: "", // TODO: fixme
             })
         } else {
-            self.set_payload_unchecked(payload);
+            self.add_payload_unchecked(payload);
             Ok(())
         }
     }
 
     /// Sets the payload of the current layer without checking the payload type's compatibility.
     ///
+    /// If the layer allows multiple payloads, this appends the payload as the last payload of the
+    /// layer.
+    /// 
     /// # Panics
     ///
     /// Future invocations of `to_bytes()` and other layer methods may panic if an incompatible
     /// payload is passed in this method.
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>);
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>);
 
-    /// Indicates whether the current `Layer` has any payload(s)
-    fn has_payload(&self) -> bool;
 
-    /// Removes the layer's payload, returning it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the layer has no payload.
-    fn remove_payload(&mut self) -> Box<dyn LayerObject>;
-
-    /// Removes the layer's payload if it exists.
+    /// Indicates whether the current `Layer` has any payload(s).
     #[inline]
-    fn discard_payload(&mut self) {
-        if self.has_payload() {
+    fn has_payload(&self) -> bool {
+        !self.payloads().is_empty()
+    }
+
+    /// Removes the layer's payload, returning `None` if the layer has no stored payload.
+    /// 
+    /// If the layer allows multiple payloads, this method will return the last payload added to the
+    /// packet.
+    #[inline]
+    fn remove_payload(&mut self) -> Option<Box<dyn LayerObject>> {
+        self.remove_payload_at(0)
+    }
+
+    /// Removes the specified payload from a layer by index.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if `index` is out of range.
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>>;
+
+    /// Removes any payload(s) from the layer.
+    #[inline]
+    fn clear_payload(&mut self) {
+        while self.has_payload() {
             self.remove_payload();
         }
     }
 }
 
+// =================================================================================================
+//                                       Here be dragons
+// =================================================================================================
+// 
+// The following is a gross amalgamation of recursive functions. I'm not proud of it.
+//
+// Well, that's not exactly correct. I _am_ proud that it manages to crawl past the borrow checker 
+// without resorting to any `unsafe`. But its janky and inefficient and way less readable then it
+// ought to be. Looking forward to tearing this out and replace it with a nice single `for`
+// loop + recursive function once polonius is released.
+
+/// Recursively searches through tree branches for a certain `Layer` type up to a given depth.
+#[doc(hidden)]
+fn get_layer_tree<L: LayerObject>(layer: &dyn LayerObject, mut n: usize, depth: usize) -> Result<&L, bool> {
+    if layer.as_any().downcast_ref::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any().downcast_ref::<L>().ok_or(false), // Invariant: must be `Some()`
+            Some(new_n) => n = new_n,
+        }
+    }
+
+    match depth.checked_sub(1) {
+        None => return Err(layer.has_payload()),
+        Some(new_depth) => {
+            let mut more_layers = false;
+            for payload in layer.payloads() {
+                match get_layer_tree(payload.as_ref(), n, new_depth) {
+                    Ok(t) => return Ok(t),
+                    Err(m) => more_layers |= m,
+                }
+            }
+            return Err(more_layers)
+        }
+    }
+}
+
+/// Recursively searches through tree branch depths starting from the root of the tree,
+/// using `get_layer_tree` with incrementally increasing depths.
+fn get_layer_bfs<L: LayerObject>(layer: &dyn LayerObject, n: usize, depth: usize) -> Option<&L> {
+    // TODO:
+    // This first `get_layer_bfs()` call is only necessary because the borrow checker
+    // rejects any attempt at a `match` :(. Remove once Polonius is finally integrated into
+    // Rust...
+
+    match get_layer_tree(layer, n, depth) { // <- Unneccesary once Polonius is done
+        Ok(t) => Some(t), 
+        Err(false) => None,
+        Err(true) => get_layer_bfs(layer, n, depth+1), // Inductive step: try one deeper
+    }
+}
+
+/// Recursively walks through the chain of `Layer`s until it becomes a tree, then calls
+/// `get_layer_bfs`
+fn get_layer_chain<L: LayerObject>(layer: &dyn LayerObject, mut n: usize) -> Option<&L> {
+    if layer.as_any().downcast_ref::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any().downcast_ref::<L>(), // Invariant: must be `Some()`
+            Some(n_decremented) => n = n_decremented,
+        }
+    }
+
+    if layer.payloads().len() > 1 {
+        get_layer_bfs(layer, n, 1)
+    } else {
+        let Some(payload) = layer.payload() else {
+            return None
+        };
+
+        get_layer_chain(payload, n)
+    }
+}
+
+/// Base function to walk through `Layer`s.
+fn get_layer_base<I: IndexLayer, L: LayerObject>(layer: &I, mut n: usize) -> Option<&L> {
+    if layer.as_any().downcast_ref::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any().downcast_ref::<L>(), // Invariant: always `Some()`
+            Some(n_decremented) => n = n_decremented,
+        }
+    }
+
+    if layer.payloads().len() > 1 {
+        get_layer_bfs(layer, n, 1)
+    } else {
+        let Some(payload) = layer.payload() else {
+            return None
+        };
+
+        get_layer_chain(payload, n)
+    }
+}
+
+/// Recursively searches through tree branches for a certain `Layer` type up to a given depth.
+#[doc(hidden)]
+fn get_layer_mut_tree<L: LayerObject>(layer: &mut dyn LayerObject, mut n: usize, depth: usize) -> Result<&mut L, bool> {
+
+    if layer.as_any_mut().downcast_mut::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any_mut().downcast_mut::<L>().ok_or(false), // Invariant: always `Some()`
+            Some(n_decremented) => n = n_decremented,
+        }
+    }
+
+    match depth.checked_sub(1) {
+        None => return Err(layer.has_payload()),
+        Some(new_depth) => {
+            let mut more_layers = false;
+            for payload in layer.payloads_mut() {
+                match get_layer_mut_tree(payload.as_mut(), n, new_depth) {
+                    Ok(l) => return Ok(l),
+                    Err(m) => more_layers |= m,
+                }
+            }
+            return Err(more_layers)
+        }
+    }
+}
+
+/// Recursively searches through tree branch depths starting from the root of the tree,
+/// using `get_layer_mut_tree` with incrementally increasing depths.
+fn get_layer_mut_bfs<L: LayerObject>(layer: &mut dyn LayerObject, n: usize, depth: usize) -> Option<&mut L> {
+    // TODO:
+    // This first `get_layer_mut_bfs()` call is only necessary because the borrow checker
+    // rejects any attempt at a `match` :(. Remove once Polonius is finally integrated into
+    // Rust...
+    match get_layer_tree::<L>(layer, n, depth) { // <- Unneccesary once Polonius is done
+        Ok(_) => Some(get_layer_mut_tree(layer, n, depth).unwrap()), 
+        Err(false) => None,
+        Err(true) => get_layer_mut_bfs(layer, n, depth+1), // Inductive step: try one deeper
+    }
+}
+
+/// Recursively walks through the chain of `Layer`s until it becomes a tree, then calls
+/// `get_layer_mut_bfs`
+fn get_layer_mut_chain<L: LayerObject>(layer: &mut dyn LayerObject, mut n: usize) -> Option<&mut L> {
+    if layer.as_any_mut().downcast_mut::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any_mut().downcast_mut::<L>(), // Invariant: always `Some()`
+            Some(n_decremented) => n = n_decremented,
+        }
+    }
+
+    if layer.payloads().len() > 1 {
+        get_layer_mut_bfs(layer, n, 1)
+    } else {
+        let Some(payload) = layer.payload_mut() else {
+            return None
+        };
+
+        get_layer_mut_chain(payload, n)
+    }
+}
+
+/// Base function to walk through `Layer`s.
+fn get_layer_mut_base<I: IndexLayer, L: LayerObject>(layer: &mut I, mut n: usize) -> Option<&mut L> {
+    if layer.as_any_mut().downcast_mut::<L>().is_some() {
+        match n.checked_sub(1) {
+            None | Some(0) => return layer.as_any_mut().downcast_mut::<L>(), // Invariant: always `Some()`
+            Some(n_decremented) => n = n_decremented,
+        }
+    }
+
+    if layer.payloads().len() > 1 {
+        get_layer_mut_bfs(layer, n, 1)
+    } else {
+        let Some(payload) = layer.payload_mut() else {
+            return None
+        };
+
+        get_layer_mut_chain(payload, n)
+    }
+}
+
 /// A trait for indexing into sublayers of a [`Layer`] type.
-pub trait IndexLayer: LayerObject {
+pub trait IndexLayer: LayerObject + Sized {
     /// Retrieves a reference to the first sublayer of type `T`, if such a sublayer exists.
     ///
     /// If the layer type `T` is the same type as the base layer (`self`), this method will
     /// return a reference to the base layer. For cases where a sublayer of the same type as
     /// the base layer needs to be indexed into, refer to `get_nth_layer()`.
+    /// 
+    /// # Search Behavior
+    /// 
+    /// The [`get_layer()`](IndexLayer::get_layer()),
+    /// [`get_layer_mut()`](IndexLayer::get_layer_mut()),
+    /// [`get_nth_layer()`](IndexLayer::get_nth_layer()) and
+    /// [`get_nth_layer_mut()`](IndexLayer::get_nth_layer()) methods all follow the same algorithm
+    /// when searching for a particular `Layer`. The algorithm used is a recursive Breadth-First
+    /// Search (BFS) with added optimization for when a packet initially has a chain of `Layer`s
+    /// with only one payload each.
+    /// 
+    /// ## Performance
+    /// 
+    /// When a packet consists of a chain of single-payload `Layer`s, the algoritm has a complexity
+    /// of `O(n)`, where `n` is the number of layers in the packet.
+    /// 
+    /// When a packet's `Layer`s has multiple payloads, the algorithm has a worst-case complexity of
+    /// `O(k * n)`, where `k` is the depth of `Layer` tree and `n` is the total number of `Layer`
+    /// in the tree. Note that `k` is measured starting after the first `Layer` that has more than
+    /// one payload as an optimization.
+    /// 
+    /// For instance, a packet of the format `Eth` / `Ip` / `Udp` / `Dns` / `[Rr, Rr, Rr]` (e.g., a
+    /// DNS packet with 3 resource records) would mean `k` = 1, as the `Dns` layer is the first layer
+    /// with more than one payload.
+    /// 
+    /// Using a traditional stack-based approach (which performs in `O(n)`) would be *slightly* more
+    /// efficient, but it would require fundamental re-architecting of `Layer` internals, so we opt
+    /// for the above approach instead.
+    #[inline]
     fn get_layer<T: LayerObject>(&self) -> Option<&T> {
-        if let Some(t) = self.as_any().downcast_ref::<T>() {
-            return Some(t);
-        };
-
-        let mut next_layer = self.payload();
-        while let Some(layer) = next_layer {
-            if let Some(t) = layer.as_any().downcast_ref::<T>() {
-                return Some(t);
-            }
-            next_layer = layer.payload()
-        }
-
-        None
+        self.get_nth_layer(1)
     }
 
     /// Retrieves a reference to the `n`th sublayer of type `T`, if such a sublayer exists.
@@ -197,30 +420,9 @@ pub trait IndexLayer: LayerObject {
     /// lead to `None` being returned.
     ///
     /// Note that the base layer counts towards the index if it is of type `T`.
-    fn get_nth_layer<T: LayerObject>(&self, mut n: usize) -> Option<&T> {
-        if n == 0 {
-            return None;
-        }
-
-        if let Some(t) = self.as_any().downcast_ref::<T>() {
-            match n.checked_sub(1) {
-                Some(0) | None => return Some(t),
-                Some(new_n) => n = new_n,
-            }
-        };
-
-        let mut next_layer = self.payload();
-        while let Some(layer) = next_layer {
-            if let Some(t) = layer.as_any().downcast_ref::<T>() {
-                match n.checked_sub(1) {
-                    Some(0) | None => return Some(t),
-                    Some(new_n) => n = new_n,
-                }
-            }
-            next_layer = layer.payload()
-        }
-
-        None
+    #[inline]
+    fn get_nth_layer<T: LayerObject>(&self, n: usize) -> Option<&T> {
+        get_layer_base(self, n)
     }
 
     /// Retrieves a mutable reference to the first sublayer of type `T`, if such a sublayer exists.
@@ -228,27 +430,9 @@ pub trait IndexLayer: LayerObject {
     /// If the layer type `T` is the same type as the base layer (`self`), this method will return
     /// a mutable reference to the base layer. For cases where a sublayer of the same type as the
     /// base layer needs to be indexed into, refer to `get_nth_layer()`.
+    #[inline]
     fn get_layer_mut<T: LayerObject>(&mut self) -> Option<&mut T> {
-        if self.as_any_mut().downcast_mut::<T>().is_some() {
-            return self.as_any_mut().downcast_mut::<T>();
-        }
-
-        let mut next_layer = self.payload_mut();
-        let mut layer;
-        loop {
-            match next_layer {
-                None => return None,
-                Some(l) => {
-                    layer = l;
-                    if layer.as_any_mut().downcast_mut::<T>().is_some() {
-                        break;
-                    }
-                    next_layer = layer.payload_mut();
-                }
-            }
-        }
-
-        layer.as_any_mut().downcast_mut::<T>()
+        self.get_nth_layer_mut(1)
     }
 
     /// Retrieves a mutable reference to the `n`th sublayer of type `T`, if such a sublayer exists.
@@ -258,7 +442,23 @@ pub trait IndexLayer: LayerObject {
     /// lead to `None` being returned.
     ///
     /// Note that the base layer counts towards the index if it is of type `T`.
+    #[inline]
+    fn get_nth_layer_mut<T: LayerObject>(&mut self, n: usize) -> Option<&mut T> {
+        get_layer_mut_base(self, n)
+    }
+
+    /*
+    // DO NOT DELETE this code snippet; this took me a long while to figure out its lifetimes... 
+
+    /// Retrieves a mutable reference to the `n`th sublayer of type `T`, if such a sublayer exists.
+    ///
+    /// The `n` parameter is one-indexed, so a method call of `pkt.get_nth_layer<L>(1)`
+    /// is functionally equivalent to `pkt.get_layer<L>()`. Passing in an index of 0 will
+    /// lead to `None` being returned.
+    ///
+    /// Note that the base layer counts towards the index if it is of type `T`.
     fn get_nth_layer_mut<T: LayerObject>(&mut self, mut n: usize) -> Option<&mut T> {
+
         if n == 0 {
             return None;
         }
@@ -291,6 +491,7 @@ pub trait IndexLayer: LayerObject {
 
         layer.as_any_mut().downcast_mut::<T>()
     }
+    */
 }
 
 impl<T: LayerObject> IndexLayer for T {}
@@ -320,9 +521,9 @@ pub trait Layer: IndexLayer + LayerName + LayerObject {
             while let Some(payload) = curr.payload() {
                 curr = payload;
             }
-            curr.can_set_payload(other.to_boxed_layer().as_ref()) // TODO: expensive :(
+            curr.can_add_payload(other.to_boxed_layer().as_ref()) // TODO: expensive :(
         } else {
-            self.can_set_payload(other.to_boxed_layer().as_ref())
+            self.can_add_payload(other.to_boxed_layer().as_ref())
         }
     }
     */
@@ -334,9 +535,9 @@ pub trait Layer: IndexLayer + LayerName + LayerObject {
             while curr.payload().is_some() {
                 curr = curr.payload_mut().unwrap();
             }
-            curr.set_payload(other.to_boxed_layer())?;
+            curr.add_payload(other.to_boxed_layer())?;
         } else {
-            self.set_payload(other.to_boxed_layer())?;
+            self.add_payload(other.to_boxed_layer())?;
         }
 
         Ok(())
@@ -354,9 +555,9 @@ pub trait Layer: IndexLayer + LayerName + LayerObject {
             while curr.payload().is_some() {
                 curr = curr.payload_mut().unwrap();
             }
-            curr.set_payload_unchecked(other.to_boxed_layer());
+            curr.add_payload_unchecked(other.to_boxed_layer());
         } else {
-            self.set_payload_unchecked(other.to_boxed_layer());
+            self.add_payload_unchecked(other.to_boxed_layer());
         }
     }
 }
@@ -590,7 +791,7 @@ macro_rules! parse_layers {
         match <$curr as $crate::layers::traits::extras::FromBytesCurrent>::from_bytes_current_layer($bytes) {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
-                match $base_layer.set_payload(Box::new(new_layer)) {
+                match $base_layer.add_payload(Box::new(new_layer)) {
                     Ok(_) => $crate::parse_layers!(remaining_bytes; $base_layer, $($next),*),
                     Err(e) => Err(e),
                 }
@@ -602,7 +803,7 @@ macro_rules! parse_layers {
         match <$curr as $crate::layers::traits::extras::FromBytesCurrent>::from_bytes_current_layer($bytes) {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
-                match $base_layer.set_payload(Box::new(new_layer)) {
+                match $base_layer.add_payload(Box::new(new_layer)) {
                     Ok(_) if remaining_bytes.len() == 0 => Ok($base_layer),
                     Ok(_) => Err($crate::error::ValidationError {
                         layer: <$curr as $crate::layers::traits::LayerName>::name(),
@@ -950,7 +1151,7 @@ pub mod extras {
     pub trait CustomLayerSelection: BaseLayerSelection {
         fn validate_payload(&self, curr_layer: &[u8]) -> Result<(), ValidationError>;
 
-        fn can_set_payload(&self, payload: &dyn LayerObject) -> bool;
+        fn can_add_payload(&self, payload: &dyn LayerObject) -> bool;
 
         fn payload_byte_index(&self, curr_layer: &[u8], desired_type: &LayerId) -> Option<usize>;
 

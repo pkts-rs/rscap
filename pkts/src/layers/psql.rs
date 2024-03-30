@@ -130,28 +130,48 @@ impl LayerLength for PsqlClient {
 
 impl LayerObject for PsqlClient {
     #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         false
     }
 
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        todo!()
+    #[inline]
+    fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
+        todo!() //self.payload = Some(payload);
     }
 
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    #[inline]
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
         todo!()
+        /*
+        match self.payload {
+            Some(payload) => slice::from_ref(&payload),
+            None => &[]
+        }
+        */
     }
-
-    fn has_payload(&self) -> bool {
+    
+    #[inline]
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
+        /*
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+        */
     }
-
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+    
+    fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
-    }
+        /*
+        if index != 0 {
+            return None
+        }
 
-    fn set_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
-        todo!()
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        ret
+        */
     }
 }
 
@@ -2613,28 +2633,49 @@ impl LayerLength for PsqlServer {
 
 impl LayerObject for PsqlServer {
     #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         false
     }
 
-    fn payload(&self) -> Option<&dyn LayerObject> {
+    #[inline]
+    fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
         todo!()
+        // self.payload = Some(payload);
     }
 
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    #[inline]
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
         todo!()
+        /*
+        match self.payload {
+            Some(payload) => slice::from_ref(&payload),
+            None => &[]
+        }
+        */
     }
-
-    fn has_payload(&self) -> bool {
+    
+    #[inline]
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
+        /*
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+        */
     }
-
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+    
+    fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
-    }
+        /*
+        if index != 0 {
+            return None
+        }
 
-    fn set_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
-        todo!()
+        let mut ret = None;
+        core::mem::swap(&mut ret, &mut self.payload);
+        ret
+        */
     }
 }
 

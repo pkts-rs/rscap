@@ -86,7 +86,7 @@ pub fn derive_stateless_layer_owned(input: proc_macro::TokenStream) -> proc_macr
                     let mut res = Self::from_bytes_current_layer_unchecked((*r).into());
                     match r.layer_metadata().as_any().downcast_ref::<&dyn CustomLayerSelection>() {
                         Some(&layer_selection) => match layer_selection.payload_to_boxed((*r).into()) {
-                            Some(payload) => { res.set_payload_unchecked(payload); },
+                            Some(payload) => { res.add_payload_unchecked(payload); },
                             None => (),
                         }
                         None => res.payload_from_bytes_unchecked_default((*r).into()),

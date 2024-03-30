@@ -12,7 +12,7 @@
 //!
 //!
 
-use core::cmp;
+use core::{cmp, slice};
 use core::fmt::Debug;
 use core::iter::Iterator;
 
@@ -743,7 +743,7 @@ impl LayerLength for Ipv4 {
 }
 
 impl LayerObject for Ipv4 {
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool {
         payload
             .layer_metadata()
             .as_any()
@@ -752,31 +752,33 @@ impl LayerObject for Ipv4 {
     }
 
     #[inline]
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        self.payload.as_deref()
-    }
-
-    #[inline]
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload.as_deref_mut()
-    }
-
-    #[inline]
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         self.payload = Some(payload);
     }
 
     #[inline]
-    fn has_payload(&self) -> bool {
-        self.payload.is_some()
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        match &self.payload {
+            Some(payload) => slice::from_ref(payload),
+            None => &[]
+        }
     }
+    
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+    }
+    
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
+        if index != 0 {
+            return None
+        }
 
-    #[inline]
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
-        self.payload = None;
-        ret.expect("remove_payload() called on IPv4 layer when layer had no payload")
+        ret
     }
 }
 
@@ -2089,7 +2091,7 @@ impl LayerLength for Ipv6 {
 }
 
 impl LayerObject for Ipv6 {
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool {
         payload
             .layer_metadata()
             .as_any()
@@ -2098,31 +2100,34 @@ impl LayerObject for Ipv6 {
     }
 
     #[inline]
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        self.payload.as_deref()
-    }
-
-    #[inline]
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload.as_deref_mut()
-    }
-
-    #[inline]
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         self.payload = Some(payload);
     }
 
     #[inline]
-    fn has_payload(&self) -> bool {
-        self.payload.is_some()
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        match &self.payload {
+            Some(payload) => slice::from_ref(payload),
+            None => &[]
+        }
     }
-
+    
     #[inline]
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        match &mut self.payload {
+            Some(payload) => slice::from_mut(payload),
+            None => &mut []
+        }
+    }
+    
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
+        if index != 0 {
+            return None
+        }
+
         let mut ret = None;
         core::mem::swap(&mut ret, &mut self.payload);
-        self.payload = None;
-        ret.expect("remove_payload() called on IPv6 layer when layer had no payload")
+        ret
     }
 }
 

@@ -41,27 +41,25 @@ impl LayerLength for Example {
 
 #[allow(unused_variables)]
 impl LayerObject for Example {
-    fn can_set_payload_default(&self, payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, payload: &dyn LayerObject) -> bool {
         todo!()
     }
 
-    fn payload(&self) -> Option<&dyn LayerObject> {
+    #[inline]
+    fn add_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
         todo!()
     }
 
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
+    #[inline]
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
         todo!()
     }
-
-    fn has_payload(&self) -> bool {
+    
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         todo!()
     }
-
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
-        todo!()
-    }
-
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
+    
+    fn remove_payload_at(&mut self, index: usize) -> Option<Box<dyn LayerObject>> {
         todo!()
     }
 }

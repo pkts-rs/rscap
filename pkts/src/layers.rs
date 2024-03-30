@@ -77,76 +77,64 @@ pub enum Cardinal<T> {
 pub struct Raw {
     data: Vec<u8>,
     // Kept for the sake of compatibility, but not normally used (unless a custom_layer_selection overrides it)
-    payload: Option<Box<dyn LayerObject>>,
+    // payload: Option<Box<dyn LayerObject>>,
 }
 
 impl LayerLength for Raw {
     #[inline]
     fn len(&self) -> usize {
         self.data.len()
-            + match &self.payload {
-                Some(i) => i.len(),
-                None => 0,
-            }
+//            + match &self.payload {
+//                Some(i) => i.len(),
+//                None => 0,
+//            }
     }
 }
 
 impl LayerObject for Raw {
     #[inline]
-    fn can_set_payload_default(&self, _payload: &dyn LayerObject) -> bool {
+    fn can_add_payload_default(&self, _payload: &dyn LayerObject) -> bool {
         false
     }
 
     #[inline]
-    fn payload(&self) -> Option<&dyn LayerObject> {
-        self.payload.as_ref().map(|p| p.as_ref())
+    fn add_payload_unchecked(&mut self, _payload: Box<dyn LayerObject>) {
+        panic!("`Raw` layer cannot have a payload")
     }
 
     #[inline]
-    fn payload_mut(&mut self) -> Option<&mut dyn LayerObject> {
-        self.payload.as_mut().map(|p| p.as_mut())
+    fn payloads(&self) -> &[Box<dyn LayerObject>] {
+        &[]
     }
-
+    
     #[inline]
-    fn set_payload_unchecked(&mut self, payload: Box<dyn LayerObject>) {
-        self.payload = Some(payload);
+    fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
+        &mut []
     }
-
+    
     #[inline]
-    fn has_payload(&self) -> bool {
-        self.payload.is_some()
-    }
-
-    #[inline]
-    fn remove_payload(&mut self) -> Box<dyn LayerObject> {
-        let mut ret = None;
-        core::mem::swap(&mut ret, &mut self.payload);
-        ret.expect("remove_payload() called on Raw layer when layer had no payload")
+    fn remove_payload_at(&mut self, _index: usize) -> Option<Box<dyn LayerObject>> {
+        None
     }
 }
 
 impl ToBytes for Raw {
     fn to_bytes_checksummed(&self, bytes: &mut Vec<u8>, _prev: Option<(LayerId, usize)>) -> Result<(), SerializationError> {
-        let start = bytes.len();
         bytes.extend(&self.data);
-        match &self.payload {
-            None => Ok(()),
-            Some(p) => p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start))),
-        }
+        Ok(())
     }
 }
 
 impl FromBytesCurrent for Raw {
     #[inline]
     fn payload_from_bytes_unchecked_default(&mut self, _bytes: &[u8]) {
-        self.payload = None;
+        // pass
     }
 
     #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         Raw {
             data: Vec::from(bytes),
-            payload: None,
         }
     }
 }
