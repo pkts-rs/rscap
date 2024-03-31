@@ -38,19 +38,22 @@ mod tests {
     use crate::layers::traits::*;
     use crate::layers::udp::*;
     use crate::sequence::*;
-    use crate::{parse_layers, Buffer};
+    use crate::parse_layers;
+    use pkts_common::BufferMut;
 
     #[test]
     fn udp_builder() {
         let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
 
-        let udp_builder = UdpBuilder::new()
+        let mut buffer = [0u8; 128];
+
+        let udp_builder = UdpBuilder::new(&mut buffer)
             .sport(65321)
             .dport(443)
             .chksum(0)
             .payload_raw(&payload);
 
-        let _buf: Buffer<65536> = match udp_builder.build() {
+        let _buf: BufferMut<'_> = match udp_builder.build() {
             Ok(buf) => buf,
             Err(e) => panic!("{:?}", e),
         };

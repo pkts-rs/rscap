@@ -74,3 +74,73 @@ impl<const N: usize> Default for Buffer<N> {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct BufferMut<'a> {
+    buf: &'a mut [u8],
+    buf_len: usize,
+}
+
+impl<'a> BufferMut<'a> {
+    #[inline]
+    pub fn new(slice: &'a mut [u8]) -> Self {
+        Self {
+            buf: slice,
+            buf_len: 0,
+        }
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buf[..self.buf_len]
+    }
+
+    
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        &mut self.buf[..self.buf_len]
+    }
+    
+
+    /// Appends the provided bytes to the buffer, panicking if insufficient space is available in
+    /// the buffer.
+    #[inline]
+    pub fn append(&mut self, bytes: &[u8]) {
+        self.buf[self.buf_len..self.buf_len + bytes.len()].copy_from_slice(bytes);
+        self.buf_len += bytes.len();
+    }
+
+    /// Appends the provided bytes to the buffer, panicking if insufficient space is available in
+    /// the buffer.
+    #[inline]
+    pub fn try_append(&mut self, bytes: &[u8]) -> Option<()> {
+        if self.remaining() < bytes.len() {
+            return None
+        } else {
+            self.append(bytes);
+            return Some(())       
+        }
+    }
+
+    #[inline]
+    pub fn to_mut_slice(self) -> &'a mut [u8] {
+        &mut self.buf[..self.buf_len]
+    }
+
+    /// The length of the stored buffer.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.buf_len
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.buf_len == 0
+    }
+
+    /// The number of unused bytes in the buffer.
+    #[inline]
+    pub fn remaining(&self) -> usize {
+        self.buf.len() - self.buf_len
+    }
+}

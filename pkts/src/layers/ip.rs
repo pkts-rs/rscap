@@ -2151,7 +2151,7 @@ impl ToBytes for Ipv6 {
         bytes.push((self.flow_label.value & 0x_00_00_00_FF) as u8);
         bytes.extend(
             u16::try_from(self.payload.as_ref().map_or(0, |p| p.len()))
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Ipv6::name()))?
                 .to_be_bytes(),
         );
         bytes.push(match self.payload.as_ref() {
@@ -2161,7 +2161,7 @@ impl ToBytes for Ipv6 {
                 .as_any()
                 .downcast_ref::<&dyn Ipv6PayloadMetadata>()
                 .map(|m| m.ip_data_protocol())
-                .ok_or(SerializationError::bad_upper_layer())?,
+                .ok_or(SerializationError::bad_upper_layer(Ipv6::name()))?,
         });
         bytes.push(self.hop_limit);
         bytes.extend(self.src.to_be_bytes());

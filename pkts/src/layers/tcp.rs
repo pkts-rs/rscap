@@ -287,7 +287,7 @@ impl ToBytes for Tcp {
 
         if self.chksum.is_none() {
             let Some((id, prev_idx)) = prev else {
-                return Err(SerializationError::bad_upper_layer());
+                return Err(SerializationError::bad_upper_layer(Tcp::name()));
             };
 
             let new_chksum = if id == Ipv4::layer_id() {

@@ -1368,7 +1368,7 @@ impl InitOption {
             }
             Self::HostnameAddress(addr) => {
                 let unpadded_len = u16::try_from(self.unpadded_len())
-                    .map_err(|_| SerializationError::oversized())?;
+                    .map_err(|_| SerializationError::length_encoding(Sctp::name()))?;
                 bytes.extend(INIT_OPT_HOSTNAME_ADDR.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 bytes.extend(addr);
@@ -1378,7 +1378,7 @@ impl InitOption {
             }
             Self::SupportedAddressTypes(addr_types) => {
                 let unpadded_len = u16::try_from(self.unpadded_len())
-                    .map_err(|_| SerializationError::oversized())?;
+                    .map_err(|_| SerializationError::length_encoding(Sctp::name()))?;
                 bytes.extend(INIT_OPT_SUPP_ADDR_TYPES.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 for addr_type in addr_types {
@@ -1390,7 +1390,7 @@ impl InitOption {
             }
             Self::Unknown(opt_type, data) => {
                 let unpadded_len = u16::try_from(self.unpadded_len())
-                    .map_err(|_| SerializationError::oversized())?;
+                    .map_err(|_| SerializationError::length_encoding(Sctp::name()))?;
                 bytes.extend(opt_type.to_be_bytes());
                 bytes.extend(unpadded_len.to_be_bytes());
                 bytes.extend(data);
@@ -1688,7 +1688,7 @@ impl InitAckChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(self.init_tag.to_be_bytes());
@@ -1966,7 +1966,7 @@ impl InitAckOption {
 
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         let unpadded_len = u16::try_from(self.unpadded_len())
-            .map_err(|_| SerializationError::oversized())?
+            .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
             .to_be_bytes();
 
         match self {
@@ -2267,19 +2267,19 @@ impl SackChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(self.cum_tsn_ack.to_be_bytes());
         bytes.extend(self.a_rwnd.to_be_bytes());
         bytes.extend(
             u16::try_from(self.gap_ack_blocks.len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(
             u16::try_from(self.duplicate_tsns.len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         for (gap_ack_start, gap_ack_end) in &self.gap_ack_blocks {
@@ -2570,13 +2570,13 @@ impl HeartbeatChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(1u16.to_be_bytes()); // HEARTBEAT_OPT_HEARTBEAT_INFO (the only option available for HEARTBEAT chunks)
         bytes.extend(
             u16::try_from(self.heartbeat.len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.heartbeat);
@@ -2827,13 +2827,13 @@ impl HeartbeatAckChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(1u16.to_be_bytes()); // HEARTBEAT_ACK_OPT_HEARTBEAT_INFO - the only option available, so we don't define it
         bytes.extend(
             u16::try_from(self.heartbeat.len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.heartbeat);
@@ -3009,7 +3009,7 @@ impl AbortChunk {
         bytes.push(self.flags.raw());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         for cause in &self.causes {
@@ -3707,12 +3707,12 @@ impl MissingParameterError {
         bytes.extend(ERR_CODE_MISSING_MAND_PARAM.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(
             (u32::try_from(self.missing_params.len())
-                .map_err(|_| SerializationError::oversized())?)
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?)
             .to_be_bytes(),
         );
         for param in &self.missing_params {
@@ -4080,7 +4080,7 @@ impl UnresolvableAddrError {
         bytes.extend(ERR_CODE_UNRESOLVABLE_ADDRESS.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.addr);
@@ -4403,7 +4403,7 @@ impl UnrecognizedParamError {
         bytes.extend(ERR_CODE_UNRECOGNIZED_PARAMS.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         for param in self.params.iter() {
@@ -4742,7 +4742,7 @@ impl AssociationNewAddrError {
         bytes.extend(ERR_CODE_RESTART_ASSOC_NEW_ADDR.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         for tlv in self.tlvs.iter() {
@@ -4902,7 +4902,7 @@ impl UserInitiatedAbortError {
         bytes.extend(ERR_CODE_USER_INITIATED_ABORT.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.reason);
@@ -5057,7 +5057,7 @@ impl ProtocolViolationError {
         bytes.extend(ERR_CODE_PROTOCOL_VIOLATION.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.information);
@@ -5232,7 +5232,7 @@ impl GenericParam {
         bytes.extend(self.param_type.to_be_bytes());
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(self.value.iter());
@@ -5773,7 +5773,7 @@ impl ErrorChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         for cause in &self.causes {
@@ -5953,7 +5953,7 @@ impl CookieEchoChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.cookie);
@@ -6476,7 +6476,7 @@ impl UnknownChunk {
         bytes.push(self.flags);
         bytes.extend(
             u16::try_from(self.unpadded_len())
-                .map_err(|_| SerializationError::oversized())?
+                .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
                 .to_be_bytes(),
         );
         bytes.extend(&self.value);
@@ -6812,13 +6812,13 @@ impl ToBytes for SctpDataChunk {
         let start = bytes.len();
         bytes.push(0); // DATA Type = 0
         bytes.push(self.flags.as_raw());
-        bytes.extend(self.unpadded_len().to_be_bytes());
+        bytes.extend(u16::try_from(self.unpadded_len()).map_err(|_| SerializationError::length_encoding(SctpDataChunk::name()))?.to_be_bytes());
         bytes.extend(self.tsn.to_be_bytes());
         bytes.extend(self.stream_id.to_be_bytes());
         bytes.extend(self.stream_seq.to_be_bytes());
         bytes.extend(self.proto_id.to_be_bytes());
         if let Some(p) = &self.payload {
-            p.to_bytes_checksummed(bytes, Some((Sctp::layer_id(), start)))?;
+            p.to_bytes_checksummed(bytes, Some((SctpDataChunk::layer_id(), start)))?;
         }
         bytes.extend(core::iter::repeat(0).take(self.len() - self.unpadded_len()));
 
@@ -6973,7 +6973,7 @@ impl Validate for SctpDataChunkRef<'_> {
         let len = match utils::to_array(curr_layer, 2) {
             None => {
                 return Err(ValidationError {
-                    layer: Sctp::name(),
+                    layer: SctpDataChunk::name(),
                     class: ValidationErrorClass::InsufficientBytes,
                     reason: "SCTP DATA chunk must have a minimum of 16 bytes for its header",
                 })
@@ -6984,7 +6984,7 @@ impl Validate for SctpDataChunkRef<'_> {
         let payload_type = curr_layer[0]; // This won't panic because we've already retrieved bytes at index 2
         if payload_type != 0 {
             return Err(ValidationError {
-                layer: Sctp::name(),
+                layer: SctpDataChunk::name(),
                 class: ValidationErrorClass::InvalidValue,
                 reason: "invalid Chunk Type field in SCTP DATA chunk (must be equal to 0)",
             });
@@ -6992,7 +6992,7 @@ impl Validate for SctpDataChunkRef<'_> {
 
         if len < 17 {
             return Err(ValidationError {
-                layer: Sctp::name(),
+                layer: SctpDataChunk::name(),
                 class: ValidationErrorClass::InvalidValue,
                 reason: "packet length field had invalid value (insufficient length to cover packet header and at least one byte of data) for SCTP DATA chunk",
             });
@@ -7007,7 +7007,7 @@ impl Validate for SctpDataChunkRef<'_> {
         let padded_len = data.chunk_len_padded();
         if padded_len > curr_layer.len() {
             return Err(ValidationError {
-                layer: Sctp::name(),
+                layer: SctpDataChunk::name(),
                 class: ValidationErrorClass::InsufficientBytes,
                 reason: "insufficient bytes for User Data portion of SCTP DATA chunk",
             });
@@ -7020,7 +7020,7 @@ impl Validate for SctpDataChunkRef<'_> {
         for b in curr_layer.iter().take(padded_len).skip(len) {
             if *b != 0 {
                 return Err(ValidationError {
-                    layer: Sctp::name(),
+                    layer: SctpDataChunk::name(),
                     class: ValidationErrorClass::UnusualPadding,
                     reason: "padding at end of SCTP DATA chunk had a non-zero value",
                 });
@@ -7029,7 +7029,7 @@ impl Validate for SctpDataChunkRef<'_> {
 
         if padded_len < curr_layer.len() {
             Err(ValidationError {
-                layer: Sctp::name(),
+                layer: SctpDataChunk::name(),
                 class: ValidationErrorClass::ExcessBytes(curr_layer.len() - padded_len),
                 reason: "SCTP DATA chunk had additional trailing bytes at the end of its data",
             })

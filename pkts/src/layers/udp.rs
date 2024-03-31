@@ -22,9 +22,9 @@
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::Raw;
-use crate::Buffer;
 use crate::{error::*, utils};
 
+use pkts_common::BufferMut;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::fmt::Debug;
@@ -217,7 +217,7 @@ impl ToBytes for Udp {
 
         if self.chksum.is_none() {
             let Some((id, prev_idx)) = prev else {
-                return Err(SerializationError::bad_upper_layer());
+                return Err(SerializationError::bad_upper_layer(Udp::name()));
             };
 
             let new_chksum = if id == Ipv4::layer_id() {
@@ -446,50 +446,30 @@ impl UdpBuildPhase for UdpBuildFinal {}
 /// let udp_packet: Buffer<65536> = match udp_builder.build().unwrap();
 /// ```
 ///
-pub struct UdpBuilder<T: UdpBuildPhase, const N: usize> {
-    data: Buffer<N>,
+pub struct UdpBuilder<'a, T: UdpBuildPhase> {
+    data: BufferMut<'a>,
     layer_start: usize,
-    error: Option<ValidationError>,
+    error: Option<SerializationError>,
     phase: T,
 }
 
-impl<const N: usize> Default for UdpBuilder<UdpBuildSrcPort, N> {
+impl<'a> UdpBuilder<'a, UdpBuildSrcPort> {
     #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
-    #[inline]
-    pub fn new() -> Self {
+    pub fn new(buffer: &'a mut [u8]) -> Self {
         Self {
             layer_start: 0,
-            data: Buffer::new(),
+            data: BufferMut::new(buffer),
             error: None,
             phase: UdpBuildSrcPort,
         }
     }
 
-    pub fn from_buffer(buffer: Buffer<N>) -> Self {
-        Self {
-            layer_start: buffer.len(),
-            data: buffer,
-            error: None,
-            phase: UdpBuildSrcPort,
-        }
-    }
-
-    pub fn sport(mut self, sport: u16) -> UdpBuilder<UdpBuildDstPort, N> {
+    pub fn sport(mut self, sport: u16) -> UdpBuilder<'a, UdpBuildDstPort> {
         if self.error.is_none() {
             if self.data.remaining() >= 2 {
                 self.data.append(&sport.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Udp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "UDP Source Port serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
             }
         }
 
@@ -502,17 +482,13 @@ impl<const N: usize> UdpBuilder<UdpBuildSrcPort, N> {
     }
 }
 
-impl<const N: usize> UdpBuilder<UdpBuildDstPort, N> {
-    pub fn dport(mut self, dport: u16) -> UdpBuilder<UdpBuildChksum, N> {
+impl<'a> UdpBuilder<'a, UdpBuildDstPort> {
+    pub fn dport(mut self, dport: u16) -> UdpBuilder<'a, UdpBuildChksum> {
         if self.error.is_none() {
             if self.data.remaining() >= 2 {
                 self.data.append(&dport.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Udp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "UDP Destination Port serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
             }
         }
 
@@ -525,19 +501,15 @@ impl<const N: usize> UdpBuilder<UdpBuildDstPort, N> {
     }
 }
 
-impl<const N: usize> UdpBuilder<UdpBuildChksum, N> {
-    pub fn chksum(mut self, chksum: u16) -> UdpBuilder<UdpBuildPayload, N> {
+impl<'a> UdpBuilder<'a, UdpBuildChksum> {
+    pub fn chksum(mut self, chksum: u16) -> UdpBuilder<'a, UdpBuildPayload> {
         if self.error.is_none() {
             if self.data.remaining() >= 4 {
                 // Pad `length` field with 0s for now--it is filled later
                 self.data.append(&[0u8; 2]);
                 self.data.append(&chksum.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Udp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "UDP Checksum serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
             }
         }
 
@@ -550,29 +522,21 @@ impl<const N: usize> UdpBuilder<UdpBuildChksum, N> {
     }
 }
 
-impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
+impl<'a> UdpBuilder<'a, UdpBuildPayload> {
     /// Add a payload consisting of raw bytes to the UDP packet.
-    pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<UdpBuildFinal, N> {
+    pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<'a, UdpBuildFinal> {
         'insert_data: {
             if self.error.is_some() {
                 break 'insert_data;
             }
 
             if self.data.remaining() < data.len() {
-                self.error = Some(ValidationError {
-                    layer: Udp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "UDP Payload serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
                 break 'insert_data;
             }
 
             let Ok(data_len) = u16::try_from(data.len() + 8) else {
-                self.error = Some(ValidationError {
-                    layer: Udp::name(),
-                    class: ValidationErrorClass::InvalidSize,
-                    reason: "UDP Payload serialization exceeded UDP maximum possible length",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
                 break 'insert_data;
             };
 
@@ -601,18 +565,14 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     /// manner.
     pub fn payload(
         self,
-        payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,
-    ) -> Result<Buffer<N>, ValidationError> {
+        payload_build_fn: impl FnOnce(BufferMut<'a>) -> Result<BufferMut<'a>, SerializationError>,
+    ) -> Result<BufferMut<'a>, SerializationError> {
         if let Some(error) = self.error {
             return Err(error);
         }
         let mut data = payload_build_fn(self.data)?;
         let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
-            return Err(ValidationError {
-                layer: Udp::name(),
-                class: ValidationErrorClass::InvalidSize,
-                reason: "UDP Payload serialization exceeded UDP maximum possible length",
-            });
+            return Err(SerializationError::length_encoding(Udp::name()));
         };
 
         let len_start = self.layer_start + 4;
@@ -624,9 +584,9 @@ impl<const N: usize> UdpBuilder<UdpBuildPayload, N> {
     }
 }
 
-impl<const N: usize> UdpBuilder<UdpBuildFinal, N> {
+impl<'a> UdpBuilder<'a, UdpBuildFinal> {
     #[inline]
-    pub fn build(self) -> Result<Buffer<N>, ValidationError> {
+    pub fn build(self) -> Result<BufferMut<'a>, SerializationError> {
         match self.error {
             Some(error) => Err(error),
             None => Ok(self.data),

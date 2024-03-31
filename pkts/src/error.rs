@@ -47,20 +47,31 @@ pub enum ValidationErrorClass {
 #[derive(Copy, Clone, Debug)]
 pub struct SerializationError {
     class: SerializationErrorClass,
+    layer: &'static str,
 }
 
 impl SerializationError {
     #[inline]
-    pub(crate) fn oversized() -> Self {
+    pub(crate) fn length_encoding(layer: &'static str) -> Self {
         SerializationError {
-            class: SerializationErrorClass::Oversized,
+            class: SerializationErrorClass::LengthEncoding,
+            layer,
         }
     }
 
     #[inline]
-    pub(crate) fn bad_upper_layer() -> Self {
+    pub(crate) fn insufficient_buffer(layer: &'static str) -> Self {
+        SerializationError {
+            class: SerializationErrorClass::LengthEncoding,
+            layer,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn bad_upper_layer(layer: &'static str) -> Self {
         SerializationError {
             class: SerializationErrorClass::BadUpperLayer,
+            layer,
         }
     }
 }
@@ -68,7 +79,9 @@ impl SerializationError {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SerializationErrorClass {
     /// Packet contained too many bytes to encode within some `length` field.
-    Oversized,
+    LengthEncoding,
+
+    InsufficientBuffer,
     /// A layer expected a particular value from an upper layer (such as [`Tcp`] requiring [`Ipv4`]
     /// or [`Ipv6`] to calculate a checksum).
     ///
