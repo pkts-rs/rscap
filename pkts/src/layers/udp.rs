@@ -421,7 +421,7 @@ pub struct UdpBuildFinal;
 
 impl UdpBuildPhase for UdpBuildFinal {}
 
-/// A Builder type for UDP packets, with configurable maximum bytearray size.
+///  Constructs a UDP packet directly onto a mutable slice.
 ///
 /// This struct employs a type-enforced Builder pattern, meaning that each step of building the
 /// UDP packet is represented by a distinct type in the generic type `T`. In practical terms,
