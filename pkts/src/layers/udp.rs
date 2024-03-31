@@ -59,6 +59,7 @@ pub struct Udp {
 }
 
 impl Default for Udp {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
@@ -175,6 +176,7 @@ impl LayerObject for Udp {
         }
     }
 
+    #[inline]
     fn payloads_mut(&mut self) -> &mut [Box<dyn LayerObject>] {
         match &mut self.payload {
             Some(payload) => slice::from_mut(payload),
@@ -255,6 +257,7 @@ impl ToBytes for Udp {
 }
 
 impl FromBytesCurrent for Udp {
+    #[inline]
     fn from_bytes_current_layer_unchecked(bytes: &[u8]) -> Self {
         let udp = UdpRef::from_bytes_unchecked(bytes);
         Udp {
@@ -321,57 +324,31 @@ impl UdpRef<'_> {
     /// The source port of the UDP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(0..2)
-                .expect("insufficient bytes in UDP packet to retrieve Source Port field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(self.data[0..2].try_into().unwrap())
     }
 
     /// The destination port of the UDP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(2..4)
-                .expect("insufficient bytes in UDP packet to retrieve Destination Port field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(self.data[2..4].try_into().unwrap())
     }
 
     /// The combined length (in bytes) of the UDP header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(4..6)
-                .expect("insufficient bytes in UDP packet to retrieve Packet Length field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(self.data[4..6].try_into().unwrap())
     }
 
     /// The one's complement Checksum field of the packet.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(6..8)
-                .expect("insufficient bytes in UDP packet to retrieve Checksum field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(self.data[6..8].try_into().unwrap())
     }
 
     /// The payload data of the UDP packet.
     #[inline]
     pub fn payload(&self) -> &[u8] {
-        self.data
-            .get(8..)
-            .expect("insufficient bytes in UDP packet to retrieve payload data")
+        &self.data[8..]
     }
 }
 
@@ -477,6 +454,7 @@ pub struct UdpBuilder<T: UdpBuildPhase, const N: usize> {
 }
 
 impl<const N: usize> Default for UdpBuilder<UdpBuildSrcPort, N> {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
