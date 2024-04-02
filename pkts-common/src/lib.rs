@@ -110,6 +110,16 @@ impl<'a> BufferMut<'a> {
         self.buf_len += bytes.len();
     }
 
+    /// Appends the provided bytes to the buffer, returning `error` if insufficient space is
+    /// available in the buffer.
+    #[inline]
+    pub fn append_or<T>(&mut self, bytes: &[u8], error: T) -> Result<(), T> {
+        let buf_slice = self.buf.get_mut(self.buf_len..self.buf_len + bytes.len()).ok_or(error)?;
+        buf_slice.copy_from_slice(bytes);
+        self.buf_len += bytes.len();
+        Ok(())
+    }
+
     /// Appends the provided bytes to the buffer, panicking if insufficient space is available in
     /// the buffer.
     #[inline]

@@ -60,6 +60,26 @@ mod tests {
     }
 
     #[test]
+    fn udp_builder_2() {
+        let inner_payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut buffer = [0u8; 100];
+        
+        let udp_builder = UdpBuilder::new(&mut buffer)
+            .sport(65321)
+            .dport(443)
+            .chksum(0)
+            .payload(|b| UdpBuilder::from_buffer(b)
+                .sport(2452)
+                .dport(80)
+                .chksum(0)
+                .payload_raw(&inner_payload)
+                .build()
+            );
+    
+        let udp_packet = udp_builder.build().unwrap();
+    }
+
+    #[test]
     fn from_the_layers() {
         let bytes = b"hello".as_slice();
         let _tcp = Tcp::from_bytes(bytes);

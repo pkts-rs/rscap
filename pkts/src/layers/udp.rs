@@ -436,14 +436,15 @@ impl UdpBuildPhase for UdpBuildFinal {}
 /// use pkts::layers::udp::UdpBuilder;
 ///
 /// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-///
-/// let udp_builder = UdpBuilder::new()
+/// let buffer = [0u8; 100];
+/// 
+/// let udp_builder = UdpBuilder::new(&mut buffer)
 ///     .sport(65321)
 ///     .dport(443)
 ///     .chksum(0)
 ///     .payload_raw(&payload);
 ///
-/// let udp_packet: Buffer<65536> = match udp_builder.build().unwrap();
+/// let udp_packet = udp_builder.build().unwrap();
 /// ```
 ///
 pub struct UdpBuilder<'a, T: UdpBuildPhase> {
@@ -459,6 +460,16 @@ impl<'a> UdpBuilder<'a, UdpBuildSrcPort> {
         Self {
             layer_start: 0,
             data: BufferMut::new(buffer),
+            error: None,
+            phase: UdpBuildSrcPort,
+        }
+    }
+
+    #[inline]
+    pub fn from_buffer(buffer: BufferMut<'a>) -> Self {
+        Self {
+            layer_start: 0,
+            data: buffer,
             error: None,
             phase: UdpBuildSrcPort,
         }
@@ -523,19 +534,19 @@ impl<'a> UdpBuilder<'a, UdpBuildChksum> {
 }
 
 impl<'a> UdpBuilder<'a, UdpBuildPayload> {
-    /// Add a payload consisting of raw bytes to the UDP packet.
-    pub fn payload_raw(mut self, data: &[u8]) -> UdpBuilder<'a, UdpBuildFinal> {
+    /// Add raw bytes as the payload of the UDP packet.
+    pub fn payload_raw(mut self, payload: &[u8]) -> UdpBuilder<'a, UdpBuildFinal> {
         'insert_data: {
             if self.error.is_some() {
                 break 'insert_data;
             }
 
-            if self.data.remaining() < data.len() {
+            if self.data.remaining() < payload.len() {
                 self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
                 break 'insert_data;
             }
 
-            let Ok(data_len) = u16::try_from(data.len() + 8) else {
+            let Ok(data_len) = u16::try_from(8 + payload.len()) else {
                 self.error = Some(SerializationError::insufficient_buffer(Udp::name()));
                 break 'insert_data;
             };
@@ -547,7 +558,7 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
             self.data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
 
             // Set data
-            self.data.append(data);
+            self.data.append(payload);
         }
 
         UdpBuilder {
@@ -560,27 +571,67 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
 
     /// Add a payload to the UDP packet.
     ///
-    /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
+    /// The UDP packet's payload is constructed via the user-provided `build_payload` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
+    /// 
+    /// # Example
+    /// 
+    /// UDP-within-UDP:
+    /// 
+    /// ```
+    /// use pkts::prelude::*;
+    /// use pkts::layers::udp::UdpBuilder;
+    ///
+    /// let inner_payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+    /// let buffer = [0u8; 100];
+    /// 
+    /// let udp_builder = UdpBuilder::new(&mut buffer)
+    ///     .sport(65321)
+    ///     .dport(443)
+    ///     .chksum(0)
+    ///     .payload(|b| UdpBuilder::from_buffer(b)
+    ///         .sport(2452)
+    ///         .dport(80)
+    ///         .chksum(0)
+    ///         .payload_raw(&mut inner_payload)
+    ///         .build()
+    ///     );
+    ///
+    /// let udp_packet = udp_builder.build().unwrap();
+    /// ```
+    /// 
+    /// 
     pub fn payload(
-        self,
-        payload_build_fn: impl FnOnce(BufferMut<'a>) -> Result<BufferMut<'a>, SerializationError>,
-    ) -> Result<BufferMut<'a>, SerializationError> {
-        if let Some(error) = self.error {
-            return Err(error);
+        mut self,
+        build_payload: impl FnOnce(BufferMut<'a>) -> Result<BufferMut<'a>, SerializationError>,
+    ) -> UdpBuilder<'a, UdpBuildFinal> {
+        let data;
+
+        if self.error.is_some() {
+            data = self.data;
+        } else {
+            match build_payload(self.data) {
+                Ok(mut new_data) => {
+                    match u16::try_from(new_data.len() - self.layer_start) {
+                        Ok(data_len) => new_data.as_mut_slice()[self.layer_start + 4..self.layer_start + 6].copy_from_slice(&data_len.to_be_bytes()),
+                        Err(_) => self.error = Some(SerializationError::length_encoding(Udp::name())),
+                    }
+                    data = new_data;
+                },
+                Err(e) => {
+                    self.error = Some(e);
+                    data = BufferMut::new(&mut []);
+                }
+            }
         }
-        let mut data = payload_build_fn(self.data)?;
-        let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
-            return Err(SerializationError::length_encoding(Udp::name()));
-        };
 
-        let len_start = self.layer_start + 4;
-        let len_end = self.layer_start + 6;
-
-        // Set data length field
-        data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
-        Ok(data)
+        UdpBuilder {
+            data,
+            layer_start: self.layer_start,
+            error: self.error,
+            phase: UdpBuildFinal,
+        }
     }
 }
 
