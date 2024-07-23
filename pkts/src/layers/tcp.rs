@@ -670,6 +670,7 @@ impl<'a> TcpBuilder<'a, TcpBuildSrcPort> {
         }
     }
 
+    /// Sets the source port to be used for the TCP packet.
     pub fn sport(mut self, sport: u16) -> TcpBuilder<'a, TcpBuildDstPort> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -689,6 +690,7 @@ impl<'a> TcpBuilder<'a, TcpBuildSrcPort> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildDstPort> {
+    /// Sets the destination port to be used for the TCP packet.
     #[inline]
     pub fn dport(mut self, dport: u16) -> TcpBuilder<'a, TcpBuildSeq> {
         if self.error.is_none() {
@@ -709,6 +711,7 @@ impl<'a> TcpBuilder<'a, TcpBuildDstPort> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildSeq> {
+    /// Sets the sequence number to be used for the TCP packet.
     #[inline]
     pub fn seq(mut self, seq: u32) -> TcpBuilder<'a, TcpBuildAck> {
         if self.error.is_none() {
@@ -729,6 +732,7 @@ impl<'a> TcpBuilder<'a, TcpBuildSeq> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildAck> {
+    /// Sets the acknowledgement number to be used for the TCP packet.
     pub fn ack(mut self, ack: u32) -> TcpBuilder<'a, TcpBuildFlags> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
@@ -748,6 +752,7 @@ impl<'a> TcpBuilder<'a, TcpBuildAck> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildFlags> {
+    /// Sets the TCP flags to be used for the TCP packet.
     pub fn flags(mut self, flags: TcpFlags) -> TcpBuilder<'a, TcpBuildFlags> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
@@ -767,6 +772,7 @@ impl<'a> TcpBuilder<'a, TcpBuildFlags> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildWindowSize> {
+    /// Sets the congestion window to be used for the TCP packet.
     pub fn cwnd(mut self, window: u16) -> TcpBuilder<'a, TcpBuildChksum> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -786,6 +792,7 @@ impl<'a> TcpBuilder<'a, TcpBuildWindowSize> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildChksum> {
+    /// Sets the checksum of the TCP packet.
     pub fn chksum(mut self, chksum: u16) -> TcpBuilder<'a, TcpBuildOptsPayload> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
@@ -805,6 +812,7 @@ impl<'a> TcpBuilder<'a, TcpBuildChksum> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
+    /// Adds a TCP option to the TCP packet.
     pub fn option(mut self, option: TcpOption) -> TcpBuilder<'a, TcpBuildOptsPayload> {
         if self.error.is_none() {
             if let Err(e) = option.encode(&mut self.data) {
@@ -820,7 +828,7 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
         }
     }
 
-    /// Add a payload consisting of raw bytes to the TCP packet.
+    /// Sets the application-layer payload of the TCP packet using raw bytes.
     pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<'a, TcpBuildFinal> {
         'insert_data: {
             if self.error.is_some() {
@@ -855,7 +863,7 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
         }
     }
 
-    /// Add a payload layer to the TCP packet.
+    /// Sets the application-layer payload of the TCP packet using another builder routine.
     ///
     /// The TCP packet's payload is constructed via the user-provided `build_payload` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
@@ -894,6 +902,10 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildFinal> {
+    /// Attempts to finalize the construction of the TCP packet.
+    /// 
+    /// If an error occurred while adding any of the above fields, this will return an error;
+    /// otherwise, it will successfully return 
     #[inline]
     pub fn build(self) -> Result<BufferMut<'a>, SerializationError> {
         match self.error {
