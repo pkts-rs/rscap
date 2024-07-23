@@ -330,6 +330,7 @@ impl Validate for DiameterRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "insufficient bytes in Diameter packet for header/Data payload",
                     });
                 }
@@ -339,6 +340,7 @@ impl Validate for DiameterRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "Diameter packet Length field was too small for header",
                     });
                 }
@@ -347,6 +349,7 @@ impl Validate for DiameterRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "Diameter packet Length field was not a multiple of 4",
                     });
                 }
@@ -371,6 +374,7 @@ impl Validate for DiameterRef<'_> {
                     Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::ExcessBytes(curr_layer.len() - len),
+                        #[cfg(feature = "error_string")]
                         reason: "extra bytes remain at end of Diameter packet",
                     })
                 } else {
@@ -380,6 +384,7 @@ impl Validate for DiameterRef<'_> {
             _ => Err(ValidationError {
                 layer: Diameter::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes in DiameterRef for Message Length field",
             }),
         }
@@ -524,7 +529,10 @@ impl FromBytesCurrent for DiamBase {
             app_id: diam.app_id(),
             hop_id: diam.hop_id(),
             end_id: diam.end_id(),
-            command: match (diam.comm_code(), diam.flags().contains(CommandFlags::REQUEST)) {
+            command: match (
+                diam.comm_code(),
+                diam.flags().contains(CommandFlags::REQUEST),
+            ) {
                 (DIAM_BASE_COMM_ABORT_SESSION, true) => {
                     BaseCommand::AbortSessionReq(AbortSessionReq { avps })
                 }
@@ -721,6 +729,7 @@ impl Validate for DiamBaseRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "insufficient bytes in Diameter packet for header/Data payload",
                     });
                 }
@@ -730,6 +739,7 @@ impl Validate for DiamBaseRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "Diameter packet Length field was too small for header",
                     });
                 }
@@ -738,6 +748,7 @@ impl Validate for DiamBaseRef<'_> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "Diameter packet Length field was not a multiple of 4",
                     });
                 }
@@ -762,6 +773,7 @@ impl Validate for DiamBaseRef<'_> {
                     Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::ExcessBytes(curr_layer.len() - len),
+                        #[cfg(feature = "error_string")]
                         reason: "extra bytes remain at end of Diameter packet",
                     })
                 } else {
@@ -771,6 +783,7 @@ impl Validate for DiamBaseRef<'_> {
             _ => Err(ValidationError {
                 layer: Diameter::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes in DiameterRef for Message Length field",
             }),
         }
@@ -1571,7 +1584,8 @@ impl GenericAvp {
 
     #[inline]
     pub fn set_vendor_id(&mut self, vendor_id: Option<u32>) {
-        self.flags.set(AvpFlags::VENDOR_SPECIFIC, self.vendor_id.is_some());
+        self.flags
+            .set(AvpFlags::VENDOR_SPECIFIC, self.vendor_id.is_some());
         self.vendor_id = vendor_id;
     }
 
@@ -1652,13 +1666,18 @@ impl<'a> GenericAvpRef<'a> {
                 let unpadded_len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
                 let len = utils::padded_length::<4>(unpadded_len);
 
-                let minimum_length = if flags.contains(AvpFlags::VENDOR_SPECIFIC) { 12 } else { 8 };
+                let minimum_length = if flags.contains(AvpFlags::VENDOR_SPECIFIC) {
+                    12
+                } else {
+                    8
+                };
 
                 // Validate length field (too big) and header bytes
                 if cmp::max(minimum_length, len) > bytes.len() {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "insufficient bytes in Diameter AVP for Data payload",
                     });
                 }
@@ -1668,6 +1687,7 @@ impl<'a> GenericAvpRef<'a> {
                     return Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "Diameter AVP Length field was too small for header",
                     });
                 }
@@ -1678,6 +1698,7 @@ impl<'a> GenericAvpRef<'a> {
                         return Err(ValidationError {
                             layer: Diameter::name(),
                             class: ValidationErrorClass::InvalidValue, // TODO: should we add a new ErrorType::UnexpectedValue or ::ValueWarning?
+                            #[cfg(feature = "error_string")]
                             reason: "non-zero padding values found at end of Diameter AVP",
                         });
                     }
@@ -1687,6 +1708,7 @@ impl<'a> GenericAvpRef<'a> {
                     Err(ValidationError {
                         layer: Diameter::name(),
                         class: ValidationErrorClass::ExcessBytes(bytes.len() - len),
+                        #[cfg(feature = "error_string")]
                         reason: "extra bytes remain at end of Diameter AVP",
                     })
                 } else {
@@ -1696,6 +1718,7 @@ impl<'a> GenericAvpRef<'a> {
             _ => Err(ValidationError {
                 layer: Diameter::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes in Diameter AVP for header",
             }),
         }

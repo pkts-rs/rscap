@@ -12,6 +12,7 @@ repository = "https://github.com/pkts-rs/rscap"
 default = ["std", "custom_layer_selection"]
 std = ["alloc"]
 alloc = []
+error_strings = []
 custom_layer_selection = ["pkts-macros/custom_layer_selection"]
 
 [dependencies]

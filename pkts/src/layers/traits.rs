@@ -119,6 +119,7 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
             Err(ValidationError {
                 layer: self.layer_name(),
                 class: ValidationErrorClass::InvalidPayloadLayer,
+                #[cfg(feature = "error_string")]
                 reason: "requested payload layer type incompatible with the current layer",
             })
         } else {
@@ -664,6 +665,7 @@ pub trait Validate: BaseLayer + StatelessLayer {
             (_, Err(e)) => Err(ValidationError {
                 layer: e.layer,
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: e.reason,
             }),
             (Err(_), _) => curr_valid, // ValidationErrorClass::ExcessBytes(_)
@@ -790,6 +792,7 @@ macro_rules! parse_layers {
                     Ok(_) => Err($crate::error::ValidationError {
                         layer: <$curr as $crate::layers::dev_traits::LayerName>::name(),
                         class: $crate::error::ValidationErrorClass::ExcessBytes($bytes.len()),
+                        #[cfg(feature = "error_string")]
                         reason: "parsing of bytes failed--additional bytes remaining after parsing all protocol layers"
                     }),
                     Err(e) => Err(e),

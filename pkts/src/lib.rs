@@ -16,7 +16,6 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-
 pub mod error;
 pub mod layers;
 #[doc(hidden)]
@@ -38,8 +37,8 @@ mod tests {
     use crate::layers::tcp::{Tcp, TcpRef};
     use crate::layers::traits::*;
     use crate::layers::udp::*;
-    use crate::sequence::*;
     use crate::parse_layers;
+    use crate::sequence::*;
     use pkts_common::BufferMut;
 
     #[test]
@@ -64,19 +63,20 @@ mod tests {
     fn udp_builder_2() {
         let inner_payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
         let mut buffer = [0u8; 100];
-        
+
         let udp_builder = UdpBuilder::new(&mut buffer)
             .sport(65321)
             .dport(443)
             .chksum(0)
-            .payload(|b| UdpBuilder::from_buffer(b)
-                .sport(2452)
-                .dport(80)
-                .chksum(0)
-                .payload_raw(&inner_payload)
-                .build()
-            );
-    
+            .payload(|b| {
+                UdpBuilder::from_buffer(b)
+                    .sport(2452)
+                    .dport(80)
+                    .chksum(0)
+                    .payload_raw(&inner_payload)
+                    .build()
+            });
+
         let _udp_packet = udp_builder.build().unwrap();
     }
 

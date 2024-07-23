@@ -982,7 +982,9 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             return; // Drop packet--not within receive window
         }
 
-        if flags.contains(DataChunkFlags::BEGIN_FRAGMENT) && flags.contains(DataChunkFlags::END_FRAGMENT) {
+        if flags.contains(DataChunkFlags::BEGIN_FRAGMENT)
+            && flags.contains(DataChunkFlags::END_FRAGMENT)
+        {
             // The packet isn't a fragment--it only needs to be reordered
             if flags.contains(DataChunkFlags::UNORDERED) {
                 // The packet isn't a fragment, and doesn't need to be reordered
@@ -1023,7 +1025,10 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             frag.insert(
                 data,
                 tsn,
-                (flags.contains(DataChunkFlags::BEGIN_FRAGMENT), flags.contains(DataChunkFlags::END_FRAGMENT)),
+                (
+                    flags.contains(DataChunkFlags::BEGIN_FRAGMENT),
+                    flags.contains(DataChunkFlags::END_FRAGMENT),
+                ),
             );
 
             if frag.is_complete() {
@@ -1524,7 +1529,9 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
 
         for payload in sctp.payload_chunks() {
             let flags = payload.flags();
-            if flags.contains(DataChunkFlags::BEGIN_FRAGMENT) && flags.contains(DataChunkFlags::END_FRAGMENT) {
+            if flags.contains(DataChunkFlags::BEGIN_FRAGMENT)
+                && flags.contains(DataChunkFlags::END_FRAGMENT)
+            {
                 if flags.contains(DataChunkFlags::UNORDERED) {
                     self.out.push_back(Vec::from(payload.user_data()));
                 } else {

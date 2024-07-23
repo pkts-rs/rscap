@@ -19,13 +19,15 @@ pub struct ValidationError {
     pub layer: &'static str,
     /// The general class of error that occurred
     pub class: ValidationErrorClass,
-    /// A more descriptive string describing the nature of the error.
+    /// A more descriptive string describing the nature of the error
+    #[cfg(feature = "error_string")]
     pub reason: &'static str,
 }
 
 /// The general class of error encountered while validating a packet.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ValidationErrorClass {
+    /// An incompatible payload was assigned to the given layer.
     InvalidPayloadLayer,
     /// The packet was cut short and needed more bytes to be whole.
     InsufficientBytes,

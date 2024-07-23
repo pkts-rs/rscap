@@ -202,6 +202,7 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             return Err(ValidationError {
                 layer: MysqlPacket::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes for MySQL Packet header (4 bytes required)",
             });
         }
@@ -214,11 +215,13 @@ impl<'a> Validate for MysqlPacketRef<'a> {
             Ordering::Less => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes for packet length advertised by MySQL header",
             }),
             Ordering::Greater => Err(ValidationError {
                 layer: MysqlPacket::name(),
                 class: ValidationErrorClass::ExcessBytes(curr_layer[4..].len() - payload_len),
+                #[cfg(feature = "error_string")]
                 reason:
                     "more bytes in packet than advertised by the MySQL Packet header Length field",
             }),
@@ -348,7 +351,6 @@ pub enum MessageTypeOwned {}
 pub enum MessageTypeRef {
     // <'a>
 }
-
 
 // A few notes:
 // 1. Encapsulation of `MysqlPacket` type should be explicit--we can't abstract that out without ridiculousness like `sstr`.

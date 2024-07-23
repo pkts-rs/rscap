@@ -523,6 +523,7 @@ impl Validate for TcpRef<'_> {
                 return Err(ValidationError {
                     layer: Tcp::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for TCP frame--missing Data Offset byte in TCP header",
                 })
@@ -534,6 +535,7 @@ impl Validate for TcpRef<'_> {
             return Err(ValidationError {
                 layer: Tcp::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes for TCP packet header",
             });
         }
@@ -543,6 +545,7 @@ impl Validate for TcpRef<'_> {
             return Err(ValidationError {
                 layer: Tcp::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason:
                     "invalid TCP header length value (Data Offset must be a value of 5 or more)",
             });
@@ -880,11 +883,15 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
             match build_payload(self.data) {
                 Ok(mut new_data) => {
                     match u16::try_from(new_data.len() - self.layer_start) {
-                        Ok(data_len) => new_data.as_mut_slice()[self.layer_start + 4..self.layer_start + 6].copy_from_slice(&data_len.to_be_bytes()),
-                        Err(_) => self.error = Some(SerializationError::length_encoding(Tcp::name())),
+                        Ok(data_len) => new_data.as_mut_slice()
+                            [self.layer_start + 4..self.layer_start + 6]
+                            .copy_from_slice(&data_len.to_be_bytes()),
+                        Err(_) => {
+                            self.error = Some(SerializationError::length_encoding(Tcp::name()))
+                        }
                     }
                     data = new_data;
-                },
+                }
                 Err(e) => {
                     self.error = Some(e);
                     data = BufferMut::new(&mut []);
@@ -903,9 +910,9 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
 
 impl<'a> TcpBuilder<'a, TcpBuildFinal> {
     /// Attempts to finalize the construction of the TCP packet.
-    /// 
+    ///
     /// If an error occurred while adding any of the above fields, this will return an error;
-    /// otherwise, it will successfully return 
+    /// otherwise, it will successfully return
     #[inline]
     pub fn build(self) -> Result<BufferMut<'a>, SerializationError> {
         match self.error {
@@ -1098,6 +1105,7 @@ impl<'a> TcpOptionsRef<'a> {
             return Err(ValidationError {
                 layer: Tcp::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "TCP Options data length must be a multiple of 4",
             });
         }
@@ -1111,6 +1119,7 @@ impl<'a> TcpOptionsRef<'a> {
                         return Err(ValidationError {
                             layer: Tcp::name(),
                             class: ValidationErrorClass::InvalidValue,
+                            #[cfg(feature = "error_string")]
                             reason: "TCP option length field contained too small a value",
                         })
                     }
@@ -1119,6 +1128,7 @@ impl<'a> TcpOptionsRef<'a> {
                         None => return Err(ValidationError {
                             layer: Tcp::name(),
                             class: ValidationErrorClass::InvalidValue,
+                            #[cfg(feature = "error_string")]
                             reason:
                                 "truncated TCP option field in options--missing part of option data",
                         }),
@@ -1127,6 +1137,7 @@ impl<'a> TcpOptionsRef<'a> {
                         return Err(ValidationError {
                             layer: Tcp::name(),
                             class: ValidationErrorClass::InvalidValue,
+                            #[cfg(feature = "error_string")]
                             reason:
                                 "truncated TCP option found in options--missing option length field",
                         })
@@ -1268,8 +1279,12 @@ pub enum TcpOption {
 impl TcpOption {
     pub fn encode(&self, buffer: &mut BufferMut<'_>) -> Result<(), SerializationError> {
         match self {
-            Self::Eool => buffer.append_or(&[0], SerializationError::insufficient_buffer(Tcp::name())),
-            Self::Nop => buffer.append_or(&[1], SerializationError::insufficient_buffer(Tcp::name())),
+            Self::Eool => {
+                buffer.append_or(&[0], SerializationError::insufficient_buffer(Tcp::name()))
+            }
+            Self::Nop => {
+                buffer.append_or(&[1], SerializationError::insufficient_buffer(Tcp::name()))
+            }
             _ => todo!(),
         }
     }

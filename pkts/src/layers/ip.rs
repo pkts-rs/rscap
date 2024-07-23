@@ -1120,6 +1120,7 @@ impl Validate for Ipv4Ref<'_> {
                 None => return Err(ValidationError {
                     layer: Ipv4::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -1134,6 +1135,7 @@ impl Validate for Ipv4Ref<'_> {
                 return Err(ValidationError {
                     layer: Ipv4::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv4 frame--missing length field bytes in Ipv4 header",
                 })
@@ -1145,6 +1147,7 @@ impl Validate for Ipv4Ref<'_> {
             return Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "total packet length reported in Ipv4 header exceeded the available bytes",
             });
         }
@@ -1155,6 +1158,7 @@ impl Validate for Ipv4Ref<'_> {
             return Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "version number of Ipv4 header was not equal to 0x04",
             });
         }
@@ -1164,6 +1168,7 @@ impl Validate for Ipv4Ref<'_> {
             return Err(ValidationError {
                 layer: Ipv4Ref::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "invalid Ipv4 header length value (IHL must be a value of 5 or more)",
             });
         }
@@ -1178,17 +1183,20 @@ impl Validate for Ipv4Ref<'_> {
                     None => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "length field missing from Ipv4 Option",
                     }),
                     Some(0..=1) => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "invalid value in Ipv4 Option length field (must be at least 2)",
                     }),
                     Some(&l) => remaining_header = match remaining_header.get(l as usize..) {
                         None => return Err(ValidationError {
                         layer: Ipv4Ref::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "invalid length field in Ipv4 Option--insufficient option bytes available for specified length",
                         }),
                         Some(r) => r,
@@ -1202,6 +1210,7 @@ impl Validate for Ipv4Ref<'_> {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),
                 class: ValidationErrorClass::ExcessBytes(curr_layer.len() - total_length),
+                #[cfg(feature = "error_string")]
                 reason:
                     "invalid length field in Ipv4 header--extra bytes remaining at end of packet",
             })
@@ -1218,6 +1227,7 @@ impl Validate for Ipv4Ref<'_> {
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv4 frame--missing version/IHL byte in Ipv4 header",
                 }),
@@ -1229,6 +1239,7 @@ impl Validate for Ipv4Ref<'_> {
                 None => return Err(ValidationError {
                     layer: Ipv4Ref::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv4 frame--insufficient bytes available for header",
                 }),
@@ -1436,6 +1447,7 @@ impl<'a> Ipv4OptionsRef<'a> {
             return Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "Ipv4 Options data length must be a multiple of 4",
             });
         }
@@ -1448,6 +1460,7 @@ impl<'a> Ipv4OptionsRef<'a> {
                     Some(0..=1) => return Err(ValidationError {
                         layer: Ipv4::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "IPv4 option length field contained too small a value",
                     }),
                     Some(&len) => {
@@ -1456,6 +1469,7 @@ impl<'a> Ipv4OptionsRef<'a> {
                             None => return Err(ValidationError {
                                 layer: Ipv4::name(),
                                 class: ValidationErrorClass::InvalidValue,
+                                #[cfg(feature = "error_string")]
                                 reason: "truncated IPv4 option field in options--missing part of option data",
                             }),
                         }
@@ -1463,6 +1477,7 @@ impl<'a> Ipv4OptionsRef<'a> {
                     None => return Err(ValidationError {
                         layer: Ipv4::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "truncated IPv4 option found in options--missing option length field",
                     }),
                 },
@@ -1770,6 +1785,7 @@ impl<'a> Ipv4OptionRef<'a> {
                 Err(ValidationError {
                     layer: Ipv4::name(),
                     class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
+                    #[cfg(feature = "error_string")]
                     reason: "excess bytes at end of single-byte IPv4 option"
                 })
             },
@@ -1779,23 +1795,27 @@ impl<'a> Ipv4OptionRef<'a> {
                     Some(remaining) => Err(ValidationError {
                         layer: Ipv4::name(),
                         class: ValidationErrorClass::ExcessBytes(remaining),
+                        #[cfg(feature = "error_string")]
                         reason: "excess bytes at end of sized IPv4 option",
                     }),
                     None => Err(ValidationError {
                         layer: Ipv4::name(),
                         class: ValidationErrorClass::InvalidValue,
+                        #[cfg(feature = "error_string")]
                         reason: "length of IPv4 Option data exceeded available bytes"
                     }),
                 },
                 _ => Err(ValidationError {
                     layer: Ipv4::name(),
                     class: ValidationErrorClass::InvalidValue,
+                    #[cfg(feature = "error_string")]
                     reason: "insufficient bytes available to read IPv4 Option--missing length byte field"
                 }),
             },
             None => Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes available to read IPv4 Option--missing option_type byte field",
             })
         }
@@ -2351,6 +2371,7 @@ impl Validate for Ipv6Ref<'_> {
                 _ => return Err(ValidationError {
                     layer: Ipv4::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
                 }),
@@ -2361,6 +2382,7 @@ impl Validate for Ipv6Ref<'_> {
             return Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "total data length reported in Ipv6 header exceeded the available bytes",
             });
         }
@@ -2371,6 +2393,7 @@ impl Validate for Ipv6Ref<'_> {
             return Err(ValidationError {
                 layer: Ipv4::name(),
                 class: ValidationErrorClass::InvalidValue,
+                #[cfg(feature = "error_string")]
                 reason: "version number of Ipv6 header was not equal to 0x04",
             });
         }
@@ -2380,6 +2403,7 @@ impl Validate for Ipv6Ref<'_> {
             Err(ValidationError {
                 layer: Ipv4Ref::name(),
                 class: ValidationErrorClass::ExcessBytes(curr_layer.len() - (data_len + 40)),
+                #[cfg(feature = "error_string")]
                 reason:
                     "invalid Data Length field in Ipv6 header--extra bytes remain at end of packet",
             })
@@ -2396,6 +2420,7 @@ impl Validate for Ipv6Ref<'_> {
                 None => return Err(ValidationError {
                     layer: Self::name(),
                     class: ValidationErrorClass::InsufficientBytes,
+                    #[cfg(feature = "error_string")]
                     reason:
                         "packet too short for Ipv6 frame--missing data Length field in Ipv6 header",
                 }),
@@ -2406,6 +2431,7 @@ impl Validate for Ipv6Ref<'_> {
             None => return Err(ValidationError {
                 layer: Self::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason:
                     "packet too short for Ipv6 frame--insufficient bytes available for Ipv6 header",
             }),

@@ -363,11 +363,13 @@ impl Validate for UdpRef<'_> {
                     cmp::Ordering::Greater => Err(ValidationError {
                         layer: Udp::name(),
                         class: ValidationErrorClass::InsufficientBytes,
+                        #[cfg(feature = "error_string")]
                         reason: "insufficient bytes for payload length advertised by UDP header",
                     }),
                     cmp::Ordering::Less => Err(ValidationError {
                         layer: Udp::name(),
                         class: ValidationErrorClass::ExcessBytes(curr_layer.len() - length),
+                        #[cfg(feature = "error_string")]
                         reason:
                             "more bytes in packet than advertised by the UDP header length field",
                     }),
@@ -377,6 +379,7 @@ impl Validate for UdpRef<'_> {
             None => Err(ValidationError {
                 layer: Udp::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes for UDP header",
             }),
         }
@@ -395,8 +398,8 @@ impl Validate for UdpRef<'_> {
 // =============================================================================
 
 mod sealed {
-#[doc(hidden)]
-pub trait UdpBuildPhase {}
+    #[doc(hidden)]
+    pub trait UdpBuildPhase {}
 }
 use sealed::UdpBuildPhase;
 
@@ -440,7 +443,7 @@ impl UdpBuildPhase for UdpBuildFinal {}
 ///
 /// let payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
 /// let buffer = [0u8; 100];
-/// 
+///
 /// let udp_builder = UdpBuilder::new(&mut buffer)
 ///     .sport(65321)
 ///     .dport(443)
@@ -577,18 +580,18 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
     /// The UDP packet's payload is constructed via the user-provided `build_payload` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// UDP-within-UDP:
-    /// 
+    ///
     /// ```
     /// use pkts::prelude::*;
     /// use pkts::layers::udp::UdpBuilder;
     ///
     /// let inner_payload = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
     /// let buffer = [0u8; 100];
-    /// 
+    ///
     /// let udp_builder = UdpBuilder::new(&mut buffer)
     ///     .sport(65321)
     ///     .dport(443)
@@ -615,11 +618,15 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
             match build_payload(self.data) {
                 Ok(mut new_data) => {
                     match u16::try_from(new_data.len() - self.layer_start) {
-                        Ok(data_len) => new_data.as_mut_slice()[self.layer_start + 4..self.layer_start + 6].copy_from_slice(&data_len.to_be_bytes()),
-                        Err(_) => self.error = Some(SerializationError::length_encoding(Udp::name())),
+                        Ok(data_len) => new_data.as_mut_slice()
+                            [self.layer_start + 4..self.layer_start + 6]
+                            .copy_from_slice(&data_len.to_be_bytes()),
+                        Err(_) => {
+                            self.error = Some(SerializationError::length_encoding(Udp::name()))
+                        }
                     }
                     data = new_data;
-                },
+                }
                 Err(e) => {
                     self.error = Some(e);
                     data = BufferMut::new(&mut []);

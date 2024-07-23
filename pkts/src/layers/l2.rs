@@ -276,6 +276,7 @@ impl<'a> Validate for EtherRef<'a> {
             Err(ValidationError {
                 layer: Ether::name(),
                 class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
                 reason: "insufficient bytes in Ether layer for header fields",
             })
         } else {
