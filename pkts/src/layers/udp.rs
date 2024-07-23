@@ -205,7 +205,7 @@ impl ToBytes for Udp {
         let len: u16 = self
             .len()
             .try_into()
-            .expect("UDP packet payload exceeded maximum permittable size of 65535 bytes");
+            .map_err(|_| SerializationError::length_encoding(Udp::name()))?;
         bytes.extend(self.sport.to_be_bytes());
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(len.to_be_bytes());
@@ -308,6 +308,7 @@ impl<'a> FromBytesRef<'a> for UdpRef<'a> {
     }
 }
 
+// TODO: this API needs to be revised for multi-payload `Layer`s...
 #[doc(hidden)]
 impl LayerOffset for UdpRef<'_> {
     #[inline]
@@ -376,7 +377,7 @@ impl Validate for UdpRef<'_> {
             None => Err(ValidationError {
                 layer: Udp::name(),
                 class: ValidationErrorClass::InsufficientBytes,
-                reason: "insufficient bytes in UDP header (8 bytes required)",
+                reason: "insufficient bytes for UDP header",
             }),
         }
     }
@@ -390,11 +391,14 @@ impl Validate for UdpRef<'_> {
 }
 
 // =============================================================================
-//                                 UDP Builder
+//                             UDP `Builder` Pattern
 // =============================================================================
 
+mod sealed {
 #[doc(hidden)]
 pub trait UdpBuildPhase {}
+}
+use sealed::UdpBuildPhase;
 
 #[doc(hidden)]
 pub struct UdpBuildSrcPort;
@@ -424,10 +428,9 @@ impl UdpBuildPhase for UdpBuildFinal {}
 ///  Constructs a UDP packet directly onto a mutable slice.
 ///
 /// This struct employs a type-enforced Builder pattern, meaning that each step of building the
-/// UDP packet is represented by a distinct type in the generic type `T`. In practical terms,
-/// this simply means that you can build a UDP packet one field at a time without having to
-/// worry about getting ordering wrong or missing fields--any errors of this kind will be caught
-/// by the compiler.
+/// UDP packet is represented by a distinct type `T`. In practical terms, this simply means that
+/// you can build a UDP packet one field at a time without having to worry about getting ordering
+/// wrong or missing fields--any errors of this kind will be caught by the compiler.
 ///
 /// # Example
 ///
@@ -575,7 +578,7 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
     /// 
-    /// # Example
+    /// # Examples
     /// 
     /// UDP-within-UDP:
     /// 
@@ -600,8 +603,6 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
     ///
     /// let udp_packet = udp_builder.build().unwrap();
     /// ```
-    /// 
-    /// 
     pub fn payload(
         mut self,
         build_payload: impl FnOnce(BufferMut<'a>) -> Result<BufferMut<'a>, SerializationError>,

@@ -172,7 +172,7 @@ pub trait LayerObject: AsAny + BaseLayer + fmt::Debug + ToBytes {
 // =================================================================================================
 //                                       Here be dragons
 // =================================================================================================
-//
+
 // The following is a gross amalgamation of recursive functions. I'm not proud of it.
 //
 // Well, that's not exactly correct. I _am_ proud that it manages to crawl past the borrow checker
@@ -800,7 +800,7 @@ macro_rules! parse_layers {
     }};
 }
 
-/// Parses bytes into a specified sequence of [`Layer`]s, `panic`king on error.
+/// Parses bytes into a specified sequence of [`Layer`]s, `panic()`ing on error.
 ///
 /// # Panic
 #[macro_export]

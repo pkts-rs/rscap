@@ -63,7 +63,7 @@ use core::mem;
 
 use crate::error::*;
 use crate::layers::dev_traits::*;
-use crate::layers::ip::Ipv4Ref;
+use crate::layers::ip::{Ipv4Flags, Ipv4Ref};
 #[cfg(feature = "alloc")]
 use crate::layers::sctp::{DataChunkFlags, SctpRef};
 use crate::layers::traits::*;
@@ -511,7 +511,7 @@ impl<const FRAG_CNT: usize> SequenceObject for Ipv4Sequence<FRAG_CNT> {
         }
 
         let ipv4 = Ipv4Ref::from_bytes_unchecked(pkt);
-        let mf = ipv4.flags().more_fragments();
+        let mf = ipv4.flags().contains(Ipv4Flags::MORE_FRAGMENTS);
         let fo = ipv4.frag_offset() as usize;
         if !mf && fo == 0 {
             let ihl = cmp::max(ipv4.ihl() as usize, 5) * 4;
@@ -531,7 +531,7 @@ impl<const FRAG_CNT: usize> SequenceObject for Ipv4Sequence<FRAG_CNT> {
         let data = pkt.get(ihl..tl).expect("IPv4 Defragment instance encountered packet containing fewer bytes than advertised in its Total Length field");
 
         let id = ipv4.identifier();
-        let mf = ipv4.flags().more_fragments();
+        let mf = ipv4.flags().contains(Ipv4Flags::MORE_FRAGMENTS);
         let fo = ipv4.frag_offset() as usize;
 
         self.fragments.put(data, id, mf, fo);

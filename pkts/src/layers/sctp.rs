@@ -16,13 +16,16 @@ use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
-use core::iter::Iterator;
-use core::mem;
-
-use pkts_macros::{Layer, LayerRef, StatelessLayer};
+use std::iter::Iterator;
+use std::mem;
 use std::slice;
 
 use core::{cmp, iter};
+
+use bitflags::bitflags;
+
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
+
 
 // Chunk Types
 const CHUNK_TYPE_DATA: u8 = 0;
@@ -3006,7 +3009,7 @@ impl AbortChunk {
     #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) -> Result<(), SerializationError> {
         bytes.push(CHUNK_TYPE_ABORT);
-        bytes.push(self.flags.raw());
+        bytes.push(self.flags.bits());
         bytes.extend(
             u16::try_from(self.unpadded_len())
                 .map_err(|_| SerializationError::length_encoding(Sctp::name()))?
@@ -3106,9 +3109,7 @@ impl<'a> AbortChunkRef<'a> {
 
     #[inline]
     pub fn flags(&self) -> AbortFlags {
-        AbortFlags {
-            data: self.flags_raw(),
-        }
+        AbortFlags::from_bits_truncate(self.flags_raw())
     }
 
     #[inline]
@@ -5362,41 +5363,10 @@ impl<'a> GenericParamRef<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct AbortFlags {
-    data: u8,
-}
-
-impl AbortFlags {
-    #[inline]
-    pub fn t(&self) -> bool {
-        self.data & ABORT_FLAGS_T_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_t(&mut self, t: bool) {
-        if t {
-            self.data |= ABORT_FLAGS_T_BIT;
-        } else {
-            self.data &= !ABORT_FLAGS_T_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn raw(&self) -> u8 {
-        self.data
-    }
-
-    #[inline]
-    pub fn raw_mut(&mut self) -> &mut u8 {
-        &mut self.data
-    }
-}
-
-impl From<u8> for AbortFlags {
-    #[inline]
-    fn from(value: u8) -> Self {
-        AbortFlags { data: value }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct AbortFlags: u8 {
+        const T = 0b00000001;
     }
 }
 
@@ -6271,7 +6241,7 @@ impl ShutdownCompleteChunk {
     #[inline]
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(CHUNK_TYPE_SHUTDOWN_COMPLETE);
-        bytes.push(self.flags.data);
+        bytes.push(self.flags.bits());
         bytes.extend(4u16.to_be_bytes());
     }
 }
@@ -6355,7 +6325,7 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
 
     #[inline]
     pub fn flags(&self) -> ShutdownCompleteFlags {
-        ShutdownCompleteFlags { data: self.data[1] }
+        ShutdownCompleteFlags::from_bits_truncate(self.data[1])
     }
 
     #[inline]
@@ -6369,32 +6339,10 @@ impl<'a> ShutdownCompleteChunkRef<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ShutdownCompleteFlags {
-    data: u8,
-}
-
-impl ShutdownCompleteFlags {
-    pub fn raw(&self) -> u8 {
-        self.data
-    }
-
-    pub fn raw_mut(&mut self) -> &mut u8 {
-        &mut self.data
-    }
-
-    #[inline]
-    pub fn t(&self) -> bool {
-        self.data & SHUTDOWN_COMPLETE_FLAGS_T_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_t(&mut self, t: bool) {
-        if t {
-            self.data |= SHUTDOWN_COMPLETE_FLAGS_T_BIT;
-        } else {
-            self.data &= !SHUTDOWN_COMPLETE_FLAGS_T_BIT;
-        }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct ShutdownCompleteFlags: u8 {
+        const T = 0b00000001;
     }
 }
 
@@ -6811,7 +6759,7 @@ impl ToBytes for SctpDataChunk {
     ) -> Result<(), SerializationError> {
         let start = bytes.len();
         bytes.push(0); // DATA Type = 0
-        bytes.push(self.flags.as_raw());
+        bytes.push(self.flags.bits());
         bytes.extend(u16::try_from(self.unpadded_len()).map_err(|_| SerializationError::length_encoding(SctpDataChunk::name()))?.to_be_bytes());
         bytes.extend(self.tsn.to_be_bytes());
         bytes.extend(self.stream_id.to_be_bytes());
@@ -6905,7 +6853,7 @@ impl<'a> SctpDataChunkRef<'a> {
     /// The flags of the DATA chunk.
     #[inline]
     pub fn flags(&self) -> DataChunkFlags {
-        DataChunkFlags { data: self.data[1] }
+        DataChunkFlags::from_bits_truncate(self.data[1])
     }
 
     /// The length (without padding) of the DATA chunk.
@@ -7039,119 +6987,23 @@ impl Validate for SctpDataChunkRef<'_> {
     }
 }
 
-/// The flags of a DATA chunk.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct DataChunkFlags {
-    data: u8,
-}
-
-impl DataChunkFlags {
-    /// Creates a new `DataChunkFlags` instance with none of the flags set.
-    #[inline]
-    pub fn new() -> Self {
-        DataChunkFlags::default()
-    }
-
-    /// The raw byte representation of the DATA chunk flags.
-    #[inline]
-    pub fn as_raw(&self) -> u8 {
-        self.data
-    }
-
-    /// The Immediate ('I') flag.
-    ///
-    /// When set, this flag indicates that a corresponding SACK chunk should be sent back by the
-    /// recipient without delay.
-    #[inline]
-    pub fn immediate(&self) -> bool {
-        self.data & DATA_CHUNK_FLAGS_IMMEDIATE_BIT > 0
-    }
-
-    /// Sets the Immediate ('I') flag.
-    #[inline]
-    pub fn set_immediate(&mut self, immediate: bool) {
-        if immediate {
-            self.data |= DATA_CHUNK_FLAGS_IMMEDIATE_BIT;
-        } else {
-            self.data &= !DATA_CHUNK_FLAGS_IMMEDIATE_BIT;
-        }
-    }
-
-    /// The Unordered ('U') flag.
-    ///
-    /// When set, this flag indicates that the instance is an unordered DATA chunk (i.e. no stream
-    /// sequence number is associated with it).
-    #[inline]
-    pub fn unordered(&self) -> bool {
-        self.data & DATA_CHUNK_FLAGS_UNORDERED_BIT > 0
-    }
-
-    /// Sets the Unordered ('U') flag.
-    #[inline]
-    pub fn set_unordered(&mut self, unordered: bool) {
-        if unordered {
-            self.data |= DATA_CHUNK_FLAGS_UNORDERED_BIT;
-        } else {
-            self.data &= !DATA_CHUNK_FLAGS_UNORDERED_BIT;
-        }
-    }
-
-    /// The Beginning ('B') Fragment flag.
-    ///
-    /// When set, this flag indicates that the chunk contains the first fragment of user data.
-    /// If combined with the Ending ('E') flag, this indicates that the payload of the DATA
-    /// chunk instance is whole and unfragmented.
-    #[inline]
-    pub fn beginning_fragment(&self) -> bool {
-        self.data & DATA_CHUNK_FLAGS_BEGINNING_BIT > 0
-    }
-
-    /// Sets the Beginning ('B') Fragment flag.
-    #[inline]
-    pub fn set_beginning_fragment(&mut self, beginning: bool) {
-        if beginning {
-            self.data |= DATA_CHUNK_FLAGS_BEGINNING_BIT;
-        } else {
-            self.data &= !DATA_CHUNK_FLAGS_BEGINNING_BIT;
-        }
-    }
-
-    /// The Ending ('E') Fragment flag.
-    ///
-    /// When set, this flag indicates that the chunk contains the last fragment of user data.
-    /// If combined with the Beginning ('B') flag, this indicates that the payload of the DATA
-    /// chunk instance is whole and unfragmented.
-    #[inline]
-    pub fn ending_fragment(&self) -> bool {
-        self.data & DATA_CHUNK_FLAGS_ENDING_BIT > 0
-    }
-
-    /// Sets the Ending ('E') Fragment flag.
-    #[inline]
-    pub fn set_ending_fragment(&mut self, ending: bool) {
-        if ending {
-            self.data |= DATA_CHUNK_FLAGS_ENDING_BIT;
-        } else {
-            self.data &= !DATA_CHUNK_FLAGS_ENDING_BIT;
-        }
-    }
-
-    /// The reserved flag bits.
-    #[inline]
-    pub fn reserved(&self) -> u8 {
-        self.data & 0xF0
-    }
-
-    /// Sets the reserved flag bits.
-    #[inline]
-    pub fn set_reserved(&mut self, reserved: u8) {
-        self.data &= 0x0F;
-        self.data |= reserved << 4;
+bitflags! {
+    /// The flags of a DATA chunk.
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct DataChunkFlags: u8 {
+        const R1 = 0b10000000;
+        const R2 = 0b01000000;
+        const R3 = 0b00100000;
+        const R4 = 0b00010000;
+        const IMMEDIATE = 0b00001000;
+        const UNORDERED = 0b00000100;
+        const BEGIN_FRAGMENT = 0b00000010;
+        const END_FRAGMENT = 0b00000001;
     }
 }
 
 impl From<u8> for DataChunkFlags {
     fn from(value: u8) -> Self {
-        DataChunkFlags { data: value }
+        DataChunkFlags::from_bits_truncate(value)
     }
 }

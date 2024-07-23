@@ -22,6 +22,8 @@ use crate::utils;
 use core::iter::Iterator;
 use core::{cmp, iter};
 
+use bitflags::bitflags;
+
 #[derive(Clone, Debug, Layer, StatelessLayer)]
 #[metadata_type(DiameterMetadata)]
 #[ref_type(DiameterRef)]
@@ -205,7 +207,7 @@ impl ToBytes for Diameter {
         // Message Length
         bytes.extend(&len.to_be_bytes()[1..]);
         // Command Flags
-        bytes.push(self.flags.raw());
+        bytes.push(self.flags.bits());
         // Command Code
         bytes.extend(&self.comm_code.to_be_bytes()[1..]);
         // Application Identifier
@@ -242,12 +244,7 @@ impl<'a> DiameterRef<'a> {
 
     #[inline]
     pub fn flags(&self) -> CommandFlags {
-        CommandFlags {
-            flags: *self
-                .data
-                .get(4)
-                .expect("insufficient bytes in Diameter packet for header flags"),
-        }
+        CommandFlags::from_bits_truncate(self.data[4])
     }
 
     #[inline]
@@ -527,7 +524,7 @@ impl FromBytesCurrent for DiamBase {
             app_id: diam.app_id(),
             hop_id: diam.hop_id(),
             end_id: diam.end_id(),
-            command: match (diam.comm_code(), diam.flags().request()) {
+            command: match (diam.comm_code(), diam.flags().contains(CommandFlags::REQUEST)) {
                 (DIAM_BASE_COMM_ABORT_SESSION, true) => {
                     BaseCommand::AbortSessionReq(AbortSessionReq { avps })
                 }
@@ -605,7 +602,7 @@ impl ToBytes for DiamBase {
         // Message Length
         bytes.extend(&len.to_be_bytes()[1..]);
         // Command Flags
-        bytes.push(self.flags.raw());
+        bytes.push(self.flags.bits());
         // Command Code
 
         // TODO: add
@@ -632,20 +629,12 @@ pub struct DiamBaseRef<'a> {
 impl<'a> DiamBaseRef<'a> {
     #[inline]
     pub fn version(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in DiameterRef for header flags")
+        self.data[0]
     }
 
     #[inline]
     pub fn flags(&self) -> CommandFlags {
-        CommandFlags {
-            flags: *self
-                .data
-                .get(4)
-                .expect("insufficient bytes in DiameterRef for header flags"),
-        }
+        CommandFlags::from_bits_truncate(self.data[4])
     }
 
     #[inline]
@@ -925,145 +914,23 @@ impl Validate for S6aRef<'_> {
 //                             Internal Structures
 // =============================================================================
 
-#[derive(Clone, Copy, Debug)]
-pub struct GenericCommandFlags {
-    flags: u8,
-}
-
-const COMM_FLAG_REQUEST: u8 = 0b_1000_0000;
-const COMM_FLAG_PROXIABLE: u8 = 0b_0100_0000;
-const COMM_FLAG_ERROR: u8 = 0b_0010_0000;
-const COMM_FLAG_RETRANSMITTED: u8 = 0b_0001_0000;
-
-impl GenericCommandFlags {
-    #[inline]
-    pub fn raw(&self) -> u8 {
-        self.flags
-    }
-
-    #[inline]
-    pub fn raw_mut(&mut self) -> &mut u8 {
-        &mut self.flags
-    }
-
-    #[inline]
-    pub fn request(&self) -> bool {
-        self.flags & COMM_FLAG_REQUEST > 0
-    }
-
-    #[inline]
-    pub fn set_request(&mut self, request: bool) {
-        if request {
-            self.flags |= COMM_FLAG_REQUEST;
-        } else {
-            self.flags &= !COMM_FLAG_REQUEST;
-        }
-    }
-
-    #[inline]
-    pub fn proxiable(&self) -> bool {
-        self.flags & COMM_FLAG_PROXIABLE > 0
-    }
-
-    #[inline]
-    pub fn set_proxiable(&mut self, proxiable: bool) {
-        if proxiable {
-            self.flags |= COMM_FLAG_PROXIABLE;
-        } else {
-            self.flags &= !COMM_FLAG_PROXIABLE;
-        }
-    }
-
-    #[inline]
-    pub fn error(&self) -> bool {
-        self.flags & COMM_FLAG_ERROR > 0
-    }
-
-    #[inline]
-    pub fn set_error(&mut self, error: bool) {
-        if error {
-            self.flags |= COMM_FLAG_ERROR;
-        } else {
-            self.flags &= !COMM_FLAG_ERROR;
-        }
-    }
-
-    #[inline]
-    pub fn retransmitted(&self) -> bool {
-        self.flags & COMM_FLAG_RETRANSMITTED > 0
-    }
-
-    #[inline]
-    pub fn set_retransmitted(&mut self, retransmitted: bool) {
-        if retransmitted {
-            self.flags |= COMM_FLAG_RETRANSMITTED;
-        } else {
-            self.flags &= !COMM_FLAG_RETRANSMITTED;
-        }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct GenericCommandFlags: u8 {
+        const REQUEST = 0b_1000_0000;
+        const PROXIABLE = 0b_0100_0000;
+        const ERROR = 0b_0010_0000;
+        const RETRANSMITTED = 0b_0001_0000;
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct CommandFlags {
-    flags: u8,
-}
-
-impl CommandFlags {
-    #[inline]
-    pub fn raw(&self) -> u8 {
-        self.flags
-    }
-
-    #[inline]
-    pub fn raw_mut(&mut self) -> &mut u8 {
-        &mut self.flags
-    }
-
-    #[inline]
-    pub fn request(&self) -> bool {
-        self.flags & COMM_FLAG_REQUEST > 0
-    }
-
-    #[inline]
-    pub fn proxiable(&self) -> bool {
-        self.flags & COMM_FLAG_PROXIABLE > 0
-    }
-
-    #[inline]
-    pub fn set_proxiable(&mut self, proxiable: bool) {
-        if proxiable {
-            self.flags |= COMM_FLAG_PROXIABLE;
-        } else {
-            self.flags &= !COMM_FLAG_PROXIABLE;
-        }
-    }
-
-    #[inline]
-    pub fn error(&self) -> bool {
-        self.flags & COMM_FLAG_ERROR > 0
-    }
-
-    #[inline]
-    pub fn set_error(&mut self, error: bool) {
-        if error {
-            self.flags |= COMM_FLAG_ERROR;
-        } else {
-            self.flags &= !COMM_FLAG_ERROR;
-        }
-    }
-
-    #[inline]
-    pub fn retransmitted(&self) -> bool {
-        self.flags & COMM_FLAG_RETRANSMITTED > 0
-    }
-
-    #[inline]
-    pub fn set_retransmitted(&mut self, retransmitted: bool) {
-        if retransmitted {
-            self.flags |= COMM_FLAG_RETRANSMITTED;
-        } else {
-            self.flags &= !COMM_FLAG_RETRANSMITTED;
-        }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct CommandFlags: u8 {
+        const REQUEST = 0b_1000_0000;
+        const PROXIABLE = 0b_0100_0000;
+        const ERROR = 0b_0010_0000;
+        const RETRANSMITTED = 0b_0001_0000;
     }
 }
 
@@ -1704,7 +1571,7 @@ impl GenericAvp {
 
     #[inline]
     pub fn set_vendor_id(&mut self, vendor_id: Option<u32>) {
-        self.flags.set_vendor_specific(self.vendor_id.is_some());
+        self.flags.set(AvpFlags::VENDOR_SPECIFIC, self.vendor_id.is_some());
         self.vendor_id = vendor_id;
     }
 
@@ -1730,7 +1597,7 @@ impl GenericAvp {
         // AVP Code
         bytes.extend(self.code.to_be_bytes());
         // Flags
-        bytes.push(self.flags.raw());
+        bytes.push(self.flags.bits());
         // AVP Length
         bytes.extend(&self.unpadded_len().to_be_bytes()[1..]);
         // Vendor ID
@@ -1781,13 +1648,11 @@ impl<'a> GenericAvpRef<'a> {
     pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
         match utils::to_array(bytes, 4) {
             Some(unpadded_len_arr) => {
-                let flags = AvpFlags {
-                    flags: unpadded_len_arr[0],
-                };
+                let flags = AvpFlags::from_bits_truncate(unpadded_len_arr[0]);
                 let unpadded_len = (0x_00FF_FFFF & u32::from_be_bytes(unpadded_len_arr)) as usize;
                 let len = utils::padded_length::<4>(unpadded_len);
 
-                let minimum_length = if flags.vendor_specific() { 12 } else { 8 };
+                let minimum_length = if flags.contains(AvpFlags::VENDOR_SPECIFIC) { 12 } else { 8 };
 
                 // Validate length field (too big) and header bytes
                 if cmp::max(minimum_length, len) > bytes.len() {
@@ -1846,12 +1711,7 @@ impl<'a> GenericAvpRef<'a> {
 
     #[inline]
     pub fn flags(&self) -> AvpFlags {
-        AvpFlags {
-            flags: *self
-                .data
-                .get(4)
-                .expect("insufficent bytes in Diameter AVP to retrieve AVP Flags field"),
-        }
+        AvpFlags::from_bits_truncate(self.data[4])
     }
 
     #[inline]
@@ -1869,7 +1729,7 @@ impl<'a> GenericAvpRef<'a> {
     }
 
     pub fn vendor_id(&self) -> Option<u32> {
-        if self.flags().vendor_specific() {
+        if self.flags().contains(AvpFlags::VENDOR_SPECIFIC) {
             Some(u32::from_be_bytes(utils::to_array(self.data, 8).expect(
                 "insufficient bytes in Diameter AVP to retrieve Vendor Identifier field",
             )))
@@ -1879,7 +1739,7 @@ impl<'a> GenericAvpRef<'a> {
     }
 
     pub fn data(&self) -> &[u8] {
-        let minimum_length = if self.flags().vendor_specific() {
+        let minimum_length = if self.flags().contains(AvpFlags::VENDOR_SPECIFIC) {
             12
         } else {
             8
@@ -1893,50 +1753,10 @@ impl<'a> GenericAvpRef<'a> {
     }
 }
 
-const AVP_FLAG_VENDOR_SPECIFIC: u8 = 0b_1000_0000;
-const AVP_FLAG_MANDATORY: u8 = 0b_0100_0000;
-
-#[derive(Clone, Copy, Debug)]
-pub struct AvpFlags {
-    flags: u8,
-}
-
-impl AvpFlags {
-    #[inline]
-    pub fn raw(&self) -> u8 {
-        self.flags
-    }
-
-    #[inline]
-    pub fn raw_mut(&mut self) -> &mut u8 {
-        &mut self.flags
-    }
-
-    #[inline]
-    pub fn mandatory(&self) -> bool {
-        self.flags & AVP_FLAG_MANDATORY > 0
-    }
-
-    #[inline]
-    pub fn set_mandatory(&mut self, mandatory: bool) {
-        if mandatory {
-            self.flags |= AVP_FLAG_MANDATORY
-        } else {
-            self.flags &= !AVP_FLAG_MANDATORY
-        }
-    }
-
-    #[inline]
-    pub fn vendor_specific(&self) -> bool {
-        self.flags & AVP_FLAG_VENDOR_SPECIFIC > 0
-    }
-
-    #[inline]
-    pub fn set_vendor_specific(&mut self, vendor_specific: bool) {
-        if vendor_specific {
-            self.flags |= AVP_FLAG_VENDOR_SPECIFIC
-        } else {
-            self.flags &= !AVP_FLAG_VENDOR_SPECIFIC
-        }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct AvpFlags: u8 {
+        const VENDOR_SPECIFIC = 0b_1000_0000;
+        const MANDATORY = 0b_0100_0000;
     }
 }

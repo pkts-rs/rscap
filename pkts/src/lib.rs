@@ -13,8 +13,9 @@
 
 #![allow(clippy::len_without_is_empty)]
 #![allow(dead_code)]
-#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 
 pub mod error;
 pub mod layers;
@@ -76,7 +77,7 @@ mod tests {
                 .build()
             );
     
-        let udp_packet = udp_builder.build().unwrap();
+        let _udp_packet = udp_builder.build().unwrap();
     }
 
     #[test]

@@ -51,14 +51,8 @@ impl MysqlPacket {
     }
 
     #[inline]
-    pub fn payload_length(&self) -> u32 {
-        let len = u32::try_from(4 + self.payload.as_ref().map_or(0, |p| p.len()))
-            .expect("too many bytes in MysqlClient payload to represent in a 24-bit Length field");
-        assert!(
-            len < 2 ^ (24 - 1),
-            "too many bytes in MysqlClient payload to represent in a 24-bit Length field"
-        );
-        len
+    pub fn payload_length(&self) -> usize {
+        4 + self.payload.as_ref().map_or(0, |p| p.len())
     }
 }
 
@@ -355,10 +349,6 @@ pub enum MessageTypeRef {
     // <'a>
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MessageTypeMut {
-    // <'a>
-}
 
 // A few notes:
 // 1. Encapsulation of `MysqlPacket` type should be explicit--we can't abstract that out without ridiculousness like `sstr`.

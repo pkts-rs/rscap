@@ -16,8 +16,6 @@ use core::fmt::Debug;
 use core::iter::Iterator;
 use core::{cmp, slice};
 
-use pkts_macros::{Layer, LayerRef, StatelessLayer};
-
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::{error::*, utils};
@@ -26,6 +24,10 @@ use super::sctp::{Sctp, SctpRef};
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
+
+use bitflags::bitflags;
+
+use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 /// Internet Protocol, Version 4 (see RFC 760)
 pub const IP_VERSION_IPV4: u8 = 4;
@@ -793,7 +795,7 @@ impl ToBytes for Ipv4 {
         bytes.push((self.dscp.dscp() << 2) | self.ecn as u8);
         bytes.extend(u16::try_from(self.len()).unwrap_or(0xFFFF).to_be_bytes()); // WARNING: packets with contents greater than 65535 bytes will have their length field truncated
         bytes.extend(self.id.to_be_bytes());
-        bytes.extend((((self.flags.flags as u16) << 8) | self.frag_offset).to_be_bytes());
+        bytes.extend((((self.flags.bits() as u16) << 8) | self.frag_offset).to_be_bytes());
         bytes.push(self.ttl);
         bytes.push(
             self.payload
@@ -1290,60 +1292,19 @@ impl From<u8> for Ecn {
     }
 }
 
-const RESERVED_BIT: u8 = 0b10000000;
-const DONT_FRAGMENT_BIT: u8 = 0b01000000;
-const MORE_FRAGMENTS_BIT: u8 = 0b00100000;
-
-/// Flags available in an IPv4 packet
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Ipv4Flags {
-    flags: u8,
-}
-
-impl Ipv4Flags {
-    pub fn reserved(&self) -> bool {
-        self.flags & RESERVED_BIT > 0
-    }
-
-    pub fn set_reserved(&mut self, reserved: bool) {
-        if reserved {
-            self.flags |= RESERVED_BIT
-        } else {
-            self.flags &= !RESERVED_BIT
-        }
-    }
-
-    pub fn dont_fragment(&self) -> bool {
-        self.flags & DONT_FRAGMENT_BIT > 0
-    }
-
-    pub fn set_dont_fragment(&mut self, dont_fragment: bool) {
-        if dont_fragment {
-            self.flags |= DONT_FRAGMENT_BIT
-        } else {
-            self.flags &= !DONT_FRAGMENT_BIT
-        }
-    }
-
-    pub fn more_fragments(&self) -> bool {
-        self.flags & MORE_FRAGMENTS_BIT > 0
-    }
-
-    pub fn set_more_fragments(&mut self, more_fragments: bool) {
-        if more_fragments {
-            self.flags |= MORE_FRAGMENTS_BIT
-        } else {
-            self.flags &= !MORE_FRAGMENTS_BIT
-        }
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Ipv4Flags: u8 {
+        const RESERVED = 0b10000000;
+        const DONT_FRAGMENT = 0b01000000;
+        const MORE_FRAGMENTS = 0b00100000;
     }
 }
 
 impl From<u8> for Ipv4Flags {
     /// Converts the most significant 3 bits of the given byte into Ipv4-specific flags.
     fn from(value: u8) -> Self {
-        Ipv4Flags {
-            flags: value & 0b11100000,
-        }
+        Ipv4Flags::from_bits_truncate(value)
     }
 }
 

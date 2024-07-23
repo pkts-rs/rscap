@@ -19,6 +19,9 @@ use crate::layers::traits::*;
 use crate::utils;
 use crate::{layers::*, Buffer};
 
+use bitflags::bitflags;
+
+use pkts_common::BufferMut;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::{cmp, mem, slice};
@@ -275,8 +278,8 @@ impl ToBytes for Tcp {
         bytes.extend(self.dport.to_be_bytes());
         bytes.extend(self.seq.to_be_bytes());
         bytes.extend(self.ack.to_be_bytes());
-        bytes.push(((self.data_offset() as u8) << 4) | ((self.flags.data >> 8) as u8));
-        bytes.push((self.flags.data & 0x00FF) as u8);
+        bytes.push(((self.data_offset() as u8) << 4) | ((self.flags.bits() >> 8) as u8));
+        bytes.push((self.flags.bits() & 0x00FF) as u8);
         bytes.extend(self.window.to_be_bytes());
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
         bytes.extend(self.urgent_ptr.to_be_bytes());
@@ -560,8 +563,11 @@ impl Validate for TcpRef<'_> {
 //                                 TCP Builder
 // =============================================================================
 
-#[doc(hidden)]
-pub trait TcpBuildPhase {}
+mod sealed {
+    #[doc(hidden)]
+    pub trait TcpBuildPhase {}
+}
+use sealed::TcpBuildPhase;
 
 #[doc(hidden)]
 pub struct TcpBuildSrcPort;
@@ -638,30 +644,24 @@ impl TcpBuildPhase for TcpBuildFinal {}
 /// let tcp_packet: Buffer<65536> = match tcp_builder.build().unwrap();
 /// ```
 ///
-pub struct TcpBuilder<T: TcpBuildPhase, const N: usize> {
-    data: Buffer<N>,
+pub struct TcpBuilder<'a, T: TcpBuildPhase> {
+    data: BufferMut<'a>,
     layer_start: usize,
-    error: Option<ValidationError>,
+    error: Option<SerializationError>,
     phase: T,
 }
 
-impl<const N: usize> Default for TcpBuilder<TcpBuildSrcPort, N> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
-    pub fn new() -> Self {
+impl<'a> TcpBuilder<'a, TcpBuildSrcPort> {
+    pub fn new(buffer: &'a mut [u8]) -> Self {
         Self {
             layer_start: 0,
-            data: Buffer::new(),
+            data: BufferMut::new(buffer),
             error: None,
             phase: TcpBuildSrcPort,
         }
     }
 
-    pub fn from_buffer(buffer: Buffer<N>) -> Self {
+    pub fn from_buffer(buffer: BufferMut<'a>) -> Self {
         Self {
             layer_start: buffer.len(),
             data: buffer,
@@ -670,16 +670,12 @@ impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
         }
     }
 
-    pub fn sport(mut self, sport: u16) -> TcpBuilder<TcpBuildDstPort, N> {
+    pub fn sport(mut self, sport: u16) -> TcpBuilder<'a, TcpBuildDstPort> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
                 self.data.append(&sport.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Source Port serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -692,18 +688,14 @@ impl<const N: usize> TcpBuilder<TcpBuildSrcPort, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildDstPort, N> {
+impl<'a> TcpBuilder<'a, TcpBuildDstPort> {
     #[inline]
-    pub fn dport(mut self, dport: u16) -> TcpBuilder<TcpBuildSeq, N> {
+    pub fn dport(mut self, dport: u16) -> TcpBuilder<'a, TcpBuildSeq> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
                 self.data.append(&dport.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Destination Port serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -716,18 +708,14 @@ impl<const N: usize> TcpBuilder<TcpBuildDstPort, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildSeq, N> {
+impl<'a> TcpBuilder<'a, TcpBuildSeq> {
     #[inline]
-    pub fn seq(mut self, seq: u32) -> TcpBuilder<TcpBuildAck, N> {
+    pub fn seq(mut self, seq: u32) -> TcpBuilder<'a, TcpBuildAck> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
                 self.data.append(&seq.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Sequence Number serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -740,17 +728,13 @@ impl<const N: usize> TcpBuilder<TcpBuildSeq, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildAck, N> {
-    pub fn ack(mut self, ack: u32) -> TcpBuilder<TcpBuildFlags, N> {
+impl<'a> TcpBuilder<'a, TcpBuildAck> {
+    pub fn ack(mut self, ack: u32) -> TcpBuilder<'a, TcpBuildFlags> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
                 self.data.append(&ack.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Sequence Number serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -763,18 +747,13 @@ impl<const N: usize> TcpBuilder<TcpBuildAck, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
-    pub fn flags(mut self, flags: TcpFlags) -> TcpBuilder<TcpBuildFlags, N> {
+impl<'a> TcpBuilder<'a, TcpBuildFlags> {
+    pub fn flags(mut self, flags: TcpFlags) -> TcpBuilder<'a, TcpBuildFlags> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u32>() {
-                self.data.append(&flags.data.to_be_bytes());
+                self.data.append(&flags.bits().to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason:
-                        "TCP Acknowledgement Number serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -787,17 +766,13 @@ impl<const N: usize> TcpBuilder<TcpBuildFlags, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildWindowSize, N> {
-    pub fn chksum(mut self, window: u16) -> TcpBuilder<TcpBuildChksum, N> {
+impl<'a> TcpBuilder<'a, TcpBuildWindowSize> {
+    pub fn cwnd(mut self, window: u16) -> TcpBuilder<'a, TcpBuildChksum> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
                 self.data.append(&window.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Window Size serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -810,17 +785,13 @@ impl<const N: usize> TcpBuilder<TcpBuildWindowSize, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
-    pub fn chksum(mut self, chksum: u16) -> TcpBuilder<TcpBuildOptsPayload, N> {
+impl<'a> TcpBuilder<'a, TcpBuildChksum> {
+    pub fn chksum(mut self, chksum: u16) -> TcpBuilder<'a, TcpBuildOptsPayload> {
         if self.error.is_none() {
             if self.data.remaining() >= mem::size_of::<u16>() {
                 self.data.append(&chksum.to_be_bytes());
             } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Checksum serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
             }
         }
 
@@ -833,54 +804,36 @@ impl<const N: usize> TcpBuilder<TcpBuildChksum, N> {
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
-    pub fn option(mut self, _option: TcpOption) -> TcpBuilder<TcpBuildOptsPayload, N> {
+impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
+    pub fn option(mut self, option: TcpOption) -> TcpBuilder<'a, TcpBuildOptsPayload> {
         if self.error.is_none() {
-            if self.data.remaining() >= mem::size_of::<u16>() {
-                //                self.data.append(&chksum.to_be_bytes());
-            } else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Options serialization exceeded available buffer size",
-                });
+            if let Err(e) = option.encode(&mut self.data) {
+                self.error = Some(e);
             }
         }
 
-        todo!()
-
-        /*
         TcpBuilder {
             layer_start: self.layer_start,
             data: self.data,
             error: self.error,
             phase: TcpBuildOptsPayload,
         }
-        */
     }
 
     /// Add a payload consisting of raw bytes to the TCP packet.
-    pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<TcpBuildFinal, N> {
+    pub fn payload_raw(mut self, data: &[u8]) -> TcpBuilder<'a, TcpBuildFinal> {
         'insert_data: {
             if self.error.is_some() {
                 break 'insert_data;
             }
 
             if self.data.remaining() < data.len() {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InsufficientBytes,
-                    reason: "TCP Payload serialization exceeded available buffer size",
-                });
+                self.error = Some(SerializationError::insufficient_buffer(Tcp::name()));
                 break 'insert_data;
             }
 
             let Ok(data_len) = u16::try_from(data.len() + 8) else {
-                self.error = Some(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidSize,
-                    reason: "TCP Payload serialization exceeded UDP maximum possible length",
-                });
+                self.error = Some(SerializationError::length_encoding(Tcp::name()));
                 break 'insert_data;
             };
 
@@ -902,39 +855,47 @@ impl<const N: usize> TcpBuilder<TcpBuildOptsPayload, N> {
         }
     }
 
-    /// Add a payload to the UDP packet.
+    /// Add a payload layer to the TCP packet.
     ///
-    /// The UDP packet's payload is constructed via the user-provided `payload_build_fn` closure;
+    /// The TCP packet's payload is constructed via the user-provided `build_payload` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested
     /// manner.
     pub fn payload(
-        self,
-        payload_build_fn: impl FnOnce(Buffer<N>) -> Result<Buffer<N>, ValidationError>,
-    ) -> Result<Buffer<N>, ValidationError> {
-        if let Some(error) = self.error {
-            return Err(error);
+        mut self,
+        build_payload: impl FnOnce(BufferMut<'a>) -> Result<BufferMut<'a>, SerializationError>,
+    ) -> TcpBuilder<'a, TcpBuildFinal> {
+        let data;
+
+        if self.error.is_some() {
+            data = self.data;
+        } else {
+            match build_payload(self.data) {
+                Ok(mut new_data) => {
+                    match u16::try_from(new_data.len() - self.layer_start) {
+                        Ok(data_len) => new_data.as_mut_slice()[self.layer_start + 4..self.layer_start + 6].copy_from_slice(&data_len.to_be_bytes()),
+                        Err(_) => self.error = Some(SerializationError::length_encoding(Tcp::name())),
+                    }
+                    data = new_data;
+                },
+                Err(e) => {
+                    self.error = Some(e);
+                    data = BufferMut::new(&mut []);
+                }
+            }
         }
-        let mut data = payload_build_fn(self.data)?;
-        let Ok(data_len) = u16::try_from(data.len() - self.layer_start) else {
-            return Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::InvalidSize,
-                reason: "TCP Payload serialization exceeded UDP maximum possible length",
-            });
-        };
 
-        let len_start = self.layer_start + 4;
-        let len_end = self.layer_start + 6;
-
-        // Set data length field
-        data.as_mut_slice()[len_start..len_end].copy_from_slice(&data_len.to_be_bytes());
-        Ok(data)
+        TcpBuilder {
+            data,
+            layer_start: self.layer_start,
+            error: self.error,
+            phase: TcpBuildFinal,
+        }
     }
 }
 
-impl<const N: usize> TcpBuilder<TcpBuildFinal, N> {
+impl<'a> TcpBuilder<'a, TcpBuildFinal> {
     #[inline]
-    pub fn build(self) -> Result<Buffer<N>, ValidationError> {
+    pub fn build(self) -> Result<BufferMut<'a>, SerializationError> {
         match self.error {
             Some(error) => Err(error),
             None => Ok(self.data),
@@ -946,29 +907,22 @@ impl<const N: usize> TcpBuilder<TcpBuildFinal, N> {
 //                         Inner Field Data Structures
 // =============================================================================
 
-const R1_BIT: u16 = 0b_0000_1000_0000_0000;
-const R2_BIT: u16 = 0b_0000_0100_0000_0000;
-const R3_BIT: u16 = 0b_0000_0010_0000_0000;
-const NS_BIT: u16 = 0b_0000_0001_0000_0000;
-const CWR_BIT: u16 = 0b_0000_0000_1000_0000;
-const ECE_BIT: u16 = 0b_0000_0000_0100_0000;
-const URG_BIT: u16 = 0b_0000_0000_0010_0000;
-const ACK_BIT: u16 = 0b_0000_0000_0001_0000;
-const PSH_BIT: u16 = 0b_0000_0000_0000_1000;
-const RST_BIT: u16 = 0b_0000_0000_0000_0100;
-const SYN_BIT: u16 = 0b_0000_0000_0000_0010;
-const FIN_BIT: u16 = 0b_0000_0000_0000_0001;
-
-/// The flags of a TCP packet.
-///
-/// This field includes the following:
-/// ```txt
-/// | Res |N|C|E|U|A|P|R|S|F|
-/// ```
-///
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TcpFlags {
-    data: u16,
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct TcpFlags: u16 {
+        const R1 = 0b_0000_1000_0000_0000;
+        const R2 = 0b_0000_0100_0000_0000;
+        const R3 = 0b_0000_0010_0000_0000;
+        const NS = 0b_0000_0001_0000_0000;
+        const CWR = 0b_0000_0000_1000_0000;
+        const ECE = 0b_0000_0000_0100_0000;
+        const URG = 0b_0000_0000_0010_0000;
+        const ACK = 0b_0000_0000_0001_0000;
+        const PSH = 0b_0000_0000_0000_1000;
+        const RST = 0b_0000_0000_0000_0100;
+        const SYN = 0b_0000_0000_0000_0010;
+        const FIN = 0b_0000_0000_0000_0001;
+    }
 }
 
 impl TcpFlags {
@@ -976,181 +930,11 @@ impl TcpFlags {
     pub fn new() -> Self {
         TcpFlags::default()
     }
-
-    #[inline]
-    pub fn reserved_1(&self) -> bool {
-        self.data & R1_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_reserved_1(&mut self, r1: bool) {
-        if r1 {
-            self.data |= R1_BIT;
-        } else {
-            self.data &= !R1_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn reserved_2(&self) -> bool {
-        self.data & R2_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_reserved_2(&mut self, r1: bool) {
-        if r1 {
-            self.data |= R2_BIT;
-        } else {
-            self.data &= !R2_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn reserved_3(&self) -> bool {
-        self.data & R3_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_reserved_3(&mut self, r1: bool) {
-        if r1 {
-            self.data |= R3_BIT;
-        } else {
-            self.data &= !R3_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn ns(&self) -> bool {
-        self.data & NS_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_ns(&mut self, ns: bool) {
-        if ns {
-            self.data |= NS_BIT;
-        } else {
-            self.data &= !NS_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn cwr(&self) -> bool {
-        self.data & CWR_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_cwr(&mut self, cwr: bool) {
-        if cwr {
-            self.data |= CWR_BIT;
-        } else {
-            self.data &= !CWR_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn ece(&self) -> bool {
-        self.data & ECE_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_ece(&mut self, ece: bool) {
-        if ece {
-            self.data |= ECE_BIT;
-        } else {
-            self.data &= !ECE_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn urg(&self) -> bool {
-        self.data & URG_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_urg(&mut self, urg: bool) {
-        if urg {
-            self.data |= URG_BIT;
-        } else {
-            self.data &= !URG_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn ack(&self) -> bool {
-        self.data & ACK_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_ack(&mut self, ack: bool) {
-        if ack {
-            self.data |= ACK_BIT;
-        } else {
-            self.data &= !ACK_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn psh(&self) -> bool {
-        self.data & PSH_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_psh(&mut self, psh: bool) {
-        if psh {
-            self.data |= PSH_BIT;
-        } else {
-            self.data &= !PSH_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn rst(&self) -> bool {
-        self.data & RST_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_rst(&mut self, rst: bool) {
-        if rst {
-            self.data |= RST_BIT;
-        } else {
-            self.data &= !RST_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn syn(&self) -> bool {
-        self.data & SYN_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_syn(&mut self, syn: bool) {
-        if syn {
-            self.data |= SYN_BIT;
-        } else {
-            self.data &= !SYN_BIT;
-        }
-    }
-
-    #[inline]
-    pub fn fin(&self) -> bool {
-        self.data & FIN_BIT > 0
-    }
-
-    #[inline]
-    pub fn set_fin(&mut self, ns: bool) {
-        if ns {
-            self.data |= FIN_BIT;
-        } else {
-            self.data &= !FIN_BIT;
-        }
-    }
 }
 
 impl From<u16> for TcpFlags {
     fn from(value: u16) -> Self {
-        TcpFlags {
-            data: value & 0b_0000_0001_1111_1111,
-        }
+        TcpFlags::from_bits_truncate(value)
     }
 }
 
@@ -1467,6 +1251,16 @@ pub enum TcpOption {
     Padding(TcpOptionPadding),
     /// A TCP option with an unknown `kind` (i.e. different from listed above).
     Unknown(TcpOptionUnknown),
+}
+
+impl TcpOption {
+    pub fn encode(&self, buffer: &mut BufferMut<'_>) -> Result<(), SerializationError> {
+        match self {
+            Self::Eool => buffer.append_or(&[0], SerializationError::insufficient_buffer(Tcp::name())),
+            Self::Nop => buffer.append_or(&[1], SerializationError::insufficient_buffer(Tcp::name())),
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
