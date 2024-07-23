@@ -978,14 +978,15 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
         }
 
         let diff = self.curr_stream_seq.diff_wrapped(stream_seq) as usize;
-        if !flags.unordered() && diff >= RWND {
+        if !flags.contains(DataChunkFlags::UNORDERED) && diff >= RWND {
             return; // Drop packet--not within receive window
         }
 
-        if flags.beginning_fragment() && flags.ending_fragment() {
+        if flags.contains(DataChunkFlags::BEGIN_FRAGMENT) && flags.contains(DataChunkFlags::END_FRAGMENT) {
             // The packet isn't a fragment--it only needs to be reordered
-            if flags.unordered() {
+            if flags.contains(DataChunkFlags::UNORDERED) {
                 // The packet isn't a fragment, and doesn't need to be reordered
+                todo!()
             }
             let rwnd_idx = (self.reorder_start + diff) % RWND;
             self.reorder[rwnd_idx].occupied = true;
@@ -1022,7 +1023,7 @@ impl<const RWND: usize, const FRAG_CNT: usize> SctpSegments<RWND, FRAG_CNT> {
             frag.insert(
                 data,
                 tsn,
-                (flags.beginning_fragment(), flags.ending_fragment()),
+                (flags.contains(DataChunkFlags::BEGIN_FRAGMENT), flags.contains(DataChunkFlags::END_FRAGMENT)),
             );
 
             if frag.is_complete() {
@@ -1465,7 +1466,7 @@ impl<const WINDOW: usize> SctpSequence<WINDOW> {
         let start_tsn = loop {
             match i.next() {
                 Some(frag) => {
-                    if frag.flags.beginning_fragment() {
+                    if frag.flags.contains(DataChunkFlags::BEGIN_FRAGMENT) {
                         break frag.tsn;
                     }
                 }
@@ -1478,7 +1479,7 @@ impl<const WINDOW: usize> SctpSequence<WINDOW> {
                 return false;
             }
 
-            if frag.flags.ending_fragment() {
+            if frag.flags.contains(DataChunkFlags::END_FRAGMENT) {
                 return true;
             }
         }
@@ -1523,15 +1524,15 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
 
         for payload in sctp.payload_chunks() {
             let flags = payload.flags();
-            if flags.beginning_fragment() && flags.ending_fragment() {
-                if flags.unordered() {
+            if flags.contains(DataChunkFlags::BEGIN_FRAGMENT) && flags.contains(DataChunkFlags::END_FRAGMENT) {
+                if flags.contains(DataChunkFlags::UNORDERED) {
                     self.out.push_back(Vec::from(payload.user_data()));
                 } else {
                     self.put_unordered(payload.stream_seq(), Vec::from(payload.user_data()));
                 }
             } else {
                 let tsn = payload.tsn();
-                let ssn = if flags.unordered() {
+                let ssn = if flags.contains(DataChunkFlags::UNORDERED) {
                     None
                 } else {
                     Some(payload.stream_seq())
@@ -1564,7 +1565,7 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
                     let mut reassembled = Vec::new();
                     let mut beginning_seen = false;
                     for entry in frags {
-                        if entry.flags.beginning_fragment() {
+                        if entry.flags.contains(DataChunkFlags::UNORDERED) {
                             beginning_seen = true;
                         }
 
@@ -1572,7 +1573,7 @@ impl<const WINDOW: usize> SequenceObject for SctpSequence<WINDOW> {
                             reassembled.append(&mut entry.data);
                         }
 
-                        if entry.flags.ending_fragment() {
+                        if entry.flags.contains(DataChunkFlags::END_FRAGMENT) {
                             break;
                         }
                     }
