@@ -21,7 +21,7 @@ pub mod layers;
 #[doc(hidden)]
 pub mod prelude;
 pub mod sequence;
-pub mod sessions;
+pub mod session;
 pub mod utils;
 
 mod private {

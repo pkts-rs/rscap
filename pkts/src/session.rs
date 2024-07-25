@@ -36,7 +36,6 @@
 //! for that state. Transitions between states are represented by methods that can be called on a
 //! `Session`, such that only valid transitions are offered in a given state.
 //!
-//!
 //! TODO: example(s) here
 //!
 //! [`Tcp`]: struct@crate::layers::tcp::Tcp
