@@ -196,10 +196,7 @@ impl ToBytes for Diameter {
     ) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
-        let len: u32 = self
-            .len()
-            .try_into()
-            .expect("Diameter packet length exceeded maximum size for Message Length field");
+        let len: u32 = self.len().try_into().unwrap();
         assert!(
             len < 0x_00FF_FFFF,
             "Diameter packet length exceeded maximum size for Message Length field"
@@ -236,10 +233,7 @@ pub struct DiameterRef<'a> {
 impl<'a> DiameterRef<'a> {
     #[inline]
     pub fn version(&self) -> u8 {
-        *self
-            .data
-            .first()
-            .expect("insufficient bytes in Diameter packet for header flags")
+        self.data[0]
     }
 
     #[inline]
@@ -250,11 +244,7 @@ impl<'a> DiameterRef<'a> {
     #[inline]
     pub fn unpadded_len(&self) -> u32 {
         0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.data, 0).expect(
-                    "insufficient bytes in Diameter packet to retrieve Message Length field",
-                ),
-            )
+            & u32::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
@@ -265,40 +255,28 @@ impl<'a> DiameterRef<'a> {
     #[inline]
     pub fn comm_code(&self) -> u32 {
         0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.data, 4)
-                    .expect("insufficient bytes in Diameter packet to retrieve Command Code field"),
-            )
+            & u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn app_id(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 8).expect(
-            "insufficient bytes in Diameter packet to retrieve Application Identifier field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     #[inline]
     pub fn hop_id(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 12).expect(
-            "insufficient bytes in Diameter packet to retrieve Hop-by-Hop Identifier field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     #[inline]
     pub fn end_id(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 16).expect(
-            "insufficient bytes in Diameter packet to retrieve End-to-End Identifier field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 16).unwrap())
     }
 
     #[inline]
     pub fn avp_iter(&self) -> AvpIterRef<'a> {
         AvpIterRef {
-            bytes: self
-                .data
-                .get(20..)
-                .expect("insufficient bytes in Diameter packet to retrieve header"),
+            bytes: &self.data[20..]
         }
     }
 }
@@ -410,17 +388,9 @@ impl<'a> Iterator for AvpIterRef<'a> {
             return None;
         }
 
-        let unpadded_len = 0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.bytes, 4)
-                    .expect("insufficient bytes in Diameter AVP for header values"),
-            );
+        let unpadded_len = 0x_00FF_FFFF & u32::from_be_bytes(utils::to_array(self.bytes, 4).unwrap());
         let len = cmp::max(utils::padded_length::<4>(unpadded_len as usize), 12);
-        let opt = GenericAvpRef::from_bytes_unchecked(
-            self.bytes
-                .get(..len)
-                .expect("insufficient bytes in Diameter AVP for header and/or Data field"),
-        );
+        let opt = GenericAvpRef::from_bytes_unchecked(&self.bytes[..len]);
         self.bytes = &self.bytes[len..];
         Some(opt)
     }
@@ -599,10 +569,7 @@ impl ToBytes for DiamBase {
     ) -> Result<(), SerializationError> {
         // Version
         bytes.push(1);
-        let len: u32 = self
-            .len()
-            .try_into()
-            .expect("Diameter packet length exceeded maximum size for Message Length field");
+        let len: u32 = self.len().try_into().unwrap();
         assert!(
             len < 0x_00FF_FFFF,
             "Diameter packet length exceeded maximum size for Message Length field"
@@ -647,11 +614,7 @@ impl<'a> DiamBaseRef<'a> {
 
     #[inline]
     pub fn unpadded_len(&self) -> u32 {
-        0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.data, 0)
-                    .expect("insufficient bytes in DiameterRef to retrieve Message Length field"),
-            )
+        0x_00FF_FFFF & u32::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
@@ -661,44 +624,28 @@ impl<'a> DiamBaseRef<'a> {
 
     #[inline]
     pub fn comm_code(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in DiameterRef to retrieve Command Code field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
     pub fn app_id(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 8).expect(
-                "insufficient bytes in DiameterRef to retrieve Application Identifier field",
-            ),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     #[inline]
     pub fn hop_id(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 12).expect(
-                "insufficient bytes in DiameterRef to retrieve Hop-by-Hop Identifier field",
-            ),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     #[inline]
     pub fn end_id(&self) -> u32 {
-        u32::from_be_bytes(utils::to_array(self.data, 16).expect(
-            "insufficient bytes in Diameter message to retrieve End-to-End Identifier field",
-        ))
+        u32::from_be_bytes(utils::to_array(self.data, 16).unwrap())
     }
 
     #[inline]
     pub fn avp_iter(&self) -> BaseAvpIterRef<'a> {
         BaseAvpIterRef {
-            bytes: self
-                .data
-                .get(20..)
-                .expect("insufficient bytes in Base Diameter message to retrieve header"),
+            bytes: &self.data[20..],
         }
     }
 }
@@ -1187,17 +1134,9 @@ impl<'a> Iterator for BaseAvpIterRef<'a> {
             return None;
         }
 
-        let unpadded_len = 0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.bytes, 4)
-                    .expect("insufficient bytes in Diameter Base AVP for header values"),
-            );
+        let unpadded_len = 0x_00FF_FFFF & u32::from_be_bytes(utils::to_array(self.bytes, 4).unwrap());
         let len = cmp::max(utils::padded_length::<4>(unpadded_len as usize), 12);
-        let opt = BaseAvpRef::from_bytes_unchecked(
-            self.bytes
-                .get(..len)
-                .expect("insufficient bytes in Diameter Base AVP for header + Data field"),
-        );
+        let opt = BaseAvpRef::from_bytes_unchecked(&self.bytes[..len]);
         self.bytes = &self.bytes[len..];
         Some(opt)
     }
@@ -1562,13 +1501,11 @@ impl GenericAvp {
 
     #[inline]
     pub fn unpadded_len(&self) -> u32 {
-        let len = (12 + self.data.len())
-            .try_into()
-            .expect("AVP Data payload exceeded maximum size for AVP Length field");
         assert!(
-            len < 0x_00FF_FFFF,
+            self.data.len() < 0x_00FF_FFFF,
             "AVP Data payload exceeded maximum size for AVP Length field"
         );
+        let len = (12 + self.data.len()).try_into().unwrap();
         len
     }
 
@@ -1697,7 +1634,7 @@ impl<'a> GenericAvpRef<'a> {
                     if *b != 0 {
                         return Err(ValidationError {
                             layer: Diameter::name(),
-                            class: ValidationErrorClass::InvalidValue, // TODO: should we add a new ErrorType::UnexpectedValue or ::ValueWarning?
+                            class: ValidationErrorClass::UnusualPadding,
                             #[cfg(feature = "error_string")]
                             reason: "non-zero padding values found at end of Diameter AVP",
                         });
@@ -1726,10 +1663,7 @@ impl<'a> GenericAvpRef<'a> {
 
     #[inline]
     pub fn code(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in Diameter AVP to retrieve AVP Code field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     #[inline]
@@ -1739,11 +1673,7 @@ impl<'a> GenericAvpRef<'a> {
 
     #[inline]
     pub fn unpadded_len(&self) -> u32 {
-        0x_00FF_FFFF
-            & u32::from_be_bytes(
-                utils::to_array(self.data, 4)
-                    .expect("insufficient bytes in Diameter AVP to retrieve AVP Length field"),
-            )
+        0x_00FF_FFFF & u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     #[inline]
@@ -1753,9 +1683,7 @@ impl<'a> GenericAvpRef<'a> {
 
     pub fn vendor_id(&self) -> Option<u32> {
         if self.flags().contains(AvpFlags::VENDOR_SPECIFIC) {
-            Some(u32::from_be_bytes(utils::to_array(self.data, 8).expect(
-                "insufficient bytes in Diameter AVP to retrieve Vendor Identifier field",
-            )))
+            Some(u32::from_be_bytes(utils::to_array(self.data, 8).unwrap()))
         } else {
             None
         }
@@ -1770,9 +1698,7 @@ impl<'a> GenericAvpRef<'a> {
 
         let end = self.unpadded_len() as usize;
         assert!(end >= minimum_length, "error retrieving AVP Data field--length field in Diameter AVP was not long enough for AVP header");
-        self.data
-            .get(minimum_length..end)
-            .expect("insufficent bytes in Diameter AVP to retrieve Data field")
+        &self.data[minimum_length..end]
     }
 }
 

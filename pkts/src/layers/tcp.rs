@@ -413,37 +413,25 @@ impl<'a> TcpRef<'a> {
     /// The source port of the TCP packet.
     #[inline]
     pub fn sport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 0)
-                .expect("insufficient bytes in TCP layer to retrieve Source Port field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 0).unwrap())
     }
 
     /// The destination port of the TCP packet.
     #[inline]
     pub fn dport(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 2)
-                .expect("insufficient bytes in TCP layer to retrieve Destination Port field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     /// The sequence number of the TCP packet.
     #[inline]
     pub fn seq(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TCP layer to retrieve Sequence Number field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     /// The acknowledgement number of the TCP packet.
     #[inline]
     pub fn ack(&self) -> u32 {
-        u32::from_be_bytes(
-            utils::to_array(self.data, 4)
-                .expect("insufficient bytes in TCP layer to retrieve Acknowledgement Number field"),
-        )
+        u32::from_be_bytes(utils::to_array(self.data, 8).unwrap())
     }
 
     /// Indicates the first byte of the data payload for the TCP packet.
@@ -452,59 +440,39 @@ impl<'a> TcpRef<'a> {
     /// correspond to a 20-byte data offset.
     #[inline]
     pub fn data_offset(&self) -> usize {
-        (self
-            .data
-            .get(12)
-            .expect("insufficient bytes in TCP layer to retrieve Data Offset field")
-            >> 4) as usize
+        (self.data[12] >> 4) as usize
     }
 
     /// The flags of the TCP packet.
     #[inline]
     pub fn flags(&self) -> TcpFlags {
-        TcpFlags::from(u16::from_be_bytes(
-            utils::to_array(self.data, 12)
-                .expect("insufficient bytes in TCP layer to retrieve TCP Flags"),
-        ))
+        TcpFlags::from_bits_truncate(u16::from_be_bytes(utils::to_array(self.data, 12).unwrap()))
     }
 
     /// The congestion window (cwnd) advertised by the TCP packet.
     #[inline]
     pub fn window(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 14)
-                .expect("insufficient bytes in TCP layer to retrieve Window Size field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 14).unwrap())
     }
 
     /// The checksum of the packet, calculated across the entirity of the packet's header and
     /// payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TCP layer to retrieve Checksum field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 16).unwrap())
     }
 
     /// A pointer to the offset of data considered to be urgent within the packet.
     #[inline]
     pub fn urgent_ptr(&self) -> u16 {
-        u16::from_be_bytes(
-            utils::to_array(self.data, 16)
-                .expect("insufficient bytes in TCP layer to retrieve Urgent Pointer field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 18).unwrap())
     }
 
     /// The optional parameters, or TCP Options, of the TCP packet.
     #[inline]
     pub fn options(&self) -> TcpOptionsRef<'a> {
         let end = cmp::max(self.data_offset(), 5) * 4;
-        TcpOptionsRef::from_bytes_unchecked(
-            self.data
-                .get(20..end)
-                .expect("insufficient bytes in TCP layer to retrieve TCP Options"),
-        )
+        TcpOptionsRef::from_bytes_unchecked(&self.data[20..end])
     }
 }
 
@@ -1257,8 +1225,8 @@ impl TcpOption {
         }
     }
 
-    pub fn decode(data: &[u8]) {
-
+    pub fn decode(_data: &[u8]) {
+        todo!()
     }
 
     pub fn byte_len(&self) -> usize {
@@ -1398,7 +1366,7 @@ pub struct TcpOptionUnknown {
 
 impl TcpOptionUnknown {
     pub fn validate(data: &[u8]) -> Result<(), ValidationError> {
-        let Some(&optlen) = data.get(1) else {
+        let Some(&_optlen) = data.get(1) else {
             return Err(ValidationError {
                 layer: Tcp::name(),
                 class: ValidationErrorClass::InsufficientBytes,

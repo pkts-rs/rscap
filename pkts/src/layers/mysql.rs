@@ -148,28 +148,20 @@ impl<'a> MysqlPacketRef<'a> {
     #[inline]
     pub fn payload_length(&self) -> u32 {
         let mut len_arr = [0u8; 4];
-        len_arr[1..].copy_from_slice(
-            self.data
-                .get(..3)
-                .expect("insufficient bytes in MySQL Packet layer to extract Length field"),
-        );
+        len_arr[1..].copy_from_slice(&self.data[..3]);
 
         u32::from_be_bytes(len_arr)
     }
 
     #[inline]
     pub fn sequence_id(&self) -> u8 {
-        *self
-            .data
-            .get(3)
-            .expect("insufficient bytes in MySQL Packet layer to extract Sequence ID field")
+        self
+            .data[3]
     }
 
     #[inline]
     pub fn payload(&self) -> &'a [u8] {
-        self.data
-            .get(4..)
-            .expect("insufficient bytes in MySQL Packet layer to extract Payload field")
+        &self.data[4..]
     }
 }
 

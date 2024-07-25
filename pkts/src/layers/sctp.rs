@@ -3362,18 +3362,7 @@ impl From<&ErrorCauseRef<'_>> for ErrorCause {
             ErrorCauseRef::AssociationNewAddress(e) => ErrorCause::AssociationNewAddress(e.into()),
             ErrorCauseRef::UserInitiatedAbort(e) => ErrorCause::UserInitiatedAbort(e.into()),
             ErrorCauseRef::ProtocolViolation(e) => ErrorCause::ProtocolViolation(e.into()),
-            ErrorCauseRef::Unknown(e) => ErrorCause::Unknown(
-                e.into(), /*
-                          u16::from_be_bytes(*utils::get_array(b, 0).expect(
-                              "insufficient bytes in SCTP <unknown> Error Cause to retrieve Error Type field",
-                          )),
-                          b.get(4..)
-                              .expect(
-                                  "insufficient bytes in SCTP <unknown> Error Cause to retrieve Data field",
-                              )
-                              .to_vec(),
-                          */
-            ),
+            ErrorCauseRef::Unknown(e) => ErrorCause::Unknown(e.into()),
         }
     }
 }

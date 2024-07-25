@@ -198,15 +198,13 @@ impl<'a> EtherRef<'a> {
     /// The source MAC address contained within the Ethernet frame.
     #[inline]
     pub fn src_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 0)
-            .expect("insufficient bytes in Ether layer to extract Source MAC Address field")
+        utils::to_array(self.data, 0).unwrap()
     }
 
     /// The destination MAC address contained within the Ethernet frame.
     #[inline]
     pub fn dst_mac(&self) -> [u8; 6] {
-        *utils::get_array(self.data, 6)
-            .expect("insufficient bytes in Ether layer to extract Destination MAC Address field")
+        utils::to_array(self.data, 6).unwrap()
     }
 
     /// The Ether Type contained within the Ethernet frame.
@@ -215,18 +213,13 @@ impl<'a> EtherRef<'a> {
     /// payload.
     #[inline]
     pub fn eth_type(&self) -> u16 {
-        u16::from_be_bytes(
-            *utils::get_array(self.data, 12)
-                .expect("insufficient bytes in Ether layer to extract EtherType field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 12).unwrap())
     }
 
     /// The payload bytes of the Ethernet frame.
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
-        self.data
-            .get(14..)
-            .expect("insufficient bytes in Ether layer to extract payload")
+        &self.data[14..]
     }
 }
 
@@ -243,7 +236,7 @@ impl<'a> LayerOffset for EtherRef<'a> {
             return None;
         }
 
-        let eth_type = u16::from_be_bytes(*utils::get_array(bytes, 12).unwrap());
+        let eth_type = u16::from_be_bytes(utils::to_array(bytes, 12).unwrap());
         match eth_type {
             ETH_PROTOCOL_IP => match bytes[14] >> 4 {
                 0x04 => {

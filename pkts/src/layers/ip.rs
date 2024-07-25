@@ -14,7 +14,8 @@
 
 use core::fmt::Debug;
 use core::iter::Iterator;
-use core::{cmp, slice};
+use core::net::{Ipv4Addr, Ipv6Addr};
+use core::{array, cmp, slice};
 
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
@@ -441,8 +442,8 @@ pub struct Ipv4 {
     frag_offset: u16,
     ttl: u8,
     chksum: Option<u16>,
-    src: u32,
-    dst: u32,
+    src: Ipv4Addr,
+    dst: Ipv4Addr,
     options: Ipv4Options,
     payload: Option<Box<dyn LayerObject>>,
 }
@@ -462,7 +463,7 @@ impl Ipv4 {
     #[inline]
     pub fn ihl(&self) -> u8 {
         let len = self.options.byte_len();
-        assert!(len < (10 * 4), "Ipv4 packet had too many bytes in options to represent in the Internet Header Length (IHL) field");
+        assert!(len < (10 * 4), "too many options in Ipv4 to represent in the Internet Header Length (IHL) field");
         5 + (len / 4) as u8
     }
 
@@ -665,25 +666,25 @@ impl Ipv4 {
 
     /// The source IP address of the packet.
     #[inline]
-    pub fn src(&self) -> u32 {
+    pub fn src(&self) -> Ipv4Addr {
         self.src
     }
 
     /// Sets the source IP address of the packet.
     #[inline]
-    pub fn set_src(&mut self, src: u32) {
+    pub fn set_src(&mut self, src: Ipv4Addr) {
         self.src = src;
     }
 
     /// The destination IP address of the packet.
     #[inline]
-    pub fn dst(&self) -> u32 {
+    pub fn dst(&self) -> Ipv4Addr {
         self.dst
     }
 
     /// Sets the destination IP address of the packet.
     #[inline]
-    pub fn set_dst(&mut self, dst: u32) {
+    pub fn set_dst(&mut self, dst: Ipv4Addr) {
         self.dst = dst;
     }
 
@@ -810,8 +811,8 @@ impl ToBytes for Ipv4 {
                 .unwrap_or(DATA_PROTO_EXP1),
         ); // 0xFD when no payload specified
         bytes.extend(self.chksum.unwrap_or(0).to_be_bytes());
-        bytes.extend(self.src.to_be_bytes());
-        bytes.extend(self.dst.to_be_bytes());
+        bytes.extend(self.src.octets());
+        bytes.extend(self.dst.octets());
         self.options.to_bytes_extended(bytes);
         if let Some(payload) = self.payload.as_ref() {
             payload.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?;
@@ -883,7 +884,7 @@ impl<'a> Ipv4Ref<'a> {
     /// More information on this field can be found in RFC 2474.
     #[inline]
     pub fn dscp(&self) -> DiffServ {
-        DiffServ::from(*self.data.get(1).expect("insufficient bytes in IPv4 packet to retrieve Differentiated Services Code Point (DSCP) field"))
+        DiffServ::from(self.data[1])
     }
 
     /// The Explicit Congestion Notification (ECN) field of the packet.
@@ -891,19 +892,13 @@ impl<'a> Ipv4Ref<'a> {
     /// More information on this field can be found in the [`Ecn`] documentation.
     #[inline]
     pub fn ecn(&self) -> Ecn {
-        Ecn::from(*self.data.get(1).expect(
-            "insufficient bytes in IPv4 packet to retrieve Explicit Congestion Notification field",
-        ))
+        Ecn::from(self.data[1])
     }
 
     /// The combined length (in bytes) of the packet's header and payload.
     #[inline]
     pub fn packet_length(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data[2..4]
-                .try_into()
-                .expect("insufficient bytes in IPv4 packet to retrieve Packet Length field"),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 2).unwrap())
     }
 
     /// The Identifier field of the IPv4 packet, used for the purpose of reassembling
@@ -921,13 +916,7 @@ impl<'a> Ipv4Ref<'a> {
     /// _and_ the Fragment Offset field is 0.
     #[inline]
     pub fn identifier(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(4..6)
-                .expect("insufficient bytes in IPv4 packet to retrieve Identifier field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     /// The flags of the IPv4 packet.
@@ -935,12 +924,7 @@ impl<'a> Ipv4Ref<'a> {
     /// See [`Ipv4Flags`] for more details on specific IPv4 flags and their uses.
     #[inline]
     pub fn flags(&self) -> Ipv4Flags {
-        Ipv4Flags::from(
-            *self
-                .data
-                .get(6)
-                .expect("insufficient bytes in IPv4 packet to retrieve Flags field"),
-        )
+        Ipv4Flags::from_bits_truncate(self.data[6])
     }
 
     /// The fragmentation offset of the packet.
@@ -955,13 +939,7 @@ impl<'a> Ipv4Ref<'a> {
     /// packet's contents.
     #[inline]
     pub fn frag_offset(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(6..8)
-                .expect("insufficient bytes in IPv4 packet to retrieve Fragmentation Offset field")
-                .try_into()
-                .unwrap(),
-        ) & 0b0001111111111111
+        u16::from_be_bytes(utils::to_array(self.data, 6).unwrap()) & 0b0001111111111111
     }
 
     /// The Time-To-Live (TTL) field of the packet.
@@ -978,10 +956,7 @@ impl<'a> Ipv4Ref<'a> {
     /// functionality to identify routing paths across a network.
     #[inline]
     pub fn ttl(&self) -> u8 {
-        *self
-            .data
-            .get(8)
-            .expect("insufficient bytes in IPv4 packet to retrieve Time To Live field")
+        self.data[8]
     }
 
     /// A single byte value that identifies the protocol of the packet's payload.
@@ -990,69 +965,40 @@ impl<'a> Ipv4Ref<'a> {
     /// and cannot be manually set.
     #[inline]
     pub fn protocol(&self) -> u8 {
-        *self
-            .data
-            .get(9)
-            .expect("insufficient bytes in IPv4 packet to retrieve Protocol field")
+        self.data[9]
     }
 
     /// The checksum of the packet, calculated across the entirity of the
     /// packet's header and payload data.
     #[inline]
     pub fn chksum(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(10..12)
-                .expect("insufficient bytes in IPv4 packet to retrieve Checksum field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 10).unwrap())
     }
 
     /// The source IP address of the packet.
     #[inline]
-    pub fn src(&self) -> u32 {
-        u32::from_be_bytes(
-            self.data
-                .get(12..16)
-                .expect("insufficient bytes in IPv4 packet to retrieve Source IP Address field")
-                .try_into()
-                .unwrap(),
-        )
+    pub fn src(&self) -> Ipv4Addr {
+        Ipv4Addr::new(self.data[12], self.data[13], self.data[14], self.data[15])
     }
 
     /// The destination IP address of the packet.
     #[inline]
-    pub fn dst(&self) -> u32 {
-        u32::from_be_bytes(
-            self.data
-                .get(16..20)
-                .expect(
-                    "insufficient bytes in IPv4 packet to retrieve Destination IP Address field",
-                )
-                .try_into()
-                .unwrap(),
-        )
+    pub fn dst(&self) -> Ipv4Addr {
+        Ipv4Addr::new(self.data[16], self.data[17], self.data[18], self.data[19])
     }
 
     /// The Ipv4 Options fields of the packet.
     #[inline]
     pub fn options(&self) -> Ipv4OptionsRef<'a> {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
-        Ipv4OptionsRef::from_bytes_unchecked(
-            self.data
-                .get(20..options_end)
-                .expect("insufficient bytes in IPv4 packet to retrieve Ipv4 Options fields"),
-        )
+        Ipv4OptionsRef::from_bytes_unchecked(&self.data[20..options_end])
     }
 
     /// The payload of the packet.
     #[inline]
     pub fn payload_raw(&self) -> &[u8] {
         let options_end = core::cmp::min(self.ihl(), 5) as usize * 4;
-        self.data
-            .get(options_end..)
-            .expect("insufficient bytes in IPv4 packet to retrieve payload")
+        &self.data[options_end..]
     }
 }
 
@@ -1951,8 +1897,8 @@ pub struct Ipv6 {
     traffic_class: TrafficClass,
     flow_label: FlowLabel,
     hop_limit: u8,
-    src: u128,
-    dst: u128,
+    src: Ipv6Addr,
+    dst: Ipv6Addr,
     payload: Option<Box<dyn LayerObject>>,
 }
 
@@ -2014,19 +1960,19 @@ impl Ipv6 {
 
     /// The source IP address of the packet.
     #[inline]
-    pub fn src(&self) -> u128 {
+    pub fn src(&self) -> Ipv6Addr {
         self.src
     }
 
     /// Sets the source IP address of the packet.
     #[inline]
-    pub fn set_src(&mut self, src: u128) {
+    pub fn set_src(&mut self, src: Ipv6Addr) {
         self.src = src;
     }
 
     /// Sets the destination IP address of the packet.
     #[inline]
-    pub fn set_dst(&mut self, dst: u128) {
+    pub fn set_dst(&mut self, dst: Ipv6Addr) {
         self.dst = dst;
     }
 }
@@ -2139,8 +2085,8 @@ impl ToBytes for Ipv6 {
                 .ok_or(SerializationError::bad_upper_layer(Ipv6::name()))?,
         });
         bytes.push(self.hop_limit);
-        bytes.extend(self.src.to_be_bytes());
-        bytes.extend(self.dst.to_be_bytes());
+        bytes.extend(self.src.octets());
+        bytes.extend(self.dst.octets());
         if let Some(p) = self.payload.as_ref() {
             p.to_bytes_checksummed(bytes, Some((Self::layer_id(), start)))?;
         }
@@ -2187,25 +2133,14 @@ impl<'a> Ipv6Ref<'a> {
     /// The Internet Protocol Version of the packet (should be equal to 6).
     #[inline]
     pub fn version(&self) -> u8 {
-        self.data
-            .first()
-            .expect("insufficient bytes in IPv6 packet to retrieve IP Version field")
-            >> 4
+        self.data[0] >> 4
     }
 
     /// The Traffic Class of the packet.
     #[inline]
     pub fn traffic_class(&self) -> TrafficClass {
         TrafficClass {
-            value: self
-                .data
-                .first()
-                .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field")
-                << (4 + self
-                    .data
-                    .get(2)
-                    .expect("insufficient bytes in IPv6 packet to retrieve Traffic Class field"))
-                >> 4,
+            value: (self.data[0] << 4) + (self.data[1] >> 4),
         }
     }
 
@@ -2213,25 +2148,14 @@ impl<'a> Ipv6Ref<'a> {
     #[inline]
     pub fn flow_label(&self) -> FlowLabel {
         FlowLabel {
-            value: match (self.data.get(2), self.data.get(3), self.data.get(4)) {
-                (Some(&a), Some(&b), Some(&c)) => {
-                    (((a & 0x0F) as u32) << 16) + ((b as u32) << 8) + c as u32
-                }
-                _ => panic!("insufficient bytes in IPv6 packet to retrieve Flow Label field"),
-            },
+            value: (((self.data[1] & 0x0F) as u32) << 16) + u16::from_be_bytes(utils::to_array(self.data, 2).unwrap()) as u32
         }
     }
 
     /// The combined length of the IPv6 extension headers and payload.
     #[inline]
     pub fn data_length(&self) -> u16 {
-        u16::from_be_bytes(
-            self.data
-                .get(4..6)
-                .expect("insufficient bytes in IPv6 packet to retrieve Data Length field")
-                .try_into()
-                .unwrap(),
-        )
+        u16::from_be_bytes(utils::to_array(self.data, 4).unwrap())
     }
 
     /// A single byte value indicating the next header type following the IPv6 header.
@@ -2244,10 +2168,7 @@ impl<'a> Ipv6Ref<'a> {
     /// The `pkts` library treats each of these Extension Headers as a distinct [`Layer`] type.
     #[inline]
     pub fn next_header(&self) -> u8 {
-        *self
-            .data
-            .get(6)
-            .expect("insufficient bytes in IPv6 packet to retrieve Next Header Type field")
+        self.data[6]
     }
 
     /// The hop limit of the packet.
@@ -2264,43 +2185,26 @@ impl<'a> Ipv6Ref<'a> {
     /// that a routing loop forms, though tools like `traceroute` also use its functionality
     /// to identify routing paths across a network.
     pub fn hop_limit(&self) -> u8 {
-        *self
-            .data
-            .get(7)
-            .expect("insufficient bytes in IPv6 packet to retrieve Hop Limit field")
+        self.data[7]
     }
 
     /// The source IP address of the packet.
     #[inline]
-    pub fn src(&self) -> u128 {
-        u128::from_be_bytes(
-            self.data
-                .get(8..24)
-                .expect("insufficient bytes in IPv6 packet to retrieve Source IP Address field")
-                .try_into()
-                .unwrap(),
-        )
+    pub fn src(&self) -> Ipv6Addr {
+        let segments: [u16; 8] = array::from_fn(|i| u16::from_be_bytes(utils::to_array(self.data, 8 + (i * 2)).unwrap()));
+        Ipv6Addr::new(segments[0], segments[1], segments[2], segments[3], segments[4], segments[5], segments[6], segments[7])
     }
 
     /// The destination IP address of the packet.
     #[inline]
-    pub fn dst(&self) -> u128 {
-        u128::from_be_bytes(
-            self.data
-                .get(24..40)
-                .expect(
-                    "insufficient bytes in IPv6 packet to retrieve Destination IP Address field",
-                )
-                .try_into()
-                .unwrap(),
-        )
+    pub fn dst(&self) -> Ipv6Addr {
+        let segments: [u16; 8] = array::from_fn(|i| u16::from_be_bytes(utils::to_array(self.data, 24 + (i * 2)).unwrap()));
+        Ipv6Addr::new(segments[0], segments[1], segments[2], segments[3], segments[4], segments[5], segments[6], segments[7])
     }
 
     /// The payload of the packet, in raw bytes.
     pub fn payload_raw(&self) -> &[u8] {
-        self.data
-            .get(40..)
-            .expect("insufficient bytes in IPv6 packet to retrieve payload bytes")
+        &self.data[40..]
     }
 }
 
