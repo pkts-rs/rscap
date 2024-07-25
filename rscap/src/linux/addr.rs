@@ -12,8 +12,8 @@
 //!
 //! Link-layer addresses may take different byte formats depending on the link-layer protocol in use.
 //! To account for this, link-layer addresses are strongly coupled to protocol by defining distinct
-//! address types for each link-layer protocol available. The union of all of these possible protocols
-//! is additionally made available as [`L2AddrAny`].
+//! address types for each link-layer protocol available. A generalized type of all of these possible
+//! protocols is additionally made available as [`L2AddrAny`].
 
 use std::array;
 use std::fmt::{Debug, Display};
@@ -48,7 +48,7 @@ pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
 
 /// An error in converting the format of an address.
 ///
-/// This type encompasses errors in converting various types _into_ an address as well as
+/// This type encompasses errors in parsing either a `sockaddr_*` type or a string into an address.
 #[derive(Debug)]
 pub struct AddrConversionError {
     reason: &'static str,
@@ -59,17 +59,14 @@ impl AddrConversionError {
         Self { reason }
     }
 
+    /// Returns a string describing the nature of the conversion error.
     #[inline]
     pub fn as_str(&self) -> &str {
         self.reason
     }
 }
 
-// TODO: should the MAC address API be contained within rscap, or pkts? Leaning towards rscap...
-
 /// A MAC (Media Access Control) address.
-///
-/// MAC addresses are the most common link-layer address type.
 pub struct MacAddr {
     addr: [u8; 6],
 }
@@ -295,7 +292,7 @@ impl L2Addr for L2AddrIp {
     }
 }
 
-/// Any link-layer address.
+/// A type encompassing any Link-Layer address.
 pub enum L2AddrAny {
     /// A link-layer address containing an Internet Protocol packet.
     Ip(L2AddrIp),

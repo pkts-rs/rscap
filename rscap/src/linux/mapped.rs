@@ -9,6 +9,9 @@
 // except according to those terms.
 
 //! Structures used for memory-mapped packet sockets.
+//! 
+//! These structures transparently perform the necessary `setsockopt(PACKET_RX_RING)` and `mmap()`
+//! procedures to enable zero-copy transmission and reception of packets over a socket.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{io, mem, slice};
@@ -56,8 +59,8 @@ impl BlockConfig {
     /// - `block_size` must be a power-of-two multiple of the page size of the machine (often 4096).
     /// - `frame_size` must be a multiple of 16, and must be ab.
     ///
-    ///
-    /// This method checks for overflowing
+    /// This method checks for overflowing sizes; it is generally guaranteed to succeed as long as
+    /// `block_size` * `block_cnt` does not exceed 2^31.
     pub fn new(block_size: u32, block_cnt: u32, frame_size: u32) -> io::Result<Self> {
         let Some(map_length) = (block_size as usize).checked_mul(block_cnt as usize) else {
             return Err(io::Error::new(
@@ -97,33 +100,38 @@ impl BlockConfig {
         })
     }
 
+    /// The configured size of each memory block.
     #[inline]
     pub fn block_size(&self) -> u32 {
         self.block_size
     }
 
+    /// The configured number of memory blocks to be used.
     #[inline]
     pub fn block_cnt(&self) -> u32 {
         self.block_cnt
     }
 
+    /// The configured maximum number of bytes each frame can take up.
     #[inline]
     pub fn frame_size(&self) -> u32 {
         self.frame_size
     }
 
+    /// The total number of frames that can be stored in the memory-mapped region.
     #[inline]
     pub fn frame_cnt(&self) -> u32 {
         self.frame_cnt
     }
 
+    /// The total size (in bytes) of the memory-mapped region.
     #[inline]
     pub fn map_length(&self) -> usize {
         self.map_length
     }
 }
 
-/// The OSI layer used by the RX ring.
+/// The OSI layer used by the TPACKET_RX_RING.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OsiLayer {
     /// Link-layer packet.
@@ -132,6 +140,7 @@ pub(crate) enum OsiLayer {
     L3,
 }
 
+/// A reception-oriented ring buffer associated with a socket.
 pub struct PacketTxRing {
     ring_start: *mut u8,
     block_size: usize,
@@ -139,12 +148,16 @@ pub struct PacketTxRing {
 }
 
 impl PacketTxRing {
+    /// Constructs a new `PacketTxRing` instance from a raw memory-mapped segment and configuration.
     pub(crate) unsafe fn new(
         ring_start: *mut u8,
-        frame_size: usize,
-        block_cnt: usize,
-        block_size: usize,
+        config: BlockConfig,
+
     ) -> Self {
+        let frame_size = config.frame_size as usize;
+        let block_cnt = config.block_cnt as usize;
+        let block_size = config.block_size as usize;
+
         debug_assert!(block_size >= mem::size_of::<libc::tpacket_block_desc>());
 
         let mut blocks = Vec::new();
@@ -191,7 +204,7 @@ impl PacketTxRing {
         self.block_size * self.blocks.len()
     }
 
-    /// The transmission blocks that the ring is composed of.
+    /// A mutable slice of the transmission blocks the ring is composed of.
     #[inline]
     pub fn blocks(&mut self) -> &mut [PacketTxBlock] {
         &mut self.blocks
@@ -223,6 +236,7 @@ impl PacketTxRing {
     }
 }
 
+/// An individual block in a reception-oriented ring buffer.
 pub struct PacketTxBlock {
     description: &'static mut libc::tpacket_block_desc,
     frames: &'static mut [u8],
@@ -268,14 +282,29 @@ pub struct PacketTxFrameIter<'a> {
 }
 
 impl<'a> PacketTxFrameIter<'a> {
+    /// Retrieves the next available transmission frame (or `None` if no frames remain).
+    /// 
+    /// The behavior of `next_frame()` depends on the variant of the returned transmission frame:
+    /// - [`TxFrameVariant::Available`] causes the iterator to move its index to the next available
+    /// frame; a subsequent call to `next_frame()` will return a frame from the next contiguous
+    /// memory location.
+    /// - [`TxFrameVariant::SendRequest`] and [`TxFrameVariant::Sending`] cause the iterator to stay
+    /// at the current memory location; subsequent calls to `next_frame()` will repeatedly return
+    /// the same frame until the kernel has handled the frame and updated its flag.
+    /// - [`TxFrameVariant::WrongFormat`] causes the iterator to stay at the current memory
+    /// location. When the wrongly-formatted frame is dropped, its state will be updated to
+    /// [`TxFrameVariant::Available`] and returned in the next call to `next_frame()`.
     #[inline]
     pub fn next_frame(&'a mut self) -> Option<TxFrameVariant<'a>> {
         let (frame, new_offset) =
             Self::next_with_offset(self.frames, self.frame_size, self.curr_offset?);
-        self.curr_offset = new_offset;
+        if let TxFrameVariant::Available(_) = frame {
+            self.curr_offset = new_offset;
+        }
         Some(frame)
     }
 
+    /// Indicates whether any frames are left to iterate over.
     pub fn has_remaining_frames(&self) -> bool {
         self.curr_offset.is_some()
     }
@@ -329,10 +358,21 @@ impl<'a> PacketTxFrameIter<'a> {
     }
 }
 
+/// An individual transmission frame.
+/// 
+/// The variant represents the state of the frame _at the time the frame is accessed_. The kernel
+/// may modify the underlying state of a [`SendRequest`](TxFrameVariant::SendRequest) or
+/// [`Sending`](TxFrameVariant::Sending) frame at any time, so they should not be relied on as an
+/// indicator of state over time. Instead, call [`PacketTxFrameIter::next_frame()`] each time state
+/// needs to be checked.
 pub enum TxFrameVariant<'a> {
+    /// An unused transmission frame, suitable for writing a packet to.
     Available(TxFrame<'a>),
+    /// A transmission frame that has been marked as ready to send by the user.
     SendRequest,
+    /// A transmission frame that is being processed and sent out by the kernel.
     Sending,
+    /// A transmission frame that could not be sent by the kernel due to errors in packet structure.
     WrongFormat(InvalidTxFrame<'a>),
 }
 
@@ -401,6 +441,7 @@ pub enum PacketRxStatus {
     User,
 }
 
+/// A reception-oriented ring buffer associated with a socket.
 pub struct PacketRxRing {
     ring_start: *mut u8,
     block_size: usize,
@@ -408,14 +449,18 @@ pub struct PacketRxRing {
 }
 
 impl PacketRxRing {
+    /// Constructs a new `PacketRxRing` instance from a raw memory-mapped segment and configuration.
     pub(crate) unsafe fn new(
         ring_start: *mut u8,
-        block_cnt: usize,
-        block_size: usize,
+        config: BlockConfig,
         priv_size: usize,
         osi_layer: OsiLayer,
     ) -> Self {
-        debug_assert!(block_size >= mem::size_of::<libc::tpacket_block_desc>());
+        let frame_size = config.frame_size as usize;
+        let block_cnt = config.block_cnt as usize;
+        let block_size = config.block_size as usize;
+
+        debug_assert!(frame_size >= mem::size_of::<libc::tpacket_block_desc>());
 
         let mut blocks = Vec::new();
 
@@ -468,13 +513,14 @@ impl PacketRxRing {
         self.block_size * self.blocks.len()
     }
 
+    /// A mutable slice of the transmission blocks the ring is composed of.
     #[inline]
     pub fn blocks(&mut self) -> &mut [PacketRxBlock] {
         &mut self.blocks
     }
 
     #[inline]
-    pub fn blocks_cnt(&self) -> usize {
+    pub(crate) fn blocks_cnt(&self) -> usize {
         self.blocks.len()
     }
 
@@ -518,6 +564,7 @@ impl PacketRxRing {
     }
 }
 
+/// An individual block in a reception-orieented ring buffer.
 pub struct PacketRxBlock {
     description: &'static mut libc::tpacket_block_desc,
     priv_data: &'static mut [u8],
@@ -574,6 +621,7 @@ impl PacketRxBlock {
     }
 }
 
+/// An iterator over frames within a given reception block.
 pub struct PacketRxFrameIter<'a> {
     frames: &'a mut [u8],
     frame_cnt: usize,
@@ -583,6 +631,7 @@ pub struct PacketRxFrameIter<'a> {
 }
 
 impl<'a> PacketRxFrameIter<'a> {
+    /// Retrieves the next available reception frame (or `None` if no frames remain).
     pub fn next_frame(&'a mut self) -> Option<RxFrame<'a>> {
         let (frame, new_offset) = Self::next_with_offset(
             self.frames,
@@ -662,6 +711,7 @@ impl<'a> PacketRxFrameIter<'a> {
     }
 }
 
+/// A reception frame capable of conveying a single packet.
 pub struct RxFrame<'a> {
     header: &'a mut libc::tpacket3_hdr,
     sockaddr: &'a mut libc::sockaddr_ll,

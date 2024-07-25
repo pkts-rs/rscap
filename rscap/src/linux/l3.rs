@@ -552,7 +552,7 @@ impl L3Socket {
         Ok(mapped)
     }
 
-    /// Enables zero-copy packet transmission/reception for the socket.
+    /// Enables zero-copy packet transmission and reception for the socket.
     ///
     /// On error, the consumed `L3Socket` will be closed.
     ///
@@ -572,8 +572,7 @@ impl L3Socket {
         let rx_ring = unsafe {
             PacketRxRing::new(
                 mapping as *mut u8,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
                 reserved.unwrap_or(0) as usize,
                 OsiLayer::L3,
             )
@@ -582,9 +581,7 @@ impl L3Socket {
         let tx_ring = unsafe {
             PacketTxRing::new(
                 (mapping as *mut u8).add(config.map_length()),
-                config.frame_size() as usize,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
             )
         };
 
@@ -621,9 +618,7 @@ impl L3Socket {
         let tx_ring = unsafe {
             PacketTxRing::new(
                 mapping as *mut u8,
-                config.frame_size() as usize,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
             )
         };
 
@@ -659,8 +654,7 @@ impl L3Socket {
         let rx_ring = unsafe {
             PacketRxRing::new(
                 mapping as *mut u8,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
                 reserved.unwrap_or(0) as usize,
                 OsiLayer::L3,
             )
@@ -693,7 +687,7 @@ impl AsRawFd for L3Socket {
     }
 }
 
-/// A network-layer socket with zero-copy packet transmission/reception.
+/// A network-layer socket with zero-copy packet transmission and reception.
 pub struct L3MappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
@@ -822,6 +816,10 @@ impl L3MappedSocket {
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L3MappedSocket::mapped_send()) instead.
+    /// 
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3MappedSocket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -829,6 +827,10 @@ impl L3MappedSocket {
     }
 
     /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`L3MappedSocket::mapped_recv()`] instead.
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3MappedSocket::bind())).
@@ -1026,6 +1028,10 @@ impl L3TxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`mapped_recv()`](L3MappedSocket::mapped_recv()) instead.
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3RxMappedSocket::bind())).
@@ -1034,6 +1040,10 @@ impl L3TxMappedSocket {
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L3MappedSocket::mapped_send()) instead.
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3TxMappedSocket::bind())).
@@ -1270,6 +1280,10 @@ impl L3RxMappedSocket {
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`L3MappedSocket::mapped_send()`] instead.
+    /// 
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3TxMappedSocket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -1277,6 +1291,10 @@ impl L3RxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`mapped_recv()`](L3MappedSocket::mapped_recv()) instead.
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3RxMappedSocket::bind())).

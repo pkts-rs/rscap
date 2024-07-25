@@ -552,7 +552,7 @@ impl L2Socket {
         Ok(mapped)
     }
 
-    /// Enables zero-copy packet transmission/reception for the socket.
+    /// Enables zero-copy packet transmission and reception for the socket.
     ///
     /// On error, the consumed `L2Socket` will be closed.
     ///
@@ -572,8 +572,7 @@ impl L2Socket {
         let rx_ring = unsafe {
             PacketRxRing::new(
                 mapping as *mut u8,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
                 reserved.unwrap_or(0) as usize,
                 OsiLayer::L2,
             )
@@ -582,9 +581,7 @@ impl L2Socket {
         let tx_ring = unsafe {
             PacketTxRing::new(
                 (mapping as *mut u8).add(config.map_length()),
-                config.frame_size() as usize,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
             )
         };
 
@@ -621,9 +618,7 @@ impl L2Socket {
         let tx_ring = unsafe {
             PacketTxRing::new(
                 mapping as *mut u8,
-                config.frame_size() as usize,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
             )
         };
 
@@ -659,8 +654,7 @@ impl L2Socket {
         let rx_ring = unsafe {
             PacketRxRing::new(
                 mapping as *mut u8,
-                config.block_cnt() as usize,
-                config.block_size() as usize,
+                config,
                 reserved.unwrap_or(0) as usize,
                 OsiLayer::L2,
             )
@@ -693,7 +687,7 @@ impl AsRawFd for L2Socket {
     }
 }
 
-/// A link-layer socket with zero-copy packet transmission/reception.
+/// A link-layer socket with zero-copy packet transmission and reception.
 pub struct L2MappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -828,21 +822,16 @@ impl L2MappedSocket {
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2MappedSocket::bind())).
     #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.socket.send(buf)
-    }
-
-    /// Receive a datagram from the socket.
-    ///
-    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
-    /// [`bind()`](L2MappedSocket::bind())).
-    #[inline]
-    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.socket.recv(buf)
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -872,6 +861,34 @@ impl L2MappedSocket {
         self.next_tx = next_tx;
 
         Some(frame)
+    }
+
+    /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`mapped_recv()`](L2MappedSocket::mapped_recv()) instead.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2MappedSocket::bind())).
+    #[inline]
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
+    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
+    ///
+    /// The returned [`TxFrame`] should have data written to it via the
+    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
+    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
+    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
+    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
+    #[inline]
+    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
+        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
+        self.next_rx = next_rx;
+
+        Some(rx_frame)
     }
 
     /// Checks the status of previously-sent packets in the order they were sent.
@@ -937,21 +954,6 @@ impl L2MappedSocket {
         }
 
         frame_variant
-    }
-
-    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
-    ///
-    /// The returned [`TxFrame`] should have data written to it via the
-    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
-    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
-    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
-    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
-    #[inline]
-    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
-
-        Some(rx_frame)
     }
 }
 
@@ -1041,6 +1043,10 @@ impl L2TxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`L2MappedSocket::mapped_recv()`] instead.
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2RxMappedSocket::bind())).
@@ -1049,6 +1055,10 @@ impl L2TxMappedSocket {
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2TxMappedSocket::bind())).
@@ -1292,6 +1302,10 @@ impl L2RxMappedSocket {
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`L2MappedSocket::mapped_send()`] instead.
     ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2TxMappedSocket::bind())).
@@ -1300,6 +1314,10 @@ impl L2RxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
+    /// 
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`mapped_recv()`](L2MappedSocket::mapped_recv()) instead.
     ///
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2RxMappedSocket::bind())).
