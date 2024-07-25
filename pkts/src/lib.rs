@@ -24,7 +24,7 @@ pub mod sequence;
 pub mod sessions;
 pub mod utils;
 
-pub use pkts_common::Buffer;
+use pkts_common::Buffer;
 
 mod private {
     pub trait Sealed {}

@@ -13,18 +13,32 @@
 //!
 //!
 
+pub mod mptcp;
+
 use crate::layers::dev_traits::*;
 use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::*;
 use crate::utils;
-use crate::{layers::*, Buffer};
+use crate::layers::*;
 
 use bitflags::bitflags;
 
-use pkts_common::BufferMut;
+use pkts_common::{Buffer, BufferMut};
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
 use core::{cmp, mem, slice};
+
+pub const TCP_OPT_KIND_EOOL: u8 = 0;
+pub const TCP_OPT_KIND_NOP: u8 = 1;
+pub const TCP_OPT_KIND_MSS: u8 = 2;
+pub const TCP_OPT_KIND_WSCALE: u8 = 3;
+pub const TCP_OPT_KIND_SACK_PERMITTED: u8 = 4;
+pub const TCP_OPT_KIND_SACK: u8 = 5;
+pub const TCP_OPT_KIND_TIMESTAMP: u8 = 8;
+pub const TCP_OPT_KIND_MD5: u8 = 19;
+pub const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
+pub const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
+pub const TCP_OPT_KIND_MPTCP: u8 = 30;
 
 /// A TCP (Transmission Control Protocol) packet.
 ///
@@ -344,10 +358,7 @@ impl FromBytesCurrent for Tcp {
             window: tcp.window(),
             chksum: None,
             urgent_ptr: tcp.urgent_ptr(),
-            options: TcpOptions {
-                options: None,
-                padding: None,
-            }, // TcpOptions::from(tcp.options()), TODO: uncomment
+            options: TcpOptions(Vec::new()), // TcpOptions::from(tcp.options()), TODO: uncomment
             payload: None,
         }
     }
@@ -909,10 +920,10 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
 }
 
 impl<'a> TcpBuilder<'a, TcpBuildFinal> {
-    /// Attempts to finalize the construction of the TCP packet.
+    /// Completes the construction of a TCP packet.
     ///
     /// If an error occurred while adding any of the above fields, this will return an error;
-    /// otherwise, it will successfully return
+    /// otherwise, it will successfully return a buffer containing a valid TCP packet.
     #[inline]
     pub fn build(self) -> Result<BufferMut<'a>, SerializationError> {
         match self.error {
@@ -960,10 +971,7 @@ impl From<u16> for TcpFlags {
 const MAX_TCP_OPTIONS_LEN: usize = 40;
 
 #[derive(Clone, Debug)]
-pub struct TcpOptions {
-    options: Option<Vec<TcpOption>>,
-    padding: Option<Vec<u8>>,
-}
+pub struct TcpOptions(Vec<TcpOption>);
 
 impl TcpOptions {
     #[inline]
@@ -991,42 +999,17 @@ impl TcpOptions {
 
     #[inline]
     pub fn byte_len(&self) -> usize {
-        let padding_len = self.padding.as_ref().map(|p| p.len()).unwrap_or(0);
-        /*let options_len = self
-            .options
-            .as_ref()
-            .map(|opts| opts.iter().map(|opt| opt.byte_len()).sum())
-            .unwrap_or(0);
-        options_len + padding_len
-        */
-        // TODO: uncomment this
-        padding_len
+        self.0.iter().map(|o| o.byte_len()).sum()
     }
 
     #[inline]
     pub fn options(&self) -> &[TcpOption] {
-        match &self.options {
-            None => &[],
-            Some(o) => o.as_slice(),
-        }
+        self.0.as_slice()
     }
 
     #[inline]
-    pub fn options_mut(&mut self) -> &mut Option<Vec<TcpOption>> {
-        &mut self.options
-    }
-
-    #[inline]
-    pub fn padding(&self) -> &[u8] {
-        match &self.padding {
-            None => &[],
-            Some(p) => p.as_slice(),
-        }
-    }
-
-    #[inline]
-    pub fn padding_mut(&mut self) -> &mut Option<Vec<u8>> {
-        &mut self.padding
+    pub fn options_mut(&mut self) -> &mut Vec<TcpOption> {
+        &mut self.0
     }
 
     pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
@@ -1049,35 +1032,6 @@ impl TcpOptions {
         todo!()
     }
 }
-
-/*
-impl From<&TcpOptionsRef<'_>> for TcpOptions {
-    fn from(value: &TcpOptionsRef<'_>) -> Self {
-        let (options, padding) = if value.iter().next().is_none() {
-            (None, None)
-        } else {
-            let mut opts = Vec::new();
-            let mut iter = value.iter();
-            while let Some(opt) = iter.next() {
-                opts.push(TcpOption::from(opt));
-            }
-            match iter.bytes {
-                &[] => (Some(opts), None),
-                padding => (Some(opts), Some(Vec::from(padding))),
-            }
-        };
-
-        TcpOptions { options, padding }
-    }
-}
-*/
-
-/*
-impl From<TcpOptionsRef<'_>> for TcpOptions {
-    fn from(value: TcpOptionsRef<'_>) -> Self {
-        Self::from(&value)
-    }
-}*/
 
 #[derive(Clone, Copy, Debug)]
 pub struct TcpOptionsRef<'a> {
@@ -1157,16 +1111,6 @@ impl<'a> TcpOptionsRef<'a> {
             end_reached: false,
         }
     }
-
-    #[inline]
-    pub fn padding(&self) -> &'a [u8] {
-        /*
-        let mut iter = self.iter();
-        // while iter.next().is_some() {} TODO: uncomment
-        &iter.bytes[iter.curr_idx..]
-        */
-        todo!()
-    }
 }
 
 pub struct TcpOptionsIterRef<'a> {
@@ -1202,17 +1146,6 @@ impl<'a> Iterator for TcpOptionsIterRef<'a> {
         }
     }
 }*/
-
-const TCP_OPT_KIND_EOOL: u8 = 0;
-const TCP_OPT_KIND_NOP: u8 = 1;
-const TCP_OPT_KIND_MSS: u8 = 2;
-const TCP_OPT_KIND_WSCALE: u8 = 3;
-const TCP_OPT_KIND_SACK_PERMITTED: u8 = 4;
-const TCP_OPT_KIND_SACK: u8 = 5;
-const TCP_OPT_KIND_TIMESTAMP: u8 = 8;
-const TCP_OPT_KIND_USER_TIMEOUT: u8 = 28;
-const TCP_OPT_KIND_AUTHENTICATION: u8 = 29;
-const TCP_OPT_KIND_MPTCP: u8 = 29;
 
 #[derive(Clone, Debug)]
 pub enum TcpOption {
@@ -1254,6 +1187,8 @@ pub enum TcpOption {
     /// Indicates when a packet was sent relative to other recieved packets. The time value is not
     /// guaranteed to be aligned to the system clock.
     Timestamp(TcpOptionTimestamp),
+
+    Md5(TcpOptionMd5),
     /// User Timeout option.
     ///
     /// Controls how long transmitted data may be left unacknowledged before a connection is
@@ -1266,10 +1201,10 @@ pub enum TcpOption {
     /// Multipath TCP (MPTCP).
     ///
     /// TODO fill out
-    Mptcp(TcpOptionMultipath),
+    Mptcp(mptcp::Mptcp),
     /// Padding bytes following Eool.
     ///
-    /// This is NOT an actual TCP option; rather, it is used only after [`TcpOption::Eool`] to align
+    /// This is NOT an official TCP option; rather, it is used after [`TcpOption::Eool`] to align
     /// TCP options to a 4-byte word boundary.
     Padding(TcpOptionPadding),
     /// A TCP option with an unknown `kind` (i.e. different from listed above).
@@ -1288,13 +1223,82 @@ impl TcpOption {
             _ => todo!(),
         }
     }
+
+    pub fn validate(data: &[u8]) -> Result<(), ValidationError> {
+    let Some(&kind) = data.get(0) else {
+            return Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
+                reason: "insufficient bytes in TCP option for `kind` field",
+            })
+        };
+
+        match kind {
+            TCP_OPT_KIND_EOOL => if data.len() > 1 {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::ExcessBytes(data.len() - 1),
+                    reason: "trailing bytes after TCP EOOL Option",
+                })
+            } else {
+                Ok(())
+            },
+            TCP_OPT_KIND_NOP => if data.len() > 1 {
+                Err(ValidationError {
+                    layer: Tcp::name(),
+                    class: ValidationErrorClass::ExcessBytes(data.len() - 1),
+                    reason: "trailing bytes after TCP NOP Option",
+                })
+            } else {
+                Ok(())
+            },
+            _ => todo!()
+        }
+    }
+
+    pub fn decode(data: &[u8]) {
+
+    }
+
+    pub fn byte_len(&self) -> usize {
+        match self {
+            TcpOption::Eool => 1,
+            TcpOption::Nop => 1,
+            TcpOption::Mss(o) => o.byte_len(),
+            TcpOption::Wscale(o) => o.byte_len(),
+            TcpOption::SackPermitted => 2,
+            TcpOption::Sack(o) => o.byte_len(),
+            TcpOption::Timestamp(o) => o.byte_len(),
+            TcpOption::Md5(o) => o.byte_len(),
+            TcpOption::UserTimeout(o) => o.byte_len(),
+            TcpOption::TcpAo(o) => o.byte_len(),
+            TcpOption::Mptcp(o) => o.byte_len(),
+            TcpOption::Padding(o) => o.byte_len(),
+            TcpOption::Unknown(o) => o.byte_len(),
+        }
+    }
 }
+
+
 
 #[derive(Clone, Debug)]
 pub struct TcpOptionMss(pub u16);
 
+impl TcpOptionMss {
+    pub fn byte_len(&self) -> usize {
+        4
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TcpOptionWscale(pub u8);
+
+impl TcpOptionWscale {
+    pub fn byte_len(&self) -> usize {
+        3
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct TcpOptionSack {
@@ -1305,10 +1309,33 @@ pub struct TcpOptionSack {
     pub blocks_acked_cnt: usize,
 }
 
+impl TcpOptionSack {
+    pub fn byte_len(&self) -> usize {
+        2 + 8 * self.blocks_acked_cnt
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TcpOptionTimestamp {
     pub ts: u32,
     pub prev_ts: u32,
+}
+
+impl TcpOptionTimestamp {
+    pub fn byte_len(&self) -> usize {
+        10
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TcpOptionMd5 {
+    digest: [u8; 16],
+}
+
+impl TcpOptionMd5 {
+    pub fn byte_len(&self) -> usize {
+        18
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1318,6 +1345,10 @@ pub struct TcpOptionUserTimeout {
 }
 
 impl TcpOptionUserTimeout {
+    pub fn byte_len(&self) -> usize {
+        4
+    }
+
     #[inline]
     pub fn granularity(&self) -> UserTimeoutGranularity {
         self.granularity
@@ -1348,12 +1379,15 @@ pub enum UserTimeoutGranularity {
 
 #[derive(Clone, Debug)]
 pub struct TcpOptionAuthentication {
-    pub opt_len: usize,
+    key_id: u8,
+    next_key_id: u8,
+    mac: Buffer<36>,
 }
 
-#[derive(Clone, Debug)]
-pub struct TcpOptionMultipath {
-    pub opt_len: usize,
+impl TcpOptionAuthentication {
+    pub fn byte_len(&self) -> usize {
+        4 + self.mac.len()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1362,238 +1396,34 @@ pub struct TcpOptionUnknown {
     pub value: Buffer<38>, // 40 bytes maximum in options, minus 2 for `kind` and `length`
 }
 
+impl TcpOptionUnknown {
+    pub fn validate(data: &[u8]) -> Result<(), ValidationError> {
+        let Some(&optlen) = data.get(1) else {
+            return Err(ValidationError {
+                layer: Tcp::name(),
+                class: ValidationErrorClass::InsufficientBytes,
+                #[cfg(feature = "error_string")]
+                reason: "insufficient bytes in TCP option for `length` field",
+            })
+        };
+
+        todo!()
+    }
+}
+
+impl TcpOptionUnknown {
+    pub fn byte_len(&self) -> usize {
+        2 + self.value.len()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TcpOptionPadding {
     pub padding: Buffer<39>, // 40 bytes maximum in options, minus 1 for `Eool`
 }
 
-/*
-impl TcpOption {
-    #[inline]
+impl TcpOptionPadding {
     pub fn byte_len(&self) -> usize {
-        match self.option_type {
-            0 | 1 => 1,
-            _ => 2 + self.value.as_ref().map(|v| v.len()).unwrap_or(0),
-        }
-    }
-
-    #[inline]
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ValidationError> {
-        Self::validate(bytes)?;
-        Ok(Self::from_bytes_unchecked(bytes))
-    }
-
-    #[inline]
-    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
-        match bytes[0] {
-            0 => TcpOption::Eool,
-            1 => TcpOption::Nop,
-            2 => {
-                let mss = TcpOptionMss(u16::from_be_bytes(bytes[2]));
-
-                TcpOption::Mss(mss)
-            }
-        }
-    }
-
-    /// The length (in bytes) of the encoded TCP option.
-    #[inline]
-    pub fn len(&self) -> usize {
-        match self.option_type {
-            0 | 1 => 1,
-            _ => self.value.as_ref().unwrap().len() + 2,
-        }
-    }
-
-    #[inline]
-    pub fn option_type(&self) -> u8 {
-        self.option_type
-    }
-
-    #[inline]
-    pub fn option_data(&self) -> &[u8] {
-        match &self.value {
-            Some(v) => v.as_slice(),
-            None => &[],
-        }
-    }
-
-    #[inline]
-    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.option_type);
-        match self.option_type {
-            0 | 1 => (),
-            _ => match self.value.as_ref() {
-                None => bytes.push(2),
-                Some(val) => {
-                    bytes.push((2 + val.len()) as u8);
-                    bytes.extend(val);
-                }
-            },
-        }
-    }
-
-    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        if let Some(TCP_OPT_KIND_EOOL | TCP_OPT_KIND_NOP) = bytes.first() {
-            return if bytes.len() == 1 {
-                Ok(())
-            } else {
-                Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
-                    reason: "excess bytes at end of single-byte TCP Option"
-                })
-            }
-        }
-
-        let (Some(kind), Some(length)) = (bytes.get(0), bytes.get(1)) else {
-            Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::InsufficientBytes,
-                reason: "insufficient bytes in TCP Option for Kind/Length fields"
-            })
-        };
-
-        let Some(value) = bytes.get(2..2 + length) else {
-            return Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::InsufficientBytes,
-                reason: "insufficient bytes for TCP option value"
-            })
-        };
-
-        if bytes.len() != 2 + length {
-            return Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::ExcessBytes(bytes.len() - length - 2),
-                reason: "excess bytes at end of TCP Option"
-            })
-        };
-
-        match kind {
-            TCP_OPT_KIND_MSS => if length == 2 {
-                Ok(TcpOption::Mss(TcpOptionMss(u16::from_be_bytes(value.try_into().uwnrap()))))
-            } else {
-                Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "unexpected number of bytes for Maximum Segment Size TCP Option"
-                })
-            }
-            TCP_OPT_KIND_WSCALE => if length == 1 {
-                Ok(TcpOption::Wscale(TcpOptionWscale(value[0])))
-            } else {
-                Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "unexpected number of bytes for Window Scale TCP Option"
-                })
-            }
-            TCP_OPT_KIND_SACK_PERMITTED => if length == 0 {
-                Ok(TcpOption::SackPermitted)
-            } else {
-                Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "unexpected number of bytes for Sack Permitted TCP Option"
-                })
-            }
-            TCP_OPT_KIND_SACK => todo!(), /* if length % 8 == 0 && length > 0 && length <= 32 {
-                for _ in 0..length / 8 {
-                    todo!()
-                }
-            } */
-            TCP_OPT_KIND_TIMESTAMP => todo!(),
-            TCP_OPT_KIND_USER_TIMEOUT => todo!(),
-            TCP_OPT_KIND_AUTHENTICATION => todo!(),
-            TCP_OPT_KIND_MPTCP => todo!(),
-            Some(_) => match bytes.get(1) {
-                Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.len().checked_sub(len as usize) {
-                    Some(0) => Ok(()),
-                    Some(remaining) => Err(ValidationError {
-                        layer: Tcp::name(),
-                        class: ValidationErrorClass::ExcessBytes(remaining),
-                        reason: "excess bytes at end of sized TCP option",
-                    }),
-                    None => Err(ValidationError {
-                        layer: Tcp::name(),
-                        class: ValidationErrorClass::InvalidValue,
-                        reason: "length of TCP Option data exceeded available bytes"
-                    }),
-                },
-                _ => Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "insufficient bytes available to read TCP Option--missing length byte field"
-                }),
-            },
-            None => Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::InvalidValue,
-                reason: "insufficient bytes available to read TCP Option--missing option_type byte field",
-            })
-        }
+        self.padding.len()
     }
 }
-*/
-
-/*
-impl From<&TcpOptionRef<'_>> for TcpOption {
-    fn from(value: &TcpOptionRef<'_>) -> Self {
-        TcpOption {
-            option_type: value.option_type(),
-            value: match value.option_type() {
-                0 | 1 => None,
-                _ => Some(Vec::from(value.option_data())),
-            },
-        }
-    }
-}
-
-impl From<TcpOptionRef<'_>> for TcpOption {
-    fn from(value: TcpOptionRef<'_>) -> Self {
-        Self::from(&value)
-    }
-}
-*/
-
-/*
-    pub fn validate(bytes: &[u8]) -> Result<(), ValidationError> {
-        match bytes.first() {
-            Some(0 | 1) => if bytes.len() == 1 {
-                Ok(())
-            } else {
-                Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::ExcessBytes(bytes.len() - 1),
-                    reason: "excess bytes at end of single-byte TCP option"
-                })
-            },
-            Some(_) => match bytes.get(1) {
-                Some(&len @ 2..) if bytes.len() >= len as usize => match bytes.len().checked_sub(len as usize) {
-                    Some(0) => Ok(()),
-                    Some(remaining) => Err(ValidationError {
-                        layer: Tcp::name(),
-                        class: ValidationErrorClass::ExcessBytes(remaining),
-                        reason: "excess bytes at end of sized TCP option",
-                    }),
-                    None => Err(ValidationError {
-                        layer: Tcp::name(),
-                        class: ValidationErrorClass::InvalidValue,
-                        reason: "length of TCP Option data exceeded available bytes"
-                    }),
-                },
-                _ => Err(ValidationError {
-                    layer: Tcp::name(),
-                    class: ValidationErrorClass::InvalidValue,
-                    reason: "insufficient bytes available to read TCP Option--missing length byte field"
-                }),
-            },
-            None => Err(ValidationError {
-                layer: Tcp::name(),
-                class: ValidationErrorClass::InvalidValue,
-                reason: "insufficient bytes available to read TCP Option--missing option_type byte field",
-            })
-        }
-    }
-*/

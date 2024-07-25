@@ -575,7 +575,7 @@ impl<'a> UdpBuilder<'a, UdpBuildPayload> {
         }
     }
 
-    /// Add a payload to the UDP packet.
+    /// Construct a payload for the UDP packet.
     ///
     /// The UDP packet's payload is constructed via the user-provided `build_payload` closure;
     /// several consecutive layers can be constructed at once using these closures in a nested

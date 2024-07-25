@@ -11,4 +11,4 @@
 pub use crate::error::{ValidationError, ValidationErrorClass};
 pub use crate::layers::traits::*;
 pub use crate::layers::{Raw, RawRef};
-pub use crate::{parse_layers, parse_layers_unchecked, Buffer};
+pub use crate::{parse_layers, parse_layers_unchecked};

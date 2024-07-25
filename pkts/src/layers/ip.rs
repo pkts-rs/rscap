@@ -864,10 +864,7 @@ impl<'a> Ipv4Ref<'a> {
     /// The Internet Protocol Version field of the packet (should be equal to 4).
     #[inline]
     pub fn version(&self) -> u8 {
-        self.data
-            .first()
-            .expect("insufficient bytes in IPv4 packet to retrieve IP Version field")
-            >> 4
+        self.data[0] >> 4
     }
 
     /// The Internet Header Length (IHL) of the packet.
@@ -878,10 +875,7 @@ impl<'a> Ipv4Ref<'a> {
     /// IPv4 header are required.
     #[inline]
     pub fn ihl(&self) -> u8 {
-        self.data
-            .first()
-            .expect("insufficient bytes in IPv4 packet to retrieve Internet Header Length field")
-            & 0x0F
+        self.data[0] & 0x0F
     }
 
     /// The Differentiated Services Code Point (DSCP) of the packet.
