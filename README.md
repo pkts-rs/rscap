@@ -9,14 +9,16 @@
 [Documentation]: https://docs.rs/rscap/badge.svg
 [docs.rs]: https://docs.rs/rscap/
 
-### **Rscap - Rust packet capture and manipulation utilities**
+### **rscap - Rust packet capture and manipulation utilities**
 
 ---
 
-Rscap is a multi-purpose library for network packet capture/transmission and packet building. Its aims are twofold:
+rscap is a multi-purpose library for network packet capture/transmission and packet building. Its aims are twofold:
 
 1. To provide Rust-native platform tools for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
 2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
+
+`rscap` specifically accomplishes (1), while the `pkts` library handles (2).
 
 ## Features
 
