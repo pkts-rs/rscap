@@ -14,9 +14,11 @@
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2AddrAny};
+#[cfg(feature = "libcfull")]
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
+#[cfg(feature = "libcfull")]
 use super::{FanoutAlgorithm, PacketStatistics, RxTimestamping, TxTimestamping};
 
 /// A socket that exchanges packets at the link-layer.
@@ -100,6 +102,7 @@ impl L2Socket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+    #[cfg(feature = "libcfull")]
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         let bypass_req = if bypass { 1u32 } else { 0u32 };
 
@@ -123,6 +126,7 @@ impl L2Socket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
+    #[cfg(feature = "libcfull")]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = libc::tpacket_stats {
             tp_packets: 0,
@@ -198,6 +202,7 @@ impl L2Socket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[cfg(feature = "libcfull")]
     fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         if tx == TxTimestamping::Hardware || rx == RxTimestamping::Hardware {
             let mut hwtstamp_config = libc::hwtstamp_config {
@@ -307,6 +312,7 @@ impl L2Socket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
+     #[cfg(feature = "libcfull")]   
     pub fn set_fanout(
         &self,
         group_id: u16,
@@ -370,7 +376,7 @@ impl L2Socket {
         }
     }
 
-    /// TODO: add addr
+    /// Send a datagram to the specified link-layer destination address.
     pub fn send_to<A: L2Addr>(&self, buf: &[u8], addr: A) -> io::Result<usize> {
         let sockaddr = addr.to_sockaddr();
         let addrlen = mem::size_of::<libc::sockaddr_ll>() as u32;
@@ -390,11 +396,13 @@ impl L2Socket {
         }
     }
 
+    /// Receive a datagram over the socket, saving the sender's address.
+    ///
     /// # Errors
     ///
     /// In the event that a packet is received that does not match either the address family
     /// (`AF_PACKET`) or the specified protocol type of `A`, this function will return.
-    /// [`InvalidData`](io::ErrorKind::InvalidData). Note that `buf` will still be
+    /// [`InvalidData`](io::ErrorKind::InvalidData).
     pub fn recv_from<A: L2Addr>(&self, buf: &mut [u8]) -> io::Result<(usize, A)> {
         let mut sockaddr = libc::sockaddr_ll {
             sll_family: 0,
@@ -425,14 +433,14 @@ impl L2Socket {
             // Cannot guarantee received sockaddr is size_of::<libc::sockaddr_ll>()
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "invalid address received (address family not AF_PACKET)",
+                "data received from invalid address (address family not AF_PACKET)",
             ));
         }
 
         let Ok(addr) = A::try_from(sockaddr) else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "unexpected address received (address protocol mismatch)",
+                "data received from unexpected address (address protocol mismatch)",
             ));
         };
 
@@ -440,6 +448,7 @@ impl L2Socket {
     }
 
     /// Sets the PACKET_VERSION socket option to TPACKET_V3.
+    #[cfg(feature = "libcfull")]
     fn set_tpacket_v3_opt(&self) -> io::Result<()> {
         let pkt_version_3 = libc::tpacket_versions::TPACKET_V3;
         if unsafe {
@@ -458,6 +467,7 @@ impl L2Socket {
     }
 
     /// Sets the PACKET_TX_RING socket option.
+     #[cfg(feature = "libcfull")]
     fn set_tx_ring_opt(&self, config: BlockConfig) -> io::Result<()> {
         let req_tx = libc::tpacket_req3 {
             tp_block_size: config.block_size(),
@@ -485,6 +495,7 @@ impl L2Socket {
     }
 
     /// Sets the PACKET_RX_RING socket option.
+     #[cfg(feature = "libcfull")]
     fn set_rx_ring_opt(
         &self,
         config: BlockConfig,
@@ -523,6 +534,7 @@ impl L2Socket {
     /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L2Socket`] will be closed.
+    #[cfg(feature = "libcfull")]
     fn mmap_socket(
         &self,
         config: BlockConfig,
@@ -559,6 +571,7 @@ impl L2Socket {
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
+    #[cfg(feature = "libcfull")]
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -610,6 +623,7 @@ impl L2Socket {
     /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
     /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
+    #[cfg(feature = "libcfull")]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L2TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
         self.set_tx_ring_opt(config)?;
@@ -641,6 +655,7 @@ impl L2Socket {
     /// Enables zero-copy packet reception for the socket.
     ///
     /// On error, the consumed `L2Socket` will be closed.
+    #[cfg(feature = "libcfull")]
     pub fn packet_rx_ring(
         self,
         config: BlockConfig,
@@ -688,6 +703,7 @@ impl AsRawFd for L2Socket {
 }
 
 /// A link-layer socket with zero-copy packet transmission and reception.
+#[cfg(feature = "libcfull")]
 pub struct L2MappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
@@ -699,6 +715,7 @@ pub struct L2MappedSocket {
     tx_full: bool,
 }
 
+#[cfg(feature = "libcfull")]
 impl L2MappedSocket {
     /// Bind the link-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -957,6 +974,7 @@ impl L2MappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L2MappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -969,6 +987,7 @@ impl Drop for L2MappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L2MappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -977,6 +996,7 @@ impl AsRawFd for L2MappedSocket {
 }
 
 /// A link-layer socket with zero-copy packet transmission.
+#[cfg(feature = "libcfull")]
 pub struct L2TxMappedSocket {
     socket: L2Socket,
     tx_ring: PacketTxRing,
@@ -986,6 +1006,7 @@ pub struct L2TxMappedSocket {
     tx_full: bool,
 }
 
+#[cfg(feature = "libcfull")]
 impl L2TxMappedSocket {
     /// Bind the link-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1177,6 +1198,7 @@ impl L2TxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L2TxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1189,6 +1211,7 @@ impl Drop for L2TxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L2TxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -1197,12 +1220,14 @@ impl AsRawFd for L2TxMappedSocket {
 }
 
 /// A link-layer socket with zero-copy packet reception.
+#[cfg(feature = "libcfull")]
 pub struct L2RxMappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
     next_rx: FrameIndex,
 }
 
+#[cfg(feature = "libcfull")]
 impl L2RxMappedSocket {
     /// Bind the link-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1337,6 +1362,7 @@ impl L2RxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L2RxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1349,6 +1375,7 @@ impl Drop for L2RxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L2RxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {

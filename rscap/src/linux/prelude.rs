@@ -11,6 +11,8 @@
 //! Structures used for memory-mapped packet sockets.
 
 pub use super::addr::{L2Addr, L2AddrAny, L2AddrIp, L2AddrUnspec};
-pub use super::l2::{L2MappedSocket, L2RxMappedSocket, L2Socket, L2TxMappedSocket};
+pub use super::l2::L2Socket;
+#[cfg(feature = "libcfull")]
+pub use super::l2::{L2MappedSocket, L2RxMappedSocket, L2TxMappedSocket};
 pub use super::{FanoutAlgorithm, PacketStatistics, RxTimestamping, TxTimestamping};
 pub use crate::Interface;

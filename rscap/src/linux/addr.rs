@@ -348,7 +348,7 @@ impl L2Addr for L2AddrAny {
 
 /// An unspecified link-layer address.
 pub struct L2AddrUnspec {
-    addr: Buffer<8>,
+    addr: Buffer<u8, 8>,
     iface: Interface,
     protocol: L2Protocol,
 }

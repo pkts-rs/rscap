@@ -12,8 +12,10 @@ repository = "https://github.com/pkts-rs/rscap"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+libcfull = []
 
 [dependencies]
-libc = { version = "0.2", path = "../../libc" }
-pkts = { version = "0.1", path = "../pkts" }
+bitflags = { version = "2.6.0" }
+libc = { version = "0.2" }
+#pkts = { version = "0.1", path = "../pkts" }
 pkts-common = { version = "0.1.3", path = "../pkts-common" }

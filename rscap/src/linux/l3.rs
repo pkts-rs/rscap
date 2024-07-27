@@ -14,9 +14,11 @@
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2AddrAny};
+#[cfg(feature = "libcfull")]
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
+#[cfg(feature = "libcfull")]
 use super::{FanoutAlgorithm, PacketStatistics, RxTimestamping, TxTimestamping};
 
 /// A socket that exchanges packets at the network layer.
@@ -100,6 +102,7 @@ impl L3Socket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+     #[cfg(feature = "libcfull")] 
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         let bypass_req = if bypass { 1u32 } else { 0u32 };
 
@@ -123,6 +126,7 @@ impl L3Socket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
+    #[cfg(feature = "libcfull")]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = libc::tpacket_stats {
             tp_packets: 0,
@@ -198,6 +202,7 @@ impl L3Socket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[cfg(feature = "libcfull")]
     fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         if tx == TxTimestamping::Hardware || rx == RxTimestamping::Hardware {
             let mut hwtstamp_config = libc::hwtstamp_config {
@@ -307,6 +312,7 @@ impl L3Socket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
+    #[cfg(feature = "libcfull")]
     pub fn set_fanout(
         &self,
         group_id: u16,
@@ -440,6 +446,7 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_VERSION socket option to TPACKET_V3.
+    #[cfg(feature = "libcfull")]
     fn set_tpacket_v3_opt(&self) -> io::Result<()> {
         let pkt_version_3 = libc::tpacket_versions::TPACKET_V3;
         if unsafe {
@@ -458,6 +465,7 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_TX_RING socket option.
+    #[cfg(feature = "libcfull")]
     fn set_tx_ring_opt(&self, config: BlockConfig) -> io::Result<()> {
         let req_tx = libc::tpacket_req3 {
             tp_block_size: config.block_size(),
@@ -485,6 +493,7 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_RX_RING socket option.
+    #[cfg(feature = "libcfull")]
     fn set_rx_ring_opt(
         &self,
         config: BlockConfig,
@@ -523,6 +532,7 @@ impl L3Socket {
     /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L3Socket`] will be closed.
+    #[cfg(feature = "libcfull")]
     fn mmap_socket(
         &self,
         config: BlockConfig,
@@ -559,6 +569,7 @@ impl L3Socket {
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
+    #[cfg(feature = "libcfull")]
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -610,6 +621,7 @@ impl L3Socket {
     /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
     /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
+    #[cfg(feature = "libcfull")]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L3TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
         self.set_tx_ring_opt(config)?;
@@ -641,6 +653,7 @@ impl L3Socket {
     /// Enables zero-copy packet reception for the socket.
     ///
     /// On error, the consumed `L3Socket` will be closed.
+    #[cfg(feature = "libcfull")]
     pub fn packet_rx_ring(
         self,
         config: BlockConfig,
@@ -688,6 +701,7 @@ impl AsRawFd for L3Socket {
 }
 
 /// A network-layer socket with zero-copy packet transmission and reception.
+#[cfg(feature = "libcfull")]
 pub struct L3MappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
@@ -699,6 +713,7 @@ pub struct L3MappedSocket {
     tx_full: bool,
 }
 
+#[cfg(feature = "libcfull")]
 impl L3MappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -947,6 +962,7 @@ impl L3MappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L3MappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -959,6 +975,7 @@ impl Drop for L3MappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L3MappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -967,6 +984,7 @@ impl AsRawFd for L3MappedSocket {
 }
 
 /// A network-layer socket with zero-copy packet transmission.
+#[cfg(feature = "libcfull")]
 pub struct L3TxMappedSocket {
     socket: L3Socket,
     tx_ring: PacketTxRing,
@@ -976,6 +994,7 @@ pub struct L3TxMappedSocket {
     tx_full: bool,
 }
 
+#[cfg(feature = "libcfull")]
 impl L3TxMappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1160,6 +1179,7 @@ impl L3TxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L3TxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1172,6 +1192,7 @@ impl Drop for L3TxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L3TxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -1180,12 +1201,14 @@ impl AsRawFd for L3TxMappedSocket {
 }
 
 /// A network-layer socket with zero-copy packet reception.
+#[cfg(feature = "libcfull")]
 pub struct L3RxMappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
     next_rx: FrameIndex,
 }
 
+#[cfg(feature = "libcfull")]
 impl L3RxMappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1313,6 +1336,7 @@ impl L3RxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl Drop for L3RxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1325,6 +1349,7 @@ impl Drop for L3RxMappedSocket {
     }
 }
 
+#[cfg(feature = "libcfull")]
 impl AsRawFd for L3RxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {

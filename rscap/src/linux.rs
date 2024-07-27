@@ -21,7 +21,9 @@ pub mod addr;
 pub mod l2;
 pub mod l3;
 pub mod l4;
+#[cfg(feature = "libcfull")]
 pub mod mapped;
+pub mod sndrcv;
 #[doc(hidden)]
 pub mod prelude;
 
