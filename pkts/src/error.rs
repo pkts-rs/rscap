@@ -76,6 +76,14 @@ impl SerializationError {
             layer,
         }
     }
+
+    pub fn class(&self) -> SerializationErrorClass {
+        self.class
+    }
+
+    pub fn layer(&self) -> &'static str {
+        self.layer
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

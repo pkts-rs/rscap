@@ -15,7 +15,10 @@
 //! of these functions should be considered stable--they may be
 //! removed or changed at any release.
 
-use core::{array, cmp, default, iter, mem};
+use core::{array, default, mem};
+
+//#[cfg(all(not(feature = "std"), feature = "alloc"))]
+//use alloc::vec::Vec;
 
 // TODO: optimize this
 pub fn ones_complement_16bit(bytes: &[u8]) -> u16 {
@@ -50,7 +53,7 @@ pub fn get_array<const T: usize>(bytes: &[u8], start: usize) -> Option<&[u8; T]>
 }
 
 #[inline]
-pub(crate) fn get_mut_array<const T: usize>(
+pub fn get_mut_array<const T: usize>(
     bytes: &mut [u8],
     start: usize,
 ) -> Option<&mut [u8; T]> {
@@ -88,6 +91,7 @@ pub(crate) fn padded_length<const T: usize>(unpadded_len: usize) -> usize {
     unpadded_len + ((T - (unpadded_len % T)) % T)
 }
 
+/*
 #[inline]
 fn bits_ge(idx: usize) -> u64 {
     assert!(idx < 64, "bit index out of range for bits_ge()");
@@ -98,11 +102,13 @@ fn bits_ge(idx: usize) -> u64 {
     }
 }
 
+
 #[inline]
 fn bits_lt(idx: usize) -> u64 {
     assert!(idx < 64, "bit index out of range for bits_lt()");
     !bits_ge(idx)
 }
+
 
 // A simplified bit vector, for use in Ipv4/v6 defragmentation and other things
 pub(crate) struct BitVec {
@@ -196,6 +202,7 @@ impl BitVec {
         self.end = 0;
     }
 }
+*/
 
 pub struct ArrayRing<T, const N: usize> {
     start: usize,

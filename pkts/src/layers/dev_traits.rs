@@ -16,6 +16,9 @@ use core::any;
 
 use crate::prelude::*;
 
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+
 use pkts_macros::layer_metadata;
 
 /// An identifier unique to a protocol layer.

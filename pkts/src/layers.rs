@@ -41,13 +41,18 @@ pub mod tcp;
 pub mod traits;
 pub mod udp;
 
+use core::fmt::Debug;
+
 use crate::error::*;
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use core::fmt::Debug;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 /*
 pub enum Cardinal<T> {

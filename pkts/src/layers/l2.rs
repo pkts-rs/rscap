@@ -12,7 +12,7 @@
 //!
 //!
 
-use std::slice;
+use core::slice;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
@@ -21,6 +21,11 @@ use crate::layers::ip::{Ipv4, Ipv4Ref, Ipv6, Ipv6Ref};
 use crate::layers::traits::*;
 use crate::layers::{Raw, RawRef};
 use crate::{error::*, utils};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 const ETH_PROTOCOL_IP: u16 = 0x0800;
 const ETH_PROTOCOL_EXPERIMENTAL: u16 = 0x88B5;

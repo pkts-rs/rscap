@@ -15,10 +15,12 @@
 
 pub mod mptcp;
 
+use core::{cmp, mem, slice};
+
 use crate::layers::dev_traits::*;
 use crate::layers::ip::{Ipv4, Ipv6, DATA_PROTO_TCP};
 use crate::layers::traits::*;
-use crate::utils;
+use crate::{utils, IndexedWritable, PacketWriter};
 use crate::layers::*;
 
 use bitflags::bitflags;
@@ -26,7 +28,10 @@ use bitflags::bitflags;
 use pkts_common::{Buffer, BufferMut};
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use core::{cmp, mem, slice};
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 pub const TCP_OPT_KIND_EOOL: u8 = 0;
 pub const TCP_OPT_KIND_NOP: u8 = 1;
@@ -630,6 +635,7 @@ pub struct TcpBuilder<'a, T: TcpBuildPhase> {
     data: BufferMut<'a>,
     layer_start: usize,
     error: Option<SerializationError>,
+    #[allow(unused)]
     phase: T,
 }
 
@@ -797,7 +803,7 @@ impl<'a> TcpBuilder<'a, TcpBuildOptsPayload> {
     /// Adds a TCP option to the TCP packet.
     pub fn option(mut self, option: TcpOption) -> TcpBuilder<'a, TcpBuildOptsPayload> {
         if self.error.is_none() {
-            if let Err(e) = option.encode(&mut self.data) {
+            if let Err(e) = option.to_bytes_extended(&mut self.data) {
                 self.error = Some(e);
             }
         }
@@ -936,8 +942,6 @@ impl From<u16> for TcpFlags {
     }
 }
 
-const MAX_TCP_OPTIONS_LEN: usize = 40;
-
 #[derive(Clone, Debug)]
 pub struct TcpOptions(Vec<TcpOption>);
 
@@ -949,15 +953,42 @@ impl TcpOptions {
     }
 
     #[inline]
-    pub fn from_bytes_unchecked(_bytes: &[u8]) -> Self {
-        // Self::from(TcpOptionsRef::from_bytes_unchecked(bytes)) TODO: uncomment
-        /*
-        Self {
-            options: None,
-            padding: None,
+    pub fn from_bytes_unchecked(bytes: &[u8]) -> Self {
+        let mut data = bytes;
+        let mut eool_reached = false;
+        let mut options = Vec::new();
+
+        while !data.is_empty() {
+            if eool_reached {
+                let mut padding = Buffer::new();
+                padding.append(data);
+
+                options.push(TcpOption::Padding(TcpOptionPadding {
+                    padding,
+                }));
+
+                break
+            }
+
+            match data[0] {
+                TCP_OPT_KIND_EOOL => {
+                    options.push(TcpOption::Eool);
+                    data = &data[1..];
+                    eool_reached = true;
+                }
+                TCP_OPT_KIND_NOP => {
+                    options.push(TcpOption::Nop);
+                    data = &data[1..];
+                }
+                _ => {
+                    let (opt_data, rem) = data.split_at(data[1] as usize);
+                    options.push(TcpOption::from_bytes_unchecked(opt_data));
+                    data = rem;
+                }
+            }
         }
-        */
-        todo!()
+
+        TcpOptions(options)
     }
 
     #[inline]
@@ -1033,16 +1064,38 @@ impl<'a> TcpOptionsRef<'a> {
         }
 
         while let Some(option_type) = bytes.first() {
-            match option_type {
-                0 => break,
-                1 => bytes = &bytes[1..],
+            match *option_type {
+                TCP_OPT_KIND_EOOL => {
+                    for padding_byte in &bytes[1..] {
+                        if *padding_byte != 0 {
+                            return Err(ValidationError {
+                                layer: Tcp::name(),
+                                class: ValidationErrorClass::UnusualPadding,
+                                #[cfg(feature = "error_string")]
+                                reason: "TCP option padding had non-zero value",
+                            })
+                        }
+                    }
+
+                    break
+                }
+                TCP_OPT_KIND_NOP => bytes = &bytes[1..],
                 _ => match bytes.get(1) {
+                    None => {
+                        return Err(ValidationError {
+                            layer: Tcp::name(),
+                            class: ValidationErrorClass::InvalidValue,
+                            #[cfg(feature = "error_string")]
+                            reason:
+                                "truncated TCP option found in options--missing option length field",
+                        })
+                    }
                     Some(0..=1) => {
                         return Err(ValidationError {
                             layer: Tcp::name(),
                             class: ValidationErrorClass::InvalidValue,
                             #[cfg(feature = "error_string")]
-                            reason: "TCP option length field contained too small a value",
+                            reason: "TCP option length was less than minimum required",
                         })
                     }
                     Some(&len) => match bytes.get(len as usize..) {
@@ -1054,15 +1107,6 @@ impl<'a> TcpOptionsRef<'a> {
                             reason:
                                 "truncated TCP option field in options--missing part of option data",
                         }),
-                    },
-                    None => {
-                        return Err(ValidationError {
-                            layer: Tcp::name(),
-                            class: ValidationErrorClass::InvalidValue,
-                            #[cfg(feature = "error_string")]
-                            reason:
-                                "truncated TCP option found in options--missing option length field",
-                        })
                     }
                 },
             }
@@ -1087,33 +1131,40 @@ pub struct TcpOptionsIterRef<'a> {
     end_reached: bool,
 }
 
-/*
 impl<'a> Iterator for TcpOptionsIterRef<'a> {
-    type Item = TcpOptionRef<'a>;
+    type Item = TcpOption;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.end_reached {
-            return None;
+            if self.bytes[self.curr_idx..].is_empty() {
+                return None
+            } else {
+                let mut padding = Buffer::new();
+                padding.append(&self.bytes[self.curr_idx..]);
+                self.curr_idx = self.bytes.len();
+
+                return Some(TcpOption::Padding(TcpOptionPadding { padding }))
+            }
         }
 
         match self.bytes.first() {
-            Some(&r @ (0 | 1)) => {
+            Some(&r @ (TCP_OPT_KIND_EOOL | TCP_OPT_KIND_NOP)) => {
                 let option = &self.bytes[self.curr_idx..self.curr_idx + 1];
                 self.curr_idx += 1;
                 if r == 0 {
                     self.end_reached = true;
                 }
-                Some(TcpOptionRef::from_bytes_unchecked(option))
+                Some(TcpOption::from_bytes_unchecked(option))
             }
             Some(&op_len) => {
                 let option = &self.bytes[self.curr_idx..self.curr_idx + op_len as usize];
                 self.curr_idx += op_len as usize;
-                Some(TcpOptionRef::from_bytes_unchecked(option))
+                Some(TcpOption::from_bytes_unchecked(option))
             }
             None => None,
         }
     }
-}*/
+}
 
 #[derive(Clone, Debug)]
 pub enum TcpOption {
@@ -1180,15 +1231,22 @@ pub enum TcpOption {
 }
 
 impl TcpOption {
-    pub fn encode(&self, buffer: &mut BufferMut<'_>) -> Result<(), SerializationError> {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        
         match self {
-            Self::Eool => {
-                buffer.append_or(&[0], SerializationError::insufficient_buffer(Tcp::name()))
-            }
-            Self::Nop => {
-                buffer.append_or(&[1], SerializationError::insufficient_buffer(Tcp::name()))
-            }
-            _ => todo!(),
+            Self::Eool | Self::Nop => writer.write(&[0]),
+            Self::Mss(mss) => mss.to_bytes_extended(writable),
+            Self::Wscale(wscale) => wscale.to_bytes_extended(writable),
+            Self::SackPermitted => writer.write(&[TCP_OPT_KIND_SACK_PERMITTED, 2]),
+            Self::Sack(sack) => sack.to_bytes_extended(writable),
+            Self::Timestamp(timestamp) => timestamp.to_bytes_extended(writable),
+            Self::Md5(md5) => md5.to_bytes_extended(writable),
+            Self::UserTimeout(timeout) => timeout.to_bytes_extended(writable),
+            Self::TcpAo(auth) => auth.to_bytes_extended(writable),
+            Self::Mptcp(mptcp) => mptcp.to_bytes_extended(writable),
+            Self::Padding(padding) => padding.to_bytes_extended(writable),
+            Self::Unknown(unknown) => unknown.to_bytes_extended(writable),
         }
     }
 
@@ -1225,8 +1283,29 @@ impl TcpOption {
         }
     }
 
-    pub fn decode(_data: &[u8]) {
-        todo!()
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        if data == &[TCP_OPT_KIND_EOOL] {
+            return Self::Eool
+        }
+
+        if data == &[TCP_OPT_KIND_NOP] {
+            return Self::Nop
+        }
+
+        debug_assert!(data.len() == data[1] as usize);
+
+        match data[0] {
+            TCP_OPT_KIND_MSS => Self::Mss(TcpOptionMss::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_WSCALE => Self::Wscale(TcpOptionWscale::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_SACK_PERMITTED => Self::SackPermitted,
+            TCP_OPT_KIND_SACK => Self::Sack(TcpOptionSack::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_TIMESTAMP => Self::Timestamp(TcpOptionTimestamp::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_MD5 => Self::Md5(TcpOptionMd5::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_USER_TIMEOUT => Self::UserTimeout(TcpOptionUserTimeout::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_AUTHENTICATION => Self::TcpAo(TcpOptionAuthentication::from_bytes_unchecked(data)),
+            TCP_OPT_KIND_MPTCP => Self::Mptcp(mptcp::Mptcp::from_bytes_unchecked(data)),
+            _ => Self::Unknown(TcpOptionUnknown::from_bytes_unchecked(data)),
+        }
     }
 
     pub fn byte_len(&self) -> usize {
@@ -1248,23 +1327,63 @@ impl TcpOption {
     }
 }
 
-
-
 #[derive(Clone, Debug)]
-pub struct TcpOptionMss(pub u16);
+pub struct TcpOptionMss(u16);
 
 impl TcpOptionMss {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_MSS, self.byte_len() as u8])?;
+        writer.write(&self.0.to_be_bytes())   
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert!(data.len() == 4);
+        Self(u16::from_be_bytes(utils::to_array(data, 2).unwrap()))
+    }
+
+    #[inline]
     pub fn byte_len(&self) -> usize {
         4
+    }
+
+    #[inline]
+    pub fn mss(&self) -> u16 {
+        self.0
+    }
+
+    #[inline]
+    pub fn set_mss(&mut self, mss: u16) {
+        self.0 = mss;
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct TcpOptionWscale(pub u8);
+pub struct TcpOptionWscale(u8);
 
 impl TcpOptionWscale {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_WSCALE, self.byte_len() as u8])?;
+        writer.write(&[self.0])
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data.len(), 3);
+        Self(data[2])
+    }
+
+    #[inline]
     pub fn byte_len(&self) -> usize {
         3
+    }
+
+    pub fn wscale(&self) -> u8 {
+        self.0
+    }
+
+    pub fn set_wscale(&mut self, wscale: u8) {
+        self.0 = wscale;
     }
 }
 
@@ -1272,14 +1391,43 @@ impl TcpOptionWscale {
 pub struct TcpOptionSack {
     /// The list of blocks being selectively acknowledged. Each tuple represents (begin, end)
     /// pointers to a block of data that has been acknowledged.
-    pub blocks_acked: [(u32, u32); 4],
-    /// The number of blocks present in `blocks_acked` (1-4).
-    pub blocks_acked_cnt: usize,
+    blocks_acked: Buffer<(u32, u32), 4>,
 }
 
 impl TcpOptionSack {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_SACK, self.byte_len() as u8])?;
+        for block in self.blocks_acked.as_slice() {
+            writer.write(&block.0.to_be_bytes())?;
+            writer.write(&block.1.to_be_bytes())?;
+        }
+
+        Ok(())
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data[0], TCP_OPT_KIND_SACK);
+        debug_assert_eq!(data[1] % 4, 0);
+        debug_assert!(data[1] > 2 && data[1] <= 34);
+
+        let mut buf = Buffer::new();
+        let mut idx = 2;
+
+        while idx < data[1] as usize {
+            let sack_start = u32::from_be_bytes(utils::to_array(data, idx).unwrap());
+            let sack_end = u32::from_be_bytes(utils::to_array(data, idx + 4).unwrap());
+            buf.append(&[(sack_start, sack_end)]);
+            idx += 8;
+        }
+
+        Self {
+            blocks_acked: buf,
+        }
+    }
+
     pub fn byte_len(&self) -> usize {
-        2 + 8 * self.blocks_acked_cnt
+        2 + 8 * self.blocks_acked.len()
     }
 }
 
@@ -1290,6 +1438,25 @@ pub struct TcpOptionTimestamp {
 }
 
 impl TcpOptionTimestamp {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_TIMESTAMP, self.byte_len() as u8])?;
+        writer.write(&self.ts.to_be_bytes())?;
+        writer.write(&self.prev_ts.to_be_bytes())
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data[0], TCP_OPT_KIND_TIMESTAMP);
+        debug_assert_eq!(data[1], 10);
+        let ts = u32::from_be_bytes(utils::to_array(data, 2).unwrap());
+        let prev_ts = u32::from_be_bytes(utils::to_array(data, 6).unwrap());
+
+        Self {
+            ts,
+            prev_ts,
+        }
+    }
+
     pub fn byte_len(&self) -> usize {
         10
     }
@@ -1301,8 +1468,28 @@ pub struct TcpOptionMd5 {
 }
 
 impl TcpOptionMd5 {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_MD5, self.byte_len() as u8])?;
+        writer.write(&self.digest)
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data[0], TCP_OPT_KIND_MD5);
+        debug_assert_eq!(data[1], 18);
+
+        Self {
+            digest: utils::to_array(data, 2).unwrap(),
+        }
+    }
+
     pub fn byte_len(&self) -> usize {
         18
+    }
+
+    #[inline]
+    pub fn digest(&self) -> [u8; 16] {
+        self.digest
     }
 }
 
@@ -1313,6 +1500,33 @@ pub struct TcpOptionUserTimeout {
 }
 
 impl TcpOptionUserTimeout {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_USER_TIMEOUT, self.byte_len() as u8])?;
+
+        let optval = self.timeout | match self.granularity {
+            UserTimeoutGranularity::Minute => 0b_1000_0000_0000_0000,
+            UserTimeoutGranularity::Second => 0,
+        };
+        writer.write(&optval.to_be_bytes())
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data[0], TCP_OPT_KIND_TIMESTAMP);
+        debug_assert_eq!(data[1], 4);
+
+        let timeout = u16::from_be_bytes(utils::to_array(data, 2).unwrap());
+        let granularity = match (timeout & 0b_1000_0000_0000_0000) > 0 {
+            true => UserTimeoutGranularity::Minute,
+            false => UserTimeoutGranularity::Second,
+        };
+
+        Self {
+            timeout: timeout & !0b_1000_0000_0000_0000,
+            granularity,
+        }
+    }
+
     pub fn byte_len(&self) -> usize {
         4
     }
@@ -1349,22 +1563,92 @@ pub enum UserTimeoutGranularity {
 pub struct TcpOptionAuthentication {
     key_id: u8,
     next_key_id: u8,
-    mac: Buffer<36>,
+    mac: Buffer<u8, 36>,
 }
 
 impl TcpOptionAuthentication {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[TCP_OPT_KIND_AUTHENTICATION, self.byte_len() as u8])?;
+        writer.write(&[self.key_id, self.next_key_id])?;
+        writer.write(self.mac.as_slice())
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert_eq!(data[0], TCP_OPT_KIND_AUTHENTICATION);
+        debug_assert!(data[1] >= 4 || data[1] <= 40);
+
+        let mut mac = Buffer::new();
+        mac.append(&data[4..data[1] as usize]);
+
+        Self {
+            key_id: data[2],
+            next_key_id: data[3],
+            mac,
+        }
+    }
+
+    #[inline]
     pub fn byte_len(&self) -> usize {
         4 + self.mac.len()
+    }
+
+    #[inline]
+    pub fn key_id(&self) -> u8 {
+        self.key_id
+    }
+
+    #[inline]
+    pub fn set_key_id(&mut self, key_id: u8) {
+        self.key_id = key_id;
+    }
+
+    #[inline]
+    pub fn next_key_id(&self) -> u8 {
+        self.next_key_id
+    }
+
+    #[inline]
+    pub fn set_next_key_id(&mut self, key_id: u8) {
+        self.next_key_id = key_id;
+    }
+
+    #[inline]
+    pub fn mac(&self) -> &Buffer<u8, 36> {
+        &self.mac
+    }
+
+    #[inline]
+    pub fn mac_mut(&mut self) -> &mut Buffer<u8, 36> {
+        &mut self.mac
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct TcpOptionUnknown {
     pub kind: u8,
-    pub value: Buffer<38>, // 40 bytes maximum in options, minus 2 for `kind` and `length`
+    pub value: Buffer<u8, 38>, // 40 bytes maximum in options, minus 2 for `kind` and `length`
 }
 
 impl TcpOptionUnknown {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(&[self.kind, self.byte_len() as u8])?;
+        writer.write(self.value.as_slice())
+    }
+
+    pub fn from_bytes_unchecked(data: &[u8]) -> Self {
+        debug_assert!(data[1] >= 2);
+
+        let mut value = Buffer::new();
+        value.append(&data[2..data[1] as usize]);
+
+        Self {
+            kind: data[0],
+            value,
+        }
+    }
+
     pub fn validate(data: &[u8]) -> Result<(), ValidationError> {
         let Some(&_optlen) = data.get(1) else {
             return Err(ValidationError {
@@ -1387,10 +1671,15 @@ impl TcpOptionUnknown {
 
 #[derive(Clone, Debug)]
 pub struct TcpOptionPadding {
-    pub padding: Buffer<39>, // 40 bytes maximum in options, minus 1 for `Eool`
+    pub padding: Buffer<u8, 39>, // 40 bytes maximum in options, minus 1 for `Eool`
 }
 
 impl TcpOptionPadding {
+    pub fn to_bytes_extended(&self, writable: &mut impl IndexedWritable) -> Result<(), SerializationError> {
+        let mut writer = PacketWriter::new::<Tcp>(writable);
+        writer.write(self.padding.as_slice())
+    }
+
     pub fn byte_len(&self) -> usize {
         self.padding.len()
     }

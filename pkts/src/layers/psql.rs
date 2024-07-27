@@ -12,10 +12,12 @@
 //!
 
 use core::ffi::CStr;
-use std::collections::HashMap;
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
 
 use core::iter::Iterator;
 use core::{cmp, str};
+#[cfg(feature = "std")]
 use std::ffi::CString;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
@@ -23,6 +25,17 @@ use pkts_macros::{Layer, LayerRef, StatelessLayer};
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::{error::*, utils};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::collections::BTreeMap;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::ffi::CString;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::string::String;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 const CLIENT_MSG_BIND: u8 = b'B';
 const CLIENT_MSG_STARTUP: u8 = 0x00;
@@ -45,6 +58,7 @@ const CLIENT_STARTUP_CANCEL_REQ: i32 = 0x1234_5678;
 const CLIENT_STARTUP_SSL_REQ: i32 = 0x1234_5679;
 const CLIENT_STARTUP_GSS_ENC_REQ: i32 = 0x1234_5680;
 
+/*
 const SERVER_MSG_AUTH: u8 = b'R';
 const SERVER_MSG_BACKEND_KEY_DATA: u8 = b'K';
 const SERVER_MSG_BIND_COMPLETE: u8 = b'2';
@@ -81,6 +95,7 @@ const SERVER_AUTH_SSPI: i32 = 9;
 const SERVER_AUTH_SASL: i32 = 10;
 const SERVER_AUTH_SASL_CONTINUE: i32 = 11;
 const SERVER_AUTH_SASL_FINAL: i32 = 12;
+*/
 
 // Psql Server messages can be statelessly parsed, i.e. we don't need to know the
 // current state of the protocol to parse message structure.
@@ -2653,7 +2668,7 @@ pub enum ServerMessage {
     /// Response to an empty query string (substitues for CommandComplete)
     EmptyQueryResponse,
     /// Indicates an error has occurred
-    ErrorResponse(HashMap<u8, String>),
+    ErrorResponse(BTreeMap<u8, String>),
     /// Response to a given FunctionCall containing a result value--None means null
     FunctionCallResponse(Option<Vec<u8>>),
     /// Indicates protocol version must be negotiated.
@@ -2662,7 +2677,7 @@ pub enum ServerMessage {
     /// Indicates that no data could be sent
     NoData,
     /// A response that asynchronously conveys information to the client
-    NoticeResponse(HashMap<u8, String>),
+    NoticeResponse(BTreeMap<u8, String>),
     /// Indicates a notification has been raised from a backend process
     /// (process ID, name of channel, payload string notification)
     NotificationResponse(i32, String, String),

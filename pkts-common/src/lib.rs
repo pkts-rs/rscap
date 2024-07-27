@@ -12,38 +12,46 @@
 
 #![forbid(unsafe_code)]
 
+use core::array;
+
 #[derive(Clone, Debug)]
-pub struct Buffer<const N: usize> {
-    buf: [u8; N],
+pub struct Buffer<T: Copy, const N: usize> {
+    buf: [T; N],
     buf_len: usize,
 }
 
-impl<const N: usize> Buffer<N> {
+impl<T: Copy + Default, const N: usize> Buffer<T, N> {
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[inline]
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[T] {
         &self.buf[..self.buf_len]
     }
 
     #[inline]
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
         &mut self.buf[..self.buf_len]
     }
 
     /// Appends the provided bytes to the buffer, panicking if insufficient space is available in
     /// the buffer.
     #[inline]
-    pub fn append(&mut self, bytes: &[u8]) {
-        self.buf[self.buf_len..self.buf_len + bytes.len()].copy_from_slice(bytes);
-        self.buf_len += bytes.len();
+    pub fn append(&mut self, slice: &[T]) {
+        self.buf[self.buf_len..self.buf_len + slice.len()].copy_from_slice(slice);
+        self.buf_len += slice.len();
+    }
+
+    /// Truncates the buffer to the specified position.
+    pub fn truncate(&mut self, pos: usize) {
+        assert!(self.buf_len >= pos);
+        self.buf_len = pos;
     }
 
     #[inline]
-    pub fn into_parts(self) -> ([u8; N], usize) {
+    pub fn into_parts(self) -> ([T; N], usize) {
         (self.buf, self.buf_len)
     }
 
@@ -65,11 +73,11 @@ impl<const N: usize> Buffer<N> {
     }
 }
 
-impl<const N: usize> Default for Buffer<N> {
+impl<T: Copy + Default, const N: usize> Default for Buffer<T, N> {
     #[inline]
     fn default() -> Self {
         Self {
-            buf: [0u8; N],
+            buf: array::from_fn(|_| T::default()),
             buf_len: 0,
         }
     }
@@ -130,6 +138,12 @@ impl<'a> BufferMut<'a> {
             self.append(bytes);
             return Some(())       
         }
+    }
+
+    /// Truncates the buffer to the specified position.
+    pub fn truncate(&mut self, pos: usize) {
+        assert!(self.buf_len >= pos);
+        self.buf_len = pos;
     }
 
     #[inline]

@@ -11,10 +11,18 @@
 //! A library for creating, decoding and modifying packet layers.
 //!
 
-#![allow(clippy::len_without_is_empty)]
-#![allow(dead_code)]
 #![forbid(unsafe_code)]
+
 #![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+extern crate alloc;
+
+use core::cmp;
+use error::SerializationError;
+use layers::dev_traits::LayerName;
+use pkts_common::{Buffer, BufferMut};
+
 
 pub mod error;
 pub mod layers;
@@ -28,6 +36,184 @@ mod private {
     pub trait Sealed {}
 }
 
+pub struct PacketWriter<'a, T: IndexedWritable> {
+    writable: &'a mut T,
+    error_layer: &'static str,
+}
+
+impl<'a, T: IndexedWritable> PacketWriter<'a, T> {
+    /// Constructs a new writer with errors reported as originating from layer `L`.
+    pub fn new<L: LayerName>(writable: &'a mut T) -> Self {
+        Self {
+            writable,
+            error_layer: L::name(),
+        }
+    }
+
+    /// Writes the data to the writer at its current index.
+    pub fn write(&mut self, data: &[u8]) -> Result<(), SerializationError> {
+        self.writable.write(data).map_err(|e| match e {
+            IndexedWriteError::OutOfRange => panic!(),
+            IndexedWriteError::InsufficientBytes => SerializationError::insufficient_buffer(self.error_layer),
+        })
+    }
+
+    /// Writes the data at the specified index position.
+    /// 
+    /// This method will panic if `pos` is greater than the current written length of the buffer.
+    pub fn write_at(&mut self, data: &[u8], pos: usize) -> Result<(), SerializationError> {
+        self.writable.write_at(data, pos).map_err(|e| match e {
+            IndexedWriteError::OutOfRange => panic!(),
+            IndexedWriteError::InsufficientBytes => SerializationError::insufficient_buffer(self.error_layer),
+        })
+    }
+
+    /// Returns the current index of the writer.
+    pub fn pos(&self) -> usize {
+        self.writable.pos()
+    }
+
+    /// Shifts the writer's index back to the provided index position, truncating the stream.
+    /// 
+    /// This method will panic if `pos` is greater than the current written length of the buffer.
+    pub fn rewind_pos(&mut self, pos: usize) -> Result<(), SerializationError> {
+        self.writable.rewind_pos(pos).map_err(|e| match e {
+            IndexedWriteError::OutOfRange => panic!(),
+            IndexedWriteError::InsufficientBytes => SerializationError::insufficient_buffer(self.error_layer),           
+        })
+    }
+}
+
+pub trait IndexedWritable {
+    /// Writes the data to the writer at its current index.
+    fn write(&mut self, data: &[u8]) -> Result<(), IndexedWriteError>;
+
+    /// Writes the data at the specified index position.
+    /// 
+    /// This method will panic if `pos` is greater than the current written length of the buffer.
+    fn write_at(&mut self, data: &[u8], pos: usize) -> Result<(), IndexedWriteError>;
+
+    /// Returns the current index of the writer.
+    fn pos(&self) -> usize;
+
+    /// Shifts the writer's index back to the provided index position, truncating the stream.
+    /// 
+    /// This method will panic if `pos` is greater than the current written length of the buffer.
+    fn rewind_pos(&mut self, pos: usize) -> Result<(), IndexedWriteError>;
+}
+
+impl IndexedWritable for Vec<u8> {
+    fn write(&mut self, data: &[u8]) -> Result<(), IndexedWriteError> {
+        self.extend(data);
+        Ok(())
+    }
+
+    fn write_at(&mut self, data: &[u8], pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            return Err(IndexedWriteError::OutOfRange)
+        }
+
+        let split = cmp::max(self.len() - pos, data.len());
+
+        self[pos..pos + split].copy_from_slice(&data[..split]);
+        self.extend(&data[split..]);
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.len()
+    }
+
+    fn rewind_pos(&mut self, pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            Err(IndexedWriteError::OutOfRange)
+        } else {
+            self.truncate(pos);
+            Ok(())
+        }
+    }
+}
+
+impl<const N: usize> IndexedWritable for Buffer<u8, N> {
+    fn write(&mut self, slice: &[u8]) -> Result<(), IndexedWriteError> {
+        self.append(slice);
+        Ok(())
+    }
+
+    fn write_at(&mut self, slice: &[u8], pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            return Err(IndexedWriteError::OutOfRange)
+        }
+
+        let split = cmp::max(self.len() - pos, slice.len());
+
+        self.as_mut_slice()[pos..pos + split].copy_from_slice(&slice[..split]);
+        self.append(&slice[split..]);
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.len()
+    }
+
+    fn rewind_pos(&mut self, pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            Err(IndexedWriteError::OutOfRange)
+        } else {
+            self.truncate(pos);
+            Ok(())
+        }
+    }
+}
+
+impl IndexedWritable for BufferMut<'_> {
+    fn write(&mut self, slice: &[u8]) -> Result<(), IndexedWriteError> {
+        self.append(slice);
+        Ok(())
+    }
+
+    fn write_at(&mut self, slice: &[u8], pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            return Err(IndexedWriteError::OutOfRange)
+        }
+
+        let split = cmp::max(self.len() - pos, slice.len());
+
+        self.as_mut_slice()[pos..pos + split].copy_from_slice(&slice[..split]);
+        self.append(&slice[split..]);
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.len()
+    }
+
+    fn rewind_pos(&mut self, pos: usize) -> Result<(), IndexedWriteError> {
+        if pos > self.len() {
+            Err(IndexedWriteError::OutOfRange)
+        } else {
+            self.truncate(pos);
+            Ok(())
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum IndexedWriteError {
+    /// An attempted indexed write would write beyond the end of the writer's buffer. 
+    OutOfRange,
+    /// An attempted write failed due to the underlying writable running out of storage space.
+    InsufficientBytes,
+}
+
+
+pub trait Readable {
+    fn read_slice(&mut self) -> Result<&[u8], SerializationError>;
+
+    fn read_byte(&mut self) -> Result<u8, SerializationError>;   
+}
+
+
 #[cfg(test)]
 mod tests {
     use crate::layers::ip::Ipv4;
@@ -36,7 +222,8 @@ mod tests {
     use crate::layers::traits::*;
     use crate::layers::udp::*;
     use crate::parse_layers;
-    use crate::sequence::*;
+    use crate::sequence::LayeredSequence;
+    use crate::sequence::ipv4::*;
     use pkts_common::BufferMut;
 
     #[test]

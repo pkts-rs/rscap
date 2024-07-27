@@ -19,6 +19,11 @@
 //! with [`UdpRef`]. UDP packets can be constructed from scratch using either [`Udp::new()`] (which
 //! may use heap allocations) or [`UdpBuilder`], which constructs a UDP packet entirely within
 //! a stack-allocated byte array.
+
+use core::fmt::Debug;
+use core::{cmp, slice};
+
+use super::ip::{Ipv4, Ipv6, DATA_PROTO_UDP};
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::Raw;
@@ -27,10 +32,10 @@ use crate::{error::*, utils};
 use pkts_common::BufferMut;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
 
-use core::fmt::Debug;
-use std::{cmp, slice};
-
-use super::ip::{Ipv4, Ipv6, DATA_PROTO_UDP};
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 /// A UDP (User Datagram Protocol) packet.
 ///
@@ -457,6 +462,7 @@ pub struct UdpBuilder<'a, T: UdpBuildPhase> {
     data: BufferMut<'a>,
     layer_start: usize,
     error: Option<SerializationError>,
+    #[allow(unused)]
     phase: T,
 }
 

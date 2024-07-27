@@ -12,19 +12,22 @@
 //!
 //!
 
+use core::iter::Iterator;
+use core::{cmp, iter, mem, slice};
+
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
-use std::iter::Iterator;
-use std::mem;
-use std::slice;
-
-use core::{cmp, iter};
 
 use bitflags::bitflags;
 
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 // Chunk Types
 const CHUNK_TYPE_DATA: u8 = 0;
@@ -40,12 +43,6 @@ const CHUNK_TYPE_ERROR: u8 = 9;
 const CHUNK_TYPE_COOKIE_ECHO: u8 = 10;
 const CHUNK_TYPE_COOKIE_ACK: u8 = 11;
 const CHUNK_TYPE_SHUTDOWN_COMPLETE: u8 = 14;
-
-// DATA Chunk flags
-const DATA_CHUNK_FLAGS_IMMEDIATE_BIT: u8 = 0b_0000_1000;
-const DATA_CHUNK_FLAGS_UNORDERED_BIT: u8 = 0b_0000_0100;
-const DATA_CHUNK_FLAGS_BEGINNING_BIT: u8 = 0b_0000_0010;
-const DATA_CHUNK_FLAGS_ENDING_BIT: u8 = 0b_0000_0001;
 
 // INIT Chunk Options
 const INIT_OPT_IPV4_ADDRESS: u16 = 5;
@@ -75,12 +72,6 @@ const ERR_CODE_COOKIE_RCVD_SHUTTING_DOWN: u16 = 10;
 const ERR_CODE_RESTART_ASSOC_NEW_ADDR: u16 = 11;
 const ERR_CODE_USER_INITIATED_ABORT: u16 = 12;
 const ERR_CODE_PROTOCOL_VIOLATION: u16 = 13;
-
-// ABORT Chunk flags
-const ABORT_FLAGS_T_BIT: u8 = 0b_0000_0001;
-
-// SHUTDOWN COMPLETE Chunk flags
-const SHUTDOWN_COMPLETE_FLAGS_T_BIT: u8 = 0b_0000_0001;
 
 /// An SCTP (Stream Control Transmission Protocol) packet.
 ///

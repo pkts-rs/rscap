@@ -11,14 +11,20 @@
 //! Protocol layers used for communication between MySQL clients and databases.
 //!
 
-use std::cmp::Ordering;
-use std::slice;
+use core::cmp::Ordering;
+use core::slice;
 
 use super::Raw;
 use crate::error::*;
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
+
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 // SIDE NOTE: postgres will be able to be a stateless protocol
 // This is because all other packets besides StartupMessage and

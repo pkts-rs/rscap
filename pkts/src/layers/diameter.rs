@@ -12,15 +12,19 @@
 //!
 //!
 
-use std::slice;
-
 use crate::layers::dev_traits::*;
 use crate::layers::traits::*;
 use crate::layers::*;
 use crate::utils;
 
 use core::iter::Iterator;
-use core::{cmp, iter};
+use core::{cmp, iter, slice};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
+
 
 use bitflags::bitflags;
 
@@ -1145,6 +1149,11 @@ impl<'a> Iterator for BaseAvpIterRef<'a> {
 // TODO: write a macro to generalize work for AVPs
 pub mod avp {
     use super::{BaseAvp, GenericAvp};
+
+    #[cfg(all(not(feature = "std"), feature = "alloc"))]
+    use alloc::string::String;
+    #[cfg(all(not(feature = "std"), feature = "alloc"))]
+    use alloc::vec::Vec;
 
     pub struct AcctInterimInterval {
         interval: u32,

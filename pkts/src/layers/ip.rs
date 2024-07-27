@@ -17,18 +17,24 @@ use core::iter::Iterator;
 use core::net::{Ipv4Addr, Ipv6Addr};
 use core::{array, cmp, slice};
 
-use crate::layers::dev_traits::*;
-use crate::layers::traits::*;
-use crate::{error::*, utils};
-
 use super::sctp::{Sctp, SctpRef};
 use super::tcp::{Tcp, TcpRef};
 use super::udp::{Udp, UdpRef};
 use super::{Raw, RawRef};
 
+use crate::layers::dev_traits::*;
+use crate::layers::traits::*;
+use crate::{error::*, utils};
+
 use bitflags::bitflags;
 
+use pkts_common::Buffer;
 use pkts_macros::{Layer, LayerRef, StatelessLayer};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 /// Internet Protocol, Version 4 (see RFC 760)
 pub const IP_VERSION_IPV4: u8 = 4;
@@ -41,7 +47,7 @@ pub const IP_VERSION_TPIX: u8 = 7;
 /// P Internet Protocol (see RFC 1621)
 pub const IP_VERSION_PIP: u8 = 8;
 /// TCP and UDP over Bigger Addresses (TUBA) (see RFC 1347)
-const IP_VERSION_TUBA: u8 = 9;
+pub const IP_VERSION_TUBA: u8 = 9;
 
 /// IPv6 Hop-by-Hop Option (see RFC 8200)
 pub const DATA_PROTO_HOP_OPT: u8 = 0x00;
@@ -336,7 +342,7 @@ pub const DATA_PROTO_EXP1: u8 = 0xFD;
 /// Use for experimentation and testing
 pub const DATA_PROTO_EXP2: u8 = 0xFE;
 /// Reserved value
-pub const DATA_PROTO_DATA_PROTO_RESERVED: u8 = 0xFF;
+pub const DATA_PROTO_RESERVED: u8 = 0xFF;
 
 /// End of Option List
 pub const OPT_TYPE_EOOL: u8 = 0x00;
@@ -1311,14 +1317,14 @@ impl Ipv4Options {
     }
 
     #[inline]
-    fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut v = Vec::new();
         self.to_bytes_extended(&mut v);
         v
     }
 
     #[inline]
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         match self.options.as_ref() {
             None => (),
             Some(options) => {
@@ -1602,7 +1608,7 @@ pub struct Ipv4Option {
 }
 
 impl Ipv4Option {
-    fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
+    pub fn to_bytes_extended(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.option_type);
         match self.option_type {
             0 | 1 => (),
@@ -1617,7 +1623,7 @@ impl Ipv4Option {
     }
 
     #[inline]
-    fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut v = Vec::new();
         self.to_bytes_extended(&mut v);
         v
@@ -2446,7 +2452,48 @@ pub struct HopByHopOptionsExt {}
 pub struct RoutingExt {
     routing_type: u8,
     segments_left: u8,
-    data: Vec<u8>,
+    data: Buffer<u8, 251>,
+}
+
+impl RoutingExt {
+    #[inline]
+    pub fn routing_type(&self) -> u8 {
+        self.routing_type
+    }
+
+    #[inline]
+    pub fn set_routing_type(&mut self, routing_type: u8) {
+        self.routing_type = routing_type;
+    }
+
+    #[inline]
+    pub fn segments_left(&self) -> u8 {
+        self.segments_left
+    }
+
+    #[inline]
+    pub fn set_segments_left(&mut self, segments_left: u8) {
+        self.segments_left = segments_left;
+    }
+
+    #[inline]
+    pub fn data(&self) -> &Buffer<u8, 251> {
+        &self.data
+    }
+
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut Buffer<u8, 251> {
+        &mut self.data
+    }
+}
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct FragmentExtFlags: u8 {
+        const RESERVED_1     = 0b_0000_0100;
+        const RESERVED_2     = 0b_0000_0010;
+        const MORE_FRAGMENTS = 0b_0000_0001;
+    }
 }
 
 /// The Fragment extension header.
@@ -2463,9 +2510,50 @@ pub struct RoutingExt {
 /// ```
 #[derive(Clone, Debug)]
 pub struct FragmentExt {
+    reserved: u8,
     frag_offset: u16,
-    more_fragments: bool,
-    identification: u32,
+    flags: FragmentExtFlags,
+    ident: u32,
+}
+
+impl FragmentExt {
+    pub fn reserved(&self) -> u8 {
+        self.reserved
+    }
+
+    pub fn set_reserved(&mut self, reserved: u8) {
+        self.reserved = reserved;
+    }
+
+    #[inline]
+    pub fn frag_offset(&self) -> u16 {
+        self.frag_offset
+    }
+
+    #[inline]
+    pub fn set_frag_offset(&mut self, frag_offset: u16) {
+        self.frag_offset = frag_offset;
+    }
+
+    #[inline]
+    pub fn flags(&self) -> FragmentExtFlags {
+        self.flags
+    }
+
+    #[inline]
+    pub fn set_flags(&mut self, flags: FragmentExtFlags) {
+        self.flags = flags;
+    }
+
+    #[inline]
+    pub fn ident(&self) -> u32 {
+        self.ident
+    }
+
+    #[inline]
+    pub fn set_ident(&mut self, ident: u32) {
+        self.ident = ident;
+    }
 }
 
 /// The Security Authentication Header IPSec field.
@@ -2490,7 +2578,39 @@ pub struct FragmentExt {
 pub struct AuthHeader {
     sec_params_idx: u32,
     seq: u32,
-    integrity_val: Vec<u8>,
+    integrity_chk: Buffer<u8, 243>,
+}
+
+impl AuthHeader {
+    #[inline]
+    pub fn sec_params_idx(&self) -> u32 {
+        self.sec_params_idx
+    }
+
+    #[inline]
+    pub fn set_sec_params_idx(&mut self, idx: u32) {
+        self.sec_params_idx = idx;
+    }
+
+    #[inline]
+    pub fn seq(&self) -> u32 {
+        self.seq
+    }
+
+    #[inline]
+    pub fn set_seq(&mut self, seq: u32) {
+        self.seq = seq;
+    }
+
+    #[inline]
+    pub fn integrity_chk(&self) -> &Buffer<u8, 243> {
+        &self.integrity_chk
+    }
+
+    #[inline]
+    pub fn integrity_chk_mut(&mut self) -> &mut Buffer<u8, 243> {
+        &mut self.integrity_chk
+    }
 }
 
 // NOTE: Encapsulating Security Payload is considered a Layer of its own.

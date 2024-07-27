@@ -12,9 +12,15 @@
 //!
 //!
 
+use core::fmt;
+
 use super::dev_traits::*;
 use crate::error::*;
-use core::fmt;
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::vec::Vec;
 
 // =============================================================================
 //                       User-Facing Traits (for `Layer`)
@@ -213,10 +219,8 @@ fn get_layer_tree<L: LayerObject>(
 /// Recursively searches through tree branch depths starting from the root of the tree,
 /// using `get_layer_tree` with incrementally increasing depths.
 fn get_layer_bfs<L: LayerObject>(layer: &dyn LayerObject, n: usize, depth: usize) -> Option<&L> {
-    // TODO:
     // This first `get_layer_bfs()` call is only necessary because the borrow checker
-    // rejects any attempt at a `match` :(. Remove once Polonius is finally integrated into
-    // Rust...
+    // rejects any attempt at a `match` :(. Remove once Polonius is integrated into Rust...
 
     match get_layer_tree(layer, n, depth) {
         // <- Unneccesary once Polonius is done
@@ -708,7 +712,7 @@ pub trait FromBytes: Sized + Validate + StatelessLayer + FromBytesCurrent {
         Ok(Self::from_bytes_unchecked(bytes))
     }
 
-    /// Converts a slice of bytes into a [`Layer`] type, `panic`king on failure.
+    /// Converts a slice of bytes into a [`Layer`] type, `panic`ing on failure.
     ///
     /// # Panics
     ///
@@ -760,6 +764,7 @@ impl<T: LayerObject + Clone> ToLayer for T {
 // =============================================================================
 
 /// Parses bytes into a specified sequence of [`Layer`]s.
+#[cfg(any(feature = "alloc", feature = "std"))]
 #[macro_export]
 macro_rules! parse_layers {
     ($bytes:expr, $first:ty, $($next:tt),+) => {{
@@ -775,7 +780,11 @@ macro_rules! parse_layers {
         match <$curr as $crate::layers::dev_traits::FromBytesCurrent>::from_bytes_current_layer($bytes) {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
-                match $base_layer.add_payload(Box::new(new_layer)) {
+                #[cfg(feature = "std")]
+                let payload = Box::new(new_layer);
+                #[cfg(not(feature = "std"))]
+                let payload = alloc::boxed::Box::new(new_layer);
+                match $base_layer.add_payload(payload) {
                     Ok(_) => $crate::parse_layers!(remaining_bytes; $base_layer, $($next),*),
                     Err(e) => Err(e),
                 }
@@ -787,7 +796,11 @@ macro_rules! parse_layers {
         match <$curr as $crate::layers::dev_traits::FromBytesCurrent>::from_bytes_current_layer($bytes) {
             Ok(new_layer) => {
                 let remaining_bytes = &$bytes[<$curr as $crate::layers::traits::LayerLength>::len(&new_layer)..];
-                match $base_layer.add_payload(Box::new(new_layer)) {
+                #[cfg(feature = "std")]
+                let payload = Box::new(new_layer);
+                #[cfg(not(feature = "std"))]
+                let payload = alloc::boxed::Box::new(new_layer);
+                match $base_layer.add_payload(payload) {
                     Ok(_) if remaining_bytes.len() == 0 => Ok($base_layer),
                     Ok(_) => Err($crate::error::ValidationError {
                         layer: <$curr as $crate::layers::dev_traits::LayerName>::name(),
