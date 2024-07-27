@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// TODO: make buffer a Buffer<'a> instead?
-
 #![forbid(unsafe_code)]
 
 use core::array;
