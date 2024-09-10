@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Linux-specific packet capture/transmission utilities.
+//! (Linux) `AF_PACKET`/`SOCK_RAW` packet capture and transmission interface.
 //!
 //! Sockets that transmit/receive link-layer packets can be found in the [`l2`] submodule, while
 //! sockets that handle network-layer packets can be found in [`l3`]. Memory-mapped socket utilites
@@ -78,15 +78,6 @@ pub enum RxTimestamping {
     Hardware,
     /// Measure receive timestamps as packets leave the kernel.
     Software,
-}
-
-/// Statistics on packets sent and dropped by a socket.
-#[derive(Clone, Copy)]
-pub struct PacketStatistics {
-    /// The number of packets received by a socket.
-    pub packets_seen: usize,
-    /// The number of packets dropped by a socket.
-    pub packets_dropped: usize,
 }
 
 /// The distribution algorithm to be used in a fanout group.

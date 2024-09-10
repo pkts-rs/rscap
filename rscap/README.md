@@ -18,7 +18,22 @@
 1. To provide Rust-native platform tools for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
 2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
 
-The `rscap` submodule focuses specifically on (1)--it provides safe, Rust-native APIs for capturing packets over network interfaces. Linux is currently the only supported operating system, though multi-platform API support for MacOS, BSD and Windows is in the pipeline.
+The `rscap` submodule focuses specifically on (1)--it provides safe, Rust-native APIs for capturing packets over network interfaces. 
+
+## Development Status
+
+Supported:
+- Linux link/network/transport-layer sockets (RX + TX)
+- Linux memory-mapped socket I/O (RX + TX)
+- *BSD/MacOS link-layer `/dev/bpf` packet capture/transmission interfaces (RX + TX)
+- `/dev/bpf` memory-mapped packet capture (RX only)
+- Windows `npcap` driver packet capture/transmission (RX + TX)
+
+In Progress:
+- Unifying interface to provide common features in a cross-platform manner
+- Attaching filter programs (BPF) to sockets
+- Solaris/IllumOS support via DLPI implementation (RX + TX)
+- Native Windows 10/11 capture support via reverse-engineered ioctl calls from `pktmon` (RX only)
 
 ## Features
 

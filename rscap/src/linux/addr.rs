@@ -15,7 +15,7 @@
 //! address types for each link-layer protocol available. A generalized type of all of these possible
 //! protocols is additionally made available as [`L2AddrAny`].
 
-use std::array;
+use std::{array, io};
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
@@ -43,7 +43,7 @@ pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
     fn set_interface(&mut self, iface: Interface);
 
     /// Constructs a [`sockaddr_ll`](libc::sockaddr_ll) struct from the given address.
-    fn to_sockaddr(&self) -> libc::sockaddr_ll;
+    fn to_sockaddr(&self) -> io::Result<libc::sockaddr_ll>;
 }
 
 /// An error in converting the format of an address.
@@ -234,29 +234,27 @@ pub struct L2AddrIp {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
-    type Error = AddrConversionError;
+    type Error = io::Error;
 
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err(AddrConversionError::new("invalid address family"));
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "unrecognized address family (not AF_PACKET)"))
         }
 
         if value.sll_protocol != libc::ETH_P_IP as u16 {
-            return Err(AddrConversionError::new("unexpected address protocol"));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("sockaddr link-layer protocol did not match type (expected {}, was {})", libc::ETH_P_IP as u16, value.sll_protocol)));
         }
 
         if value.sll_halen != 6 {
-            return Err(AddrConversionError::new("invalid address length"));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid sockaddr link-layer address length"))
         }
 
         let addr: [u8; 6] = array::from_fn(|i| value.sll_addr[i]);
 
         Ok(L2AddrIp {
             addr: MacAddr { addr },
-            iface: Interface {
-                if_index: value.sll_ifindex as u32,
-            },
+            iface: Interface::from_index(value.sll_ifindex as u32)?,
         })
     }
 }
@@ -277,18 +275,18 @@ impl L2Addr for L2AddrIp {
         self.iface = iface;
     }
 
-    fn to_sockaddr(&self) -> libc::sockaddr_ll {
+    fn to_sockaddr(&self) -> io::Result<libc::sockaddr_ll> {
         let sll_addr = array::from_fn(|i| *self.addr.addr.get(i).unwrap_or(&0));
 
-        libc::sockaddr_ll {
+        Ok(libc::sockaddr_ll {
             sll_family: libc::AF_PACKET as u16,
             sll_protocol: libc::ETH_P_IP as u16,
-            sll_ifindex: self.iface.if_index as i32,
+            sll_ifindex: self.iface.index()? as i32,
             sll_hatype: 0,
             sll_pkttype: 0,
             sll_halen: 6,
             sll_addr,
-        }
+        })
     }
 }
 
@@ -301,7 +299,7 @@ pub enum L2AddrAny {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrAny {
-    type Error = AddrConversionError;
+    type Error = io::Error;
 
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
@@ -338,7 +336,7 @@ impl L2Addr for L2AddrAny {
     }
 
     #[inline]
-    fn to_sockaddr(&self) -> libc::sockaddr_ll {
+    fn to_sockaddr(&self) -> io::Result<libc::sockaddr_ll> {
         match self {
             L2AddrAny::Ip(addr_ip) => addr_ip.to_sockaddr(),
             L2AddrAny::Other(addr_other) => addr_other.to_sockaddr(),
@@ -354,24 +352,22 @@ pub struct L2AddrUnspec {
 }
 
 impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
-    type Error = AddrConversionError;
+    type Error = io::Error;
 
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err(AddrConversionError::new("invalid address family "));
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "unrecognized address family (not AF_PACKET)"));
         }
 
         let mut addr = Buffer::new();
         match value.sll_addr.get(..value.sll_halen as usize) {
-            None => return Err(AddrConversionError::new("invalid address length")),
+            None => return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid sockaddr link-layer address length")),
             Some(s) => addr.append(s),
         }
 
         Ok(L2AddrUnspec {
             addr,
-            iface: Interface {
-                if_index: value.sll_ifindex as u32,
-            },
+            iface: Interface::from_index(value.sll_ifindex as u32)?,
             protocol: value.sll_protocol as i32,
         })
     }
@@ -393,17 +389,17 @@ impl L2Addr for L2AddrUnspec {
         self.iface = iface;
     }
 
-    fn to_sockaddr(&self) -> libc::sockaddr_ll {
+    fn to_sockaddr(&self) -> io::Result<libc::sockaddr_ll> {
         let sll_addr = array::from_fn(|i| *self.addr.as_slice().get(i).unwrap_or(&0));
 
-        libc::sockaddr_ll {
+        Ok(libc::sockaddr_ll {
             sll_family: libc::AF_PACKET as u16,
             sll_protocol: libc::ETH_P_IP as u16,
-            sll_ifindex: self.iface.if_index as i32,
+            sll_ifindex: self.iface.index()? as i32,
             sll_hatype: 0,
             sll_pkttype: 0,
             sll_halen: 6,
             sll_addr,
-        }
+        })
     }
 }

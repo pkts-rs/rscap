@@ -1,21 +1,41 @@
 [package]
 name = "rscap"
 authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
-description = "Rust packet capture and manipulation utilities"
-rust-version = "1.65" # GATs stabilized in this version; required for `pkts`
-version = "0.1.2"
+description = "Cross-platform packet capture and transmission utilities"
+# 1.66 - `std::os::fd` stabilized
+rust-version = "1.66"
+version = "0.2.0"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 repository = "https://github.com/pkts-rs/rscap"
+keywords = ["packets", "capture", "pcap", "npcap", "bpf", "af_packet", "sock_raw", "raw_sockets"]
+categories = ["network-programming"]
 
 [features]
-default = ["std"]
-std = ["alloc"]
-alloc = []
-libcfull = []
+# Enables use of the npcap driver on Windows systems when the necessary dll libraries are present.
+# 
+# If `Packet.dll` is not present on the system, this option will gracefully return runtime errors
+# for any `npcap` APIs used and revert to `pktmon` for platform-agnostic APIs on Windows.
+# Note that this will incur a runtime performance hit, but only at the time of socket creation--the
+# socket will load `Packet.dll` as a runtime library when it is constructed and unload the dll when
+# the socket is destroyed. This has no performance hit during packet capture or transmission, but
+# opening several sockets in this mode will produce a significant memory footprint from the
+# repeatedly loaded dlls.
+npcap = []
+# Requires the `npcap` driver for Windows systems.
+#
+# Unlike `npcap`, this option will not immediately abort the process if `Packet.dll` cannot be
+# loaded on program start. The dll is loaded once on program startup, so socket creation does not
+# incur any additional overheads.
+npcap-runtime = ["npcap"]
 
 [dependencies]
 bitflags = { version = "2.6.0" }
 libc = { version = "0.2" }
-#pkts = { version = "0.1", path = "../pkts" }
+dlopen2 = { version = "0.7" }
+dlopen2_derive = { version = "0.4" }
+
 pkts-common = { version = "0.1.0", path = "../pkts-common" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32","Win32_Networking", "Win32_Networking_WinSock", "Win32_System", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_Threading"] }

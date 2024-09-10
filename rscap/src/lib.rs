@@ -9,12 +9,29 @@
 // except according to those terms.
 
 //! Rust packet capture and manipulation utilities.
+//! 
+//! 
 
 use std::ffi::CStr;
 use std::io;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "macos", target_os = "netbsd"))]
+pub mod bsd;
+#[cfg(any(target_os = "solaris", target_os = "illumos"))]
+pub mod dlpi;
+pub mod filter;
+//#[cfg(all(target_os = "windows", feature = "npcap"))]
+pub mod npcap;
+#[cfg(target_os = "windows")]
+pub mod pktmon;
+
+#[cfg(not(target_os = "windows"))]
+const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = libc::IF_NAMESIZE - 1;
+#[cfg(target_os = "windows")]
+const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = MAX_ADAPTER_NAME_LEN - 1;
+
 
 // pub use pkts::*;
 
@@ -33,13 +50,31 @@ pub mod linux;
 /// In general, best practice is to use an `Interface` soon after constructing it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Interface {
-    /// The index of the interface.
-    if_index: u32,
+    /// The stored name of the interface.
+    name: [u8; Self::MAX_INTERFACE_NAME_LEN + 1],
+    is_catchall: bool,
 }
 
 impl Interface {
+    const ANY: &'static CStr = c"any";
+
+    /// The maximum length (in bytes) that an interface name can be.
+    /// 
+    /// Note that this value is platform-dependent. It determines the size of the buffer used for
+    /// storing the interface name in an `Interface` instance, so the size of an `Interface` is
+    /// likewise platform-dependent.
+    pub const MAX_INTERFACE_NAME_LEN: usize = INTERNAL_MAX_INTERFACE_NAME_LEN;
+
     /// A special catch-all interface identifier that specifies all operational interfaces.
-    pub const ALL: Self = Self { if_index: 0 };
+    pub fn any() -> io::Result<Self> {
+        let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
+        name[..Self::ANY.to_bytes().len()].copy_from_slice(Self::ANY.to_bytes());
+
+        Ok(Self {
+            name,
+            is_catchall: true,
+        })
+    }
 
     /// Returns an `Interface` corresponding to the given `if_name`, if such an interface exists.
     ///
@@ -54,12 +89,15 @@ impl Interface {
     /// Otherwise, any returned error indicates that `if_name` does not correspond with a valid
     /// interface.
     #[inline]
-    pub fn new(if_name: &str) -> io::Result<Self> {
-        if if_name == "all" {
-            return Ok(Self::ALL);
-        }
+    pub fn new(if_name: &CStr) -> io::Result<Self> {
+        Self::new_raw(if_name.to_bytes())
+    }
 
-        Self::new_raw(if_name.as_bytes())
+    /// Find all available interfaces on the given machine.
+    pub fn find_all() -> io::Result<Vec<Self>> {
+
+
+        todo!()
     }
 
     /// returns an `Interface` corresponding to the given `if_name`, if such an interface exists.
@@ -75,20 +113,23 @@ impl Interface {
     /// Otherwise, any returned error indicates that `if_name` does not correspond with a valid
     /// interface.
     pub fn new_raw(if_name: &[u8]) -> io::Result<Self> {
-        if if_name.len() >= 16 || if_name.contains(&0x00) {
+        if if_name.len() > Self::MAX_INTERFACE_NAME_LEN || if_name.contains(&0x00) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "malformed interface name",
             ));
         }
 
-        let mut if_cstr = [0u8; libc::IF_NAMESIZE];
-        if_cstr.as_mut_slice()[..if_name.len()].copy_from_slice(if_name);
+        let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
+        name[..if_name.len()].copy_from_slice(if_name);
 
-        match unsafe { libc::if_nametoindex(if_cstr.as_ptr() as *const i8) } {
-            0 => Err(io::Error::last_os_error()),
-            i => Ok(Interface { if_index: i }),
-        }
+        let interface = Interface { name, is_catchall: false, };
+
+        // If we can, check to see if the interface is valid
+        #[cfg(not(target_os = "windows"))]
+        interface.index()?;
+
+        Ok(interface)
     }
 
     /// Returns an `Interface` corresponding to the given interface index.
@@ -97,20 +138,31 @@ impl Interface {
     ///
     /// Any returned error indicates that `if_index` does not correspond to a valid interface.
     #[inline]
+    #[cfg(not(target_os = "windows"))]
     pub fn from_index(if_index: u32) -> io::Result<Self> {
+        // TODO: do systems other than Linux actually consider '0' to be a catchall?
         if if_index == 0 {
-            return Ok(Self::ALL);
+            return Self::any()
         }
 
-        let iface = Interface { if_index };
-        iface.name_raw()?; // Check to see if the device exists
-        Ok(iface)
+        let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
+        match unsafe { libc::if_indextoname(if_index, name.as_mut_ptr() as *mut i8) } {
+            ptr if ptr.is_null() => Err(io::Error::last_os_error()),
+            _ => Ok(Self {
+                name,
+                is_catchall: false,
+            })
+        }
     }
 
     /// The raw index of the network interface.
     #[inline]
-    pub fn index(&self) -> u32 {
-        self.if_index
+    #[cfg(not(target_os = "windows"))]
+    pub fn index(&self) -> io::Result<u32> {
+        match unsafe { libc::if_nametoindex(self.name.as_ptr() as *const i8) } {
+            0 => Err(io::Error::last_os_error()),
+            i => Ok(i),
+        }
     }
 
     /// Returns the name associated with the given interface.
@@ -122,30 +174,16 @@ impl Interface {
     ///
     /// Otherwise, a returned error indicates that [`Interface`] does not correspond to a valid
     /// interface.
-    pub fn name(&self) -> io::Result<String> {
-        let mut name_bytes = [0u8; libc::IF_NAMESIZE];
-        match unsafe { libc::if_indextoname(self.if_index, name_bytes.as_mut_ptr() as *mut i8) } {
-            ptr if ptr.is_null() => Err(io::Error::last_os_error()),
-            _ => Ok(CStr::from_bytes_until_nul(&name_bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                .to_str()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                .to_string()),
-        }
+    pub fn name(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.name).unwrap()
     }
 
     /// Returns the raw byte name associated with the given interface.
     ///
-    /// # Errors
-    ///
-    /// Any returned error indicates that [`Interface`] does not correspond to a valid
-    /// interface.
-    pub fn name_raw(&self) -> io::Result<Vec<u8>> {
-        let mut name_arr = [0u8; libc::IF_NAMESIZE];
-        match unsafe { libc::if_indextoname(self.if_index, name_arr.as_mut_ptr() as *mut i8) } {
-            ptr if ptr.is_null() => Err(io::Error::last_os_error()),
-            _ => Ok(Vec::from_iter(name_arr.into_iter().take_while(|b| *b != 0))),
-        }
+    /// The returned byte slice contains a single null-terminating character at the end of the slice.
+    pub fn name_raw(&self) -> &[u8] {
+        let end = self.name.iter().enumerate().find(|(_, c)| **c == b'\0').unwrap().0;
+        &self.name[..end + 1]
     }
 }
 

@@ -579,6 +579,8 @@ impl PacketRxBlock {
         unsafe { &self.description.hdr.bh1 }
     }
 
+    // TODO: this needs to be atomically accessed--we might want to wrap the
+    // entire PacketRxBlock as a typestate of ready or not
     /// The sequence number of the block.
     #[inline]
     pub fn seq(&self) -> u64 {

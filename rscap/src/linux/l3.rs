@@ -188,7 +188,6 @@ impl L3Socket {
         }
 
         L2AddrAny::try_from(sockaddr)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.as_str()))
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
@@ -276,7 +275,7 @@ impl L3Socket {
         let iface = addr.interface();
 
         let req = libc::packet_mreq {
-            mr_ifindex: iface.index() as i32,
+            mr_ifindex: iface.index()? as i32,
             mr_type: libc::PACKET_MR_PROMISC as u16,
             mr_alen: 0,
             mr_address: [0u8; 8],

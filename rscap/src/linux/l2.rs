@@ -20,6 +20,8 @@ use super::mapped::{
 };
 #[cfg(feature = "libcfull")]
 use super::{FanoutAlgorithm, PacketStatistics, RxTimestamping, TxTimestamping};
+#[cfg(feature = "libcfull")]
+use crate::filter::PacketStatistics;
 
 /// A socket that exchanges packets at the link-layer.
 ///
@@ -174,6 +176,7 @@ impl L2Socket {
                 ptr::addr_of_mut!(sockaddr_len),
             )
         };
+
         if res != 0 {
             return Err(io::Error::last_os_error());
         }
@@ -188,7 +191,6 @@ impl L2Socket {
         }
 
         L2AddrAny::try_from(sockaddr)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.as_str()))
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
@@ -276,7 +278,7 @@ impl L2Socket {
         let iface = addr.interface();
 
         let req = libc::packet_mreq {
-            mr_ifindex: iface.index() as i32,
+            mr_ifindex: iface.index()? as i32,
             mr_type: libc::PACKET_MR_PROMISC as u16,
             mr_alen: 0,
             mr_address: [0u8; 8],

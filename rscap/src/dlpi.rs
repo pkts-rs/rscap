@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use crate::error::{ValidationError, ValidationErrorClass};
-pub use crate::layers::traits::*;
-pub use crate::layers::{Raw, RawRef};
-pub use crate::{parse_layers, parse_layers_unchecked};
+//! (Solaris/Illumos) Data Link Provider Interface (DLPI) raw mode packet capture and transmission.
+//! 
+//! 
+
+
