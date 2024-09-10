@@ -15,14 +15,14 @@
 use std::ffi::CStr;
 use std::io;
 
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "macos", target_os = "netbsd", target_os = "openbsd"))]
+pub mod bsd;
 #[cfg(target_os = "linux")]
 pub mod linux;
-#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "macos", target_os = "netbsd"))]
-pub mod bsd;
-#[cfg(any(target_os = "solaris", target_os = "illumos"))]
+#[cfg(any(target_os = "illumos", target_os = "solaris"))]
 pub mod dlpi;
 pub mod filter;
-//#[cfg(all(target_os = "windows", feature = "npcap"))]
+#[cfg(all(target_os = "windows", feature = "npcap"))]
 pub mod npcap;
 #[cfg(target_os = "windows")]
 pub mod pktmon;
