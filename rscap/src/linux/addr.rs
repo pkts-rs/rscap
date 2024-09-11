@@ -15,9 +15,9 @@
 //! address types for each link-layer protocol available. A generalized type of all of these possible
 //! protocols is additionally made available as [`L2AddrAny`].
 
-use std::{array, io};
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
+use std::{array, io};
 
 use crate::Interface;
 
@@ -239,15 +239,28 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
     #[inline]
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err(io::Error::new(io::ErrorKind::Unsupported, "unrecognized address family (not AF_PACKET)"))
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "unrecognized address family (not AF_PACKET)",
+            ));
         }
 
         if value.sll_protocol != libc::ETH_P_IP as u16 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("sockaddr link-layer protocol did not match type (expected {}, was {})", libc::ETH_P_IP as u16, value.sll_protocol)));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "sockaddr link-layer protocol did not match type (expected {}, was {})",
+                    libc::ETH_P_IP as u16,
+                    value.sll_protocol
+                ),
+            ));
         }
 
         if value.sll_halen != 6 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid sockaddr link-layer address length"))
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid sockaddr link-layer address length",
+            ));
         }
 
         let addr: [u8; 6] = array::from_fn(|i| value.sll_addr[i]);
@@ -356,12 +369,20 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
 
     fn try_from(value: libc::sockaddr_ll) -> Result<Self, Self::Error> {
         if value.sll_family != libc::AF_PACKET as u16 {
-            return Err(io::Error::new(io::ErrorKind::Unsupported, "unrecognized address family (not AF_PACKET)"));
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "unrecognized address family (not AF_PACKET)",
+            ));
         }
 
         let mut addr = Buffer::new();
         match value.sll_addr.get(..value.sll_halen as usize) {
-            None => return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid sockaddr link-layer address length")),
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid sockaddr link-layer address length",
+                ))
+            }
             Some(s) => addr.append(s),
         }
 

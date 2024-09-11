@@ -14,12 +14,12 @@
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2AddrAny};
-#[cfg(feature = "libcfull")]
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
-#[cfg(feature = "libcfull")]
-use super::{FanoutAlgorithm, PacketStatistics, RxTimestamping, TxTimestamping};
+use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
+
+use crate::filter::PacketStatistics;
 
 /// A socket that exchanges packets at the network layer.
 ///
@@ -102,7 +102,6 @@ impl L3Socket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
-     #[cfg(feature = "libcfull")] 
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         let bypass_req = if bypass { 1u32 } else { 0u32 };
 
@@ -110,7 +109,7 @@ impl L3Socket {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_QDISC_BYPASS,
+                crate::linux::PACKET_QDISC_BYPASS,
                 ptr::addr_of!(bypass_req) as *const libc::c_void,
                 mem::size_of::<u32>() as u32,
             ) != 0
@@ -126,31 +125,30 @@ impl L3Socket {
     /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
     /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
     /// each time `packet_stats()` is called.
-    #[cfg(feature = "libcfull")]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
-        let mut stats = libc::tpacket_stats {
+        let mut stats = crate::linux::tpacket_stats {
             tp_packets: 0,
             tp_drops: 0,
         };
 
-        let mut stats_len = mem::size_of::<libc::tpacket_stats>() as u32;
+        let mut stats_len = mem::size_of::<crate::linux::tpacket_stats>() as u32;
 
         if unsafe {
             libc::getsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_STATISTICS,
+                crate::linux::PACKET_STATISTICS,
                 ptr::addr_of_mut!(stats) as *mut libc::c_void,
                 ptr::addr_of_mut!(stats_len),
             ) != 0
         } {
             return Err(io::Error::last_os_error());
         }
-        debug_assert!(stats_len == mem::size_of::<libc::tpacket_stats>() as u32);
+        debug_assert!(stats_len == mem::size_of::<crate::linux::tpacket_stats>() as u32);
 
         Ok(PacketStatistics {
-            packets_seen: stats.tp_packets as usize,
-            packets_dropped: stats.tp_drops as usize,
+            received: stats.tp_packets,
+            dropped: stats.tp_drops,
         })
     }
 
@@ -201,7 +199,6 @@ impl L3Socket {
     /// `ERANGE` - the requested packets cannot be timestamped by hardware.
     ///
     /// `EINVAL` - hardware timestamping is not supported by the network card.
-    #[cfg(feature = "libcfull")]
     fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         if tx == TxTimestamping::Hardware || rx == RxTimestamping::Hardware {
             let mut hwtstamp_config = libc::hwtstamp_config {
@@ -223,7 +220,7 @@ impl L3Socket {
             let mut if_name = [0i8; libc::IF_NAMESIZE];
             let if_name_ptr = if_name.as_mut_ptr();
 
-            let res = unsafe { libc::if_indextoname(addr.interface().index(), if_name_ptr) };
+            let res = unsafe { libc::if_indextoname(addr.interface().index()?, if_name_ptr) };
             if res.is_null() {
                 return Err(io::Error::last_os_error());
             }
@@ -255,9 +252,9 @@ impl L3Socket {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_TIMESTAMP,
+                crate::linux::PACKET_TIMESTAMP,
                 ptr::addr_of!(timestamp_req) as *const libc::c_void,
-                mem::size_of::<libc::tpacket_versions>() as u32,
+                mem::size_of::<crate::linux::tpacket_versions>() as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -311,7 +308,6 @@ impl L3Socket {
     /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
     /// - `rollover` causes packets to be sent to a different socket than originally decided
     /// by `fan_alg` if the original socket is backlogged with packets.
-    #[cfg(feature = "libcfull")]
     pub fn set_fanout(
         &self,
         group_id: u16,
@@ -320,29 +316,29 @@ impl L3Socket {
         rollover: bool,
     ) -> io::Result<()> {
         let mut opt = match fan_alg {
-            FanoutAlgorithm::Cpu => libc::PACKET_FANOUT_CPU,
-            FanoutAlgorithm::Hash => libc::PACKET_FANOUT_HASH,
-            FanoutAlgorithm::QueueMapping => libc::PACKET_FANOUT_QM,
-            FanoutAlgorithm::Random => libc::PACKET_FANOUT_RND,
-            FanoutAlgorithm::Rollover => libc::PACKET_FANOUT_ROLLOVER,
-            FanoutAlgorithm::RoundRobin => libc::PACKET_FANOUT_LB,
+            FanoutAlgorithm::Cpu => crate::linux::PACKET_FANOUT_CPU,
+            FanoutAlgorithm::Hash => crate::linux::PACKET_FANOUT_HASH,
+            FanoutAlgorithm::QueueMapping => crate::linux::PACKET_FANOUT_QM,
+            FanoutAlgorithm::Random => crate::linux::PACKET_FANOUT_RND,
+            FanoutAlgorithm::Rollover => crate::linux::PACKET_FANOUT_ROLLOVER,
+            FanoutAlgorithm::RoundRobin => crate::linux::PACKET_FANOUT_LB,
         };
 
         opt |= (group_id as u32) << 16;
 
         if defrag {
-            opt |= libc::PACKET_FANOUT_FLAG_DEFRAG;
+            opt |= crate::linux::PACKET_FANOUT_FLAG_DEFRAG;
         }
 
         if rollover {
-            opt |= libc::PACKET_FANOUT_FLAG_ROLLOVER;
+            opt |= crate::linux::PACKET_FANOUT_FLAG_ROLLOVER;
         }
 
         if unsafe {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_FANOUT,
+                crate::linux::PACKET_FANOUT,
                 ptr::addr_of!(opt) as *const libc::c_void,
                 mem::size_of::<u32>() as u32,
             ) != 0
@@ -445,16 +441,15 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_VERSION socket option to TPACKET_V3.
-    #[cfg(feature = "libcfull")]
     fn set_tpacket_v3_opt(&self) -> io::Result<()> {
-        let pkt_version_3 = libc::tpacket_versions::TPACKET_V3;
+        let pkt_version_3 = crate::linux::tpacket_versions::TPACKET_V3;
         if unsafe {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_VERSION,
+                crate::linux::PACKET_VERSION,
                 ptr::addr_of!(pkt_version_3) as *const libc::c_void,
-                mem::size_of::<libc::tpacket_versions>() as u32,
+                mem::size_of::<crate::linux::tpacket_versions>() as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -464,9 +459,8 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_TX_RING socket option.
-    #[cfg(feature = "libcfull")]
     fn set_tx_ring_opt(&self, config: BlockConfig) -> io::Result<()> {
-        let req_tx = libc::tpacket_req3 {
+        let req_tx = crate::linux::tpacket_req3 {
             tp_block_size: config.block_size(),
             tp_block_nr: config.block_cnt(),
             tp_frame_size: config.frame_size(),
@@ -480,9 +474,9 @@ impl L3Socket {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_TX_RING,
+                crate::linux::PACKET_TX_RING,
                 ptr::addr_of!(req_tx) as *const libc::c_void,
-                mem::size_of::<libc::tpacket_req>() as u32,
+                mem::size_of::<crate::linux::tpacket_req>() as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -492,7 +486,6 @@ impl L3Socket {
     }
 
     /// Sets the PACKET_RX_RING socket option.
-    #[cfg(feature = "libcfull")]
     fn set_rx_ring_opt(
         &self,
         config: BlockConfig,
@@ -503,7 +496,7 @@ impl L3Socket {
             timeout = Some(1); // Prevent user from accidentally selecting kernel default
         }
 
-        let req_rx = libc::tpacket_req3 {
+        let req_rx = crate::linux::tpacket_req3 {
             tp_block_size: config.block_size(),
             tp_block_nr: config.block_cnt(),
             tp_frame_size: config.frame_size(),
@@ -517,9 +510,9 @@ impl L3Socket {
             libc::setsockopt(
                 self.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_RX_RING,
+                crate::linux::PACKET_RX_RING,
                 ptr::addr_of!(req_rx) as *const libc::c_void,
-                mem::size_of::<libc::tpacket_req>() as u32,
+                mem::size_of::<crate::linux::tpacket_req>() as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -531,7 +524,6 @@ impl L3Socket {
     /// Memory-map the packet's TX/RX ring buffers to enable zero-copy packet exchange.
     ///
     /// On error, the consumed [`L3Socket`] will be closed.
-    #[cfg(feature = "libcfull")]
     fn mmap_socket(
         &self,
         config: BlockConfig,
@@ -568,7 +560,6 @@ impl L3Socket {
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
-    #[cfg(feature = "libcfull")]
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -588,12 +579,8 @@ impl L3Socket {
             )
         };
 
-        let tx_ring = unsafe {
-            PacketTxRing::new(
-                (mapping as *mut u8).add(config.map_length()),
-                config,
-            )
-        };
+        let tx_ring =
+            unsafe { PacketTxRing::new((mapping as *mut u8).add(config.map_length()), config) };
 
         // This will immediately wrap around to the first packet due to `frame_offset: None`
         let start_frame = FrameIndex {
@@ -620,18 +607,12 @@ impl L3Socket {
     /// In past kernel versions, some performance issues have been noted when TX_RING sockets are
     /// used in blocking mode (see [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
     /// It is recommended that the socket be set as nonblocking before calling `packet_tx_ring`.
-    #[cfg(feature = "libcfull")]
     pub fn packet_tx_ring(self, config: BlockConfig) -> io::Result<L3TxMappedSocket> {
         self.set_tpacket_v3_opt()?;
         self.set_tx_ring_opt(config)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let tx_ring = unsafe {
-            PacketTxRing::new(
-                mapping as *mut u8,
-                config,
-            )
-        };
+        let tx_ring = unsafe { PacketTxRing::new(mapping as *mut u8, config) };
 
         // This will immediately wrap around to the first packet due to `frame_offset: None`
         let start_frame = FrameIndex {
@@ -652,7 +633,6 @@ impl L3Socket {
     /// Enables zero-copy packet reception for the socket.
     ///
     /// On error, the consumed `L3Socket` will be closed.
-    #[cfg(feature = "libcfull")]
     pub fn packet_rx_ring(
         self,
         config: BlockConfig,
@@ -700,7 +680,6 @@ impl AsRawFd for L3Socket {
 }
 
 /// A network-layer socket with zero-copy packet transmission and reception.
-#[cfg(feature = "libcfull")]
 pub struct L3MappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
@@ -712,7 +691,6 @@ pub struct L3MappedSocket {
     tx_full: bool,
 }
 
-#[cfg(feature = "libcfull")]
 impl L3MappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -744,7 +722,7 @@ impl L3MappedSocket {
             libc::setsockopt(
                 self.socket.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_RESERVE,
+                crate::linux::PACKET_RESERVE,
                 ptr::addr_of!(amount) as *const libc::c_void,
                 mem::size_of::<u32>() as u32,
             ) != 0
@@ -833,7 +811,7 @@ impl L3MappedSocket {
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
     /// [`mapped_send()`](L3MappedSocket::mapped_send()) instead.
-    /// 
+    ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3MappedSocket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -841,7 +819,7 @@ impl L3MappedSocket {
     }
 
     /// Receive a datagram from the socket.
-    /// 
+    ///
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
     /// [`L3MappedSocket::mapped_recv()`] instead.
@@ -881,6 +859,39 @@ impl L3MappedSocket {
         Some(frame)
     }
 
+    //
+    // # Examples
+    //
+    // ```
+    // use std::{thread, time::Duration};
+    // use rscap::linux::prelude::*;
+    //
+    // let mut sock = L3Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
+    // sock.manual_tx_status(true);
+    // let mut sending = 0;
+    // let mut malformed = 0;
+    // for _ in 0..5 {
+    //     let mut tx_frame = sock.mapped_send().unwrap();
+    //     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
+    //     tx_frame.send(11);
+    //     sending += 1;
+    // }
+    //
+    // while sending > 0 {
+    //     match sock.tx_status() {
+    //         TxFrameVariant::Available(_) => sending -= 1,
+    //         TxFrameVariant::WrongFormat(pkt) => {
+    //             println!("Malformed packet: {:?}", pkt.data());
+    //             malformed += 1;
+    //             sending -= 1;
+    //         }
+    //         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
+    //     }
+    // }
+    //
+    // assert!(malformed == 5);
+    // ```
+
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when `manual_tx_status` is set to `false`, this method will only return the
@@ -898,38 +909,6 @@ impl L3MappedSocket {
     /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of pending
     /// packets should be decremented. The contents of the packet can be retrieved from the
     /// [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::{thread, time::Duration};
-    /// use rscap::linux::prelude::*;
-    ///
-    /// let mut sock = L3Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
-    /// sock.manual_tx_status(true);
-    /// let mut sending = 0;
-    /// let mut malformed = 0;
-    /// for _ in 0..5 {
-    ///     let mut tx_frame = sock.mapped_send().unwrap();
-    ///     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
-    ///     tx_frame.send(11);
-    ///     sending += 1;
-    /// }
-    ///
-    /// while sending > 0 {
-    ///     match sock.tx_status() {
-    ///         TxFrameVariant::Available(_) => sending -= 1,
-    ///         TxFrameVariant::WrongFormat(pkt) => {
-    ///             println!("Malformed packet: {:?}", pkt.data());
-    ///             malformed += 1;
-    ///             sending -= 1;
-    ///         }
-    ///         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
-    ///     }
-    /// }
-    ///
-    /// assert!(malformed == 5);
-    /// ```
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
 
@@ -961,7 +940,6 @@ impl L3MappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl Drop for L3MappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -974,7 +952,6 @@ impl Drop for L3MappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl AsRawFd for L3MappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -983,7 +960,6 @@ impl AsRawFd for L3MappedSocket {
 }
 
 /// A network-layer socket with zero-copy packet transmission.
-#[cfg(feature = "libcfull")]
 pub struct L3TxMappedSocket {
     socket: L3Socket,
     tx_ring: PacketTxRing,
@@ -993,7 +969,6 @@ pub struct L3TxMappedSocket {
     tx_full: bool,
 }
 
-#[cfg(feature = "libcfull")]
 impl L3TxMappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1046,7 +1021,7 @@ impl L3TxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
-    /// 
+    ///
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
     /// [`mapped_recv()`](L3MappedSocket::mapped_recv()) instead.
@@ -1058,7 +1033,7 @@ impl L3TxMappedSocket {
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
-    /// 
+    ///
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
     /// [`mapped_send()`](L3MappedSocket::mapped_send()) instead.
@@ -1113,6 +1088,39 @@ impl L3TxMappedSocket {
         self.manual_tx_status = manual;
     }
 
+    //
+    // # Examples
+    //
+    // ```
+    // use std::{thread, time::Duration};
+    // use rscap::linux::prelude::*;
+    //
+    // let mut sock = L3Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
+    // sock.manual_tx_status(true);
+    // let mut sending = 0;
+    // let mut malformed = 0;
+    // for _ in 0..5 {
+    //     let mut tx_frame = sock.mapped_send().unwrap();
+    //     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
+    //     tx_frame.send(11);
+    //     sending += 1;
+    // }
+    //
+    // while sending > 0 {
+    //     match sock.tx_status() {
+    //         TxFrameVariant::Available(_) => sending -= 1,
+    //         TxFrameVariant::WrongFormat(pkt) => {
+    //             println!("Malformed packet: {:?}", pkt.data());
+    //             malformed += 1;
+    //             sending -= 1;
+    //         }
+    //         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
+    //     }
+    // }
+    //
+    // assert!(malformed == 5);
+    // ```
+
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when [`set_tx_status()`](Self::set_tx_status()) is set to `false`, this
@@ -1130,38 +1138,6 @@ impl L3TxMappedSocket {
     /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of
     /// pending packets should be decremented. The contents of the packet can be retrieved from the
     /// encapsulated [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::{thread, time::Duration};
-    /// use rscap::linux::prelude::*;
-    ///
-    /// let mut sock = L3Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?);
-    /// sock.manual_tx_status(true);
-    /// let mut sending = 0;
-    /// let mut malformed = 0;
-    /// for _ in 0..5 {
-    ///     let mut tx_frame = sock.mapped_send().unwrap();
-    ///     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
-    ///     tx_frame.send(11);
-    ///     sending += 1;
-    /// }
-    ///
-    /// while sending > 0 {
-    ///     match sock.tx_status() {
-    ///         TxFrameVariant::Available(_) => sending -= 1,
-    ///         TxFrameVariant::WrongFormat(pkt) => {
-    ///             println!("Malformed packet: {:?}", pkt.data());
-    ///             malformed += 1;
-    ///             sending -= 1;
-    ///         }
-    ///         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
-    ///     }
-    /// }
-    ///
-    /// assert!(malformed == 5);
-    /// ```
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
 
@@ -1178,7 +1154,6 @@ impl L3TxMappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl Drop for L3TxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1191,7 +1166,6 @@ impl Drop for L3TxMappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl AsRawFd for L3TxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
@@ -1200,14 +1174,12 @@ impl AsRawFd for L3TxMappedSocket {
 }
 
 /// A network-layer socket with zero-copy packet reception.
-#[cfg(feature = "libcfull")]
 pub struct L3RxMappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
     next_rx: FrameIndex,
 }
 
-#[cfg(feature = "libcfull")]
 impl L3RxMappedSocket {
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
     /// receiving packets.
@@ -1248,7 +1220,7 @@ impl L3RxMappedSocket {
             libc::setsockopt(
                 self.socket.fd,
                 libc::SOL_PACKET,
-                libc::PACKET_RESERVE,
+                crate::linux::PACKET_RESERVE,
                 ptr::addr_of!(amount) as *const libc::c_void,
                 mem::size_of::<u32>() as u32,
             ) != 0
@@ -1305,7 +1277,7 @@ impl L3RxMappedSocket {
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::send()`]. If you are looking to send a memory-mapped packet, use
     /// [`L3MappedSocket::mapped_send()`] instead.
-    /// 
+    ///
     /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
     /// [`bind()`](L3TxMappedSocket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
@@ -1313,7 +1285,7 @@ impl L3RxMappedSocket {
     }
 
     /// Receive a datagram from the socket.
-    /// 
+    ///
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
     /// to [`L3Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
     /// [`mapped_recv()`](L3MappedSocket::mapped_recv()) instead.
@@ -1335,7 +1307,6 @@ impl L3RxMappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl Drop for L3RxMappedSocket {
     fn drop(&mut self) {
         unsafe {
@@ -1348,7 +1319,6 @@ impl Drop for L3RxMappedSocket {
     }
 }
 
-#[cfg(feature = "libcfull")]
 impl AsRawFd for L3RxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {

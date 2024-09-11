@@ -10,19 +10,19 @@
 
 //! (BSD/MacOS) Berkeley Packet Filter (BPF) packet capture and transmission interface (see `filter`
 //! for cross-platform BPF filtering utilities).
-//! 
-//! 
+//!
+//!
 
 use core::{mem, slice};
 use std::ffi::{CStr, CString};
+use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{array, io, ptr};
-use std::os::fd::RawFd;
 
+use crate::filter::PacketStatistics;
 use crate::Interface;
-use crate::filter::BpfStatistics;
 
-const BPF_PATH: &CStr = c"/dev/bpf";
+const BPF_PATH: &[u8] = b"/dev/bpf\0";
 /// `L2Socket::new()` will only iterate through up to this many BPF device names before failing.
 const MAX_OPEN_BPF: u32 = 1024;
 
@@ -68,19 +68,19 @@ pub struct bpf_ts {
     bt_frac: u64,
 }
 
-const BIOCFLUSH: libc::c_ulong     = 0x20004268;
-const BIOCPROMISC: libc::c_ulong   = 0x20004269;
-const BIOCGDLT: libc::c_ulong      = 0x4004426a;
-const BIOCGBLEN: libc::c_ulong     = 0x40044266;
-const BIOCSBLEN: libc::c_ulong     = 0xc0044266;
-const BIOCVERSION: libc::c_ulong   = 0x40044271;
-const BIOCGETIF: libc::c_ulong     = 0x4020426b;
-const BIOCSETIF: libc::c_ulong     = 0x8020426c;
-const BIOCGSTATS: libc::c_ulong    = 0x4008426f;
+const BIOCFLUSH: libc::c_ulong = 0x20004268;
+const BIOCPROMISC: libc::c_ulong = 0x20004269;
+const BIOCGDLT: libc::c_ulong = 0x4004426a;
+const BIOCGBLEN: libc::c_ulong = 0x40044266;
+const BIOCSBLEN: libc::c_ulong = 0xc0044266;
+const BIOCVERSION: libc::c_ulong = 0x40044271;
+const BIOCGETIF: libc::c_ulong = 0x4020426b;
+const BIOCSETIF: libc::c_ulong = 0x8020426c;
+const BIOCGSTATS: libc::c_ulong = 0x4008426f;
 const BIOCIMMEDIATE: libc::c_ulong = 0x80044270;
-const BIOCSETZBUF: libc::c_ulong   = 0x80184281;
-const BIOCFEEDBACK: libc::c_ulong  = 0x8004427c;
-const BIOCLOCK: libc::c_ulong      = 0x2000427a;
+const BIOCSETZBUF: libc::c_ulong = 0x80184281;
+const BIOCFEEDBACK: libc::c_ulong = 0x8004427c;
+const BIOCLOCK: libc::c_ulong = 0x2000427a;
 
 const BPF_ALIGNMENT: usize = mem::size_of::<libc::c_long>();
 #[allow(non_snake_case)]
@@ -139,7 +139,12 @@ pub enum LinkType {
     PppBsdos = 14,
     #[cfg(target_os = "netbsd")]
     Hippi = 15,
-    #[cfg(any(target_os = "dragonfly", target_os = "netbsd", target_os = "macos", target_os = "openbsd"))]
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "macos",
+        target_os = "openbsd"
+    ))]
     Pfsync = 18,
     AtmClip = 19,
     RedbackSmartedge = 32,
@@ -157,7 +162,7 @@ pub enum LinkType {
     Enc = 13,
     #[cfg(not(target_os = "openbsd"))]
     Enc = 109,
-    #[cfg(target_os = "netbsd")]   
+    #[cfg(target_os = "netbsd")]
     Hdlc = 16,
     #[cfg(not(target_os = "netbsd"))]
     Hdlc = 112,
@@ -210,7 +215,7 @@ impl ReceiveIndex {
         *self = match self {
             ReceiveIndex::FirstBlock(_) => ReceiveIndex::SecondBlock(0),
             ReceiveIndex::SecondBlock(_) => ReceiveIndex::FirstBlock(0),
-        } 
+        }
     }
 }
 
@@ -226,16 +231,14 @@ impl L2Socket {
             SocketAccess::WriteOnly => libc::O_WRONLY,
         };
 
-        let mut fd = unsafe { libc::open(BPF_PATH.as_ptr(), mode) };
+        let mut fd = unsafe { libc::open(BPF_PATH.as_ptr() as *const i8, mode) };
         if fd >= 0 {
-            return Ok(L2Socket {
-                fd,
-            })
+            return Ok(L2Socket { fd });
         }
 
-        let errno = unsafe { *libc::__errno_location() };
+        let errno = unsafe { *libc::__error() };
         if errno != libc::ENOENT {
-            return Err(io::Error::from_raw_os_error(errno))
+            return Err(io::Error::from_raw_os_error(errno));
         }
 
         // `/dev/bpf` isn't available--try `/dev/bpfX`
@@ -244,57 +247,57 @@ impl L2Socket {
             let device = CString::new(format!("/dev/bpf{}", dev_idx).into_bytes()).unwrap();
             fd = unsafe { libc::open(device.as_ptr(), mode) };
             if fd >= 0 {
-                return Ok(L2Socket {
-                    fd,
-                })
+                return Ok(L2Socket { fd });
             }
 
-            let errno = unsafe { *libc::__errno_location() };
+            let errno = unsafe { *libc::__error() };
             if errno != libc::EBUSY {
-                break // Device wasn't in use, but some other error occurred--return
+                break; // Device wasn't in use, but some other error occurred--return
             }
         }
-       
+
         Err(io::Error::last_os_error())
     }
 
     pub fn bpf_version(&self) -> io::Result<BpfVersion> {
-        let mut version = bpf_version {
-            major: 0,
-            minor: 0,
-        };
+        let mut version = bpf_version { major: 0, minor: 0 };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCVERSION, ptr::addr_of_mut!(version) as *mut libc::c_char) };
+        let res = unsafe {
+            libc::ioctl(
+                self.fd,
+                BIOCVERSION,
+                ptr::addr_of_mut!(version) as *mut libc::c_char,
+            )
+        };
         match res {
             0 => Ok(BpfVersion {
                 major: version.major,
                 minor: version.minor,
             }),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
-
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Returns the maximum byte length of packets received by the socket.
-    /// 
+    ///
     /// Any packet exceeding this length will be truncated to fit within the frame.
     pub fn frame_len(&self) -> io::Result<u32> {
         let mut frame_len: libc::c_uint = 0;
         let res = unsafe { libc::ioctl(self.fd, BIOCGBLEN, ptr::addr_of_mut!(frame_len)) };
         match res {
             0.. => Ok(frame_len),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Sets the maximum byte length of packets received by the socket.
-    /// 
+    ///
     /// Any packet exceeding this length will be truncated to fit within the frame.
     pub fn set_frame_len(&self, mut frame_len: u32) -> io::Result<()> {
         let res = unsafe { libc::ioctl(self.fd, BIOCSBLEN, ptr::addr_of_mut!(frame_len)) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -304,7 +307,7 @@ impl L2Socket {
         let res = unsafe { libc::ioctl(self.fd, BIOCGDLT, ptr::addr_of_mut!(linktype)) };
         match res {
             0.. => Ok(linktype),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -317,7 +320,7 @@ impl L2Socket {
         let res = unsafe { libc::ioctl(self.fd, BIOCPROMISC) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -326,27 +329,28 @@ impl L2Socket {
         let res = unsafe { libc::ioctl(self.fd, BIOCFLUSH) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Binds the device to the given interface, enabling it to receive packets from that interface.
     pub fn bind(&self, iface: Interface) -> io::Result<()> {
-        let name = iface.name_raw()?;
+        let name = iface.name_raw();
         let mut ifreq = libc::ifreq {
             ifr_name: array::from_fn(|i| if i < name.len() { name[i] as i8 } else { 0i8 }),
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_addr: libc::sockaddr {
                     sa_family: 0,
+                    sa_len: 0,
                     sa_data: [0i8; 14],
-                }
+                },
             },
         };
 
         let res = unsafe { libc::ioctl(self.fd, BIOCSETIF, ptr::addr_of_mut!(ifreq)) };
         match res {
             0 => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -357,20 +361,23 @@ impl L2Socket {
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_addr: libc::sockaddr {
                     sa_family: 0,
+                    sa_len: 0,
                     sa_data: [0i8; 14],
-                }
+                },
             },
         };
 
         let res = unsafe { libc::ioctl(self.fd, BIOCGETIF, ptr::addr_of_mut!(ifreq)) };
         match res {
-            0 => Ok(Interface::new(unsafe { CStr::from_ptr(ifreq.ifr_name.as_ptr()) })?),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            0 => Ok(Interface::new(unsafe {
+                CStr::from_ptr(ifreq.ifr_name.as_ptr())
+            })?),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Returns statistics on packets received and dropped by the socket.
-    pub fn stats(&self) -> io::Result<BpfStatistics> {
+    pub fn stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = bpf_stat {
             bs_recv: 0,
             bs_drop: 0,
@@ -378,66 +385,54 @@ impl L2Socket {
 
         let res = unsafe { libc::ioctl(self.fd, BIOCGSTATS, ptr::addr_of_mut!(stats)) };
         match res {
-            0.. => Ok(BpfStatistics {
+            0.. => Ok(PacketStatistics {
                 received: stats.bs_recv,
                 dropped: stats.bs_drop,
             }),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Sets the socket to return immediately on packet reception.
     pub fn set_immediate(&self, immediate: bool) -> io::Result<()> {
-        let mut immediate: libc::c_uint = if immediate {
-            1
-        } else {
-            0
-        };
+        let mut immediate: libc::c_uint = if immediate { 1 } else { 0 };
 
         let res = unsafe { libc::ioctl(self.fd, BIOCIMMEDIATE, ptr::addr_of_mut!(immediate)) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Enables or disables nonblocking I/O for the given socket.
-    /// 
+    ///
     /// When enabled, calls to [`send()`](Self::send) or [`recv()`](Self::recv) will return an error
     /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
     /// a packet.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        let mut nonblocking: libc::c_int = if nonblocking {
-            1
-        } else {
-            0
-        };
+        let mut nonblocking: libc::c_int = if nonblocking { 1 } else { 0 };
 
         let res = unsafe { libc::ioctl(self.fd, libc::FIONBIO, ptr::addr_of_mut!(nonblocking)) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Enables or disables capture of packets that are specifically sent out by the socket via
     /// `send()`[Self::send].
-    /// 
+    ///
     /// When enabled, injected link-layer packets sent via [`send()`](Self::send) will appear in
     /// subsequent calls to [`recv()`](Self::recv).
-    /// 
+    ///
     /// This option is set to disabled by default.
     pub fn set_feedback(&self, allow_feedback: bool) -> io::Result<()> {
-        let mut allow_feedback: libc::c_int = if allow_feedback {
-            1
-        } else {
-            0
-        };
+        let mut allow_feedback: libc::c_int = if allow_feedback { 1 } else { 0 };
 
         let res = unsafe { libc::ioctl(self.fd, BIOCFEEDBACK, ptr::addr_of_mut!(allow_feedback)) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -446,16 +441,22 @@ impl L2Socket {
         let res = unsafe { libc::ioctl(self.fd, BIOCLOCK) };
         match res {
             0.. => Ok(()),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Send a link-layer packet on the interface bound to the given socket.
     pub fn send(&self, packet: &[u8]) -> io::Result<usize> {
-        let res = unsafe { libc::write(self.fd, packet.as_ptr() as *const libc::c_void, packet.len()) };
+        let res = unsafe {
+            libc::write(
+                self.fd,
+                packet.as_ptr() as *const libc::c_void,
+                packet.len(),
+            )
+        };
         match res {
             0.. => Ok(res as usize),
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
@@ -465,16 +466,17 @@ impl L2Socket {
         match res {
             0.. => {
                 let data = &mut buf[..res as usize];
-                RxFrameIter {
-                    rem: data,
-                }.next().ok_or(io::Error::new(io::ErrorKind::InvalidData, "recv() returned corrupt frame--insufficient buffer length?"))
-            },
-            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() })),
+                RxFrameIter { rem: data }.next().ok_or(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "recv() returned corrupt frame--insufficient buffer length?",
+                ))
+            }
+            _ => Err(io::Error::from_raw_os_error(unsafe { *libc::__error() })),
         }
     }
 
     /// Enable memory-mapped I/O for incoming packets.
-    /// 
+    ///
     /// In the event of failure, the consumed `L2Socket` will automatically be closed.
     pub fn packet_rx_ring(self, buffer_size: usize) -> io::Result<L2RxMappedSocket> {
         let flags = libc::MAP_ANONYMOUS; // MAP_ANONYMOUS initializes contents to zero.
@@ -482,15 +484,15 @@ impl L2Socket {
 
         let ringbuf = unsafe { libc::mmap(ptr::null_mut(), buffer_size * 2, prot, flags, -1, 0) };
         if ringbuf == libc::MAP_FAILED {
-            let errno = unsafe { *libc::__errno_location() };
+            let errno = unsafe { *libc::__error() };
             // Clean up socket
             unsafe { libc::close(self.fd) };
-            return Err(io::Error::from_raw_os_error(errno))
+            return Err(io::Error::from_raw_os_error(errno));
         }
 
         let mut req = bpf_zbuf {
             bz_bufa: ringbuf,
-            bz_bufb: unsafe { ringbuf.byte_add(buffer_size) },
+            bz_bufb: unsafe { (ringbuf as *mut u8).add(buffer_size) as *mut libc::c_void },
             bz_buflen: buffer_size,
         };
 
@@ -507,9 +509,9 @@ impl L2Socket {
                 unsafe { libc::close(self.fd) };
                 unsafe { libc::munmap(ringbuf, buffer_size * 2) };
 
-                Err(io::Error::from_raw_os_error(unsafe { *libc::__errno_location() }))
+                Err(io::Error::from_raw_os_error(unsafe { *libc::__error() }))
             }
-        }       
+        }
     }
 }
 
@@ -531,7 +533,7 @@ impl L2RxMappedSocket {
     pub fn rx_ring(&mut self) -> RxRing<'_> {
         RxRing {
             block_1: self.raw,
-            block_2: unsafe { self.raw.byte_add(self.buflen) },
+            block_2: unsafe { (self.raw as *mut u8).add(self.buflen) as *mut libc::c_void },
             recv_idx: &mut self.recv_idx,
         }
     }
@@ -544,12 +546,17 @@ impl L2RxMappedSocket {
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
         let (raw, block_idx) = match self.recv_idx {
             ReceiveIndex::FirstBlock(i) => (self.raw, i),
-            ReceiveIndex::SecondBlock(i) => unsafe { (self.raw.byte_add(self.buflen), i) },
+            ReceiveIndex::SecondBlock(i) => unsafe {
+                (
+                    (self.raw as *mut u8).add(self.buflen) as *mut libc::c_void,
+                    i,
+                )
+            },
         };
 
         let data = unsafe { RxBlock::block_parts(raw)?.1 };
         let mut iter = RxFrameIter {
-            rem: &mut data[block_idx..]
+            rem: &mut data[block_idx..],
         };
 
         let prev_len = iter.rem.len();
@@ -611,7 +618,7 @@ pub struct RxBlock<'a> {
 impl<'a> RxBlock<'a> {
     unsafe fn block_parts(buf: *mut libc::c_void) -> Option<(&'a mut BpfHeader, &'a mut [u8])> {
         let header = &mut *(buf as *mut BpfHeader);
-        let buf_start = buf.byte_add(mem::size_of::<BpfHeader>()) as *mut u8;
+        let buf_start = (buf as *mut u8).add(mem::size_of::<BpfHeader>());
 
         let user_gen = header.bzh_user_gen.load(Ordering::Acquire);
         let kernel_gen = header.bzh_kernel_gen.load(Ordering::Acquire);
@@ -626,9 +633,7 @@ impl<'a> RxBlock<'a> {
 
     #[inline]
     pub fn frames(&'a mut self) -> RxFrameIter<'a> {
-        RxFrameIter {
-            rem: self.data,
-        }
+        RxFrameIter { rem: self.data }
     }
 
     pub fn mark_read(self) {
@@ -645,7 +650,9 @@ impl<'a> RxBlock<'a> {
 
         // Mark the block as ready to be written to by the kernel
         let kernel_gen = self.header.bzh_kernel_gen.load(Ordering::Acquire);
-        self.header.bzh_user_gen.store(kernel_gen, Ordering::Release);
+        self.header
+            .bzh_user_gen
+            .store(kernel_gen, Ordering::Release);
     }
 }
 
@@ -655,10 +662,10 @@ pub struct RxFrameIter<'a> {
 
 impl<'a> Iterator for RxFrameIter<'a> {
     type Item = RxFrame<'a>;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.rem.len() < mem::size_of::<bpf_xhdr>() {
-            return None
+            return None;
         }
 
         let hdr_bytes = &self.rem[..mem::size_of::<bpf_xhdr>()];
@@ -675,13 +682,13 @@ impl<'a> Iterator for RxFrameIter<'a> {
         let padding = padded_len - unpadded_len;
 
         if self.rem.len() < padded_len {
-            return None
+            return None;
         }
 
         let rem = mem::replace(&mut self.rem, &mut []);
         let rem = &mut rem[offset_to_start..];
         let (pkt, rem) = rem.split_at_mut(caplen);
-        
+
         self.rem = rem.get_mut(padding..).unwrap_or(&mut []);
         Some(RxFrame {
             data: pkt,

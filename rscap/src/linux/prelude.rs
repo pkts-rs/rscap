@@ -12,8 +12,7 @@
 
 pub use super::addr::{L2Addr, L2AddrAny, L2AddrIp, L2AddrUnspec};
 pub use super::l2::L2Socket;
-#[cfg(feature = "libcfull")]
 pub use super::l2::{L2MappedSocket, L2RxMappedSocket, L2TxMappedSocket};
 pub use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
-pub use crate::Interface;
 pub use crate::filter::PacketStatistics;
+pub use crate::Interface;

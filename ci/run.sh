@@ -27,13 +27,11 @@ done
 
 case "${OS}" in
     windows*)
-        cargo test --features wintun
+        cargo test
 
-        cargo test --features wintun-runtime
+        cargo test --features npcap
 
-        cargo test --features tapwin6
-
-        cargo test --features tapwin6-runtime
+        cargo test --features npcap-runtime
         ;;
     *)
         # No extra features in any platform other than windows

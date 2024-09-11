@@ -1,4 +1,3 @@
-
 use bitflags::bitflags;
 
 bitflags! {

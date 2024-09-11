@@ -1,5 +1,9 @@
 # Release History:
 
+* 0.2.0 (2024-09-09)
+  - Split out `rscap` and `pkts` into separate crates
+  - Introduce CI pipeline
+
 * 0.1.1 (2023-03-23)
   - Cleanup of unstable/unused APIs
 

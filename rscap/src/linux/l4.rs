@@ -61,7 +61,10 @@ impl L4Socket {
             L4Protocol::Udp => libc::IPPROTO_UDP,
             L4Protocol::Custom(protocol) => {
                 if protocol == libc::IPPROTO_RAW as u8 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "IPPROTO_RAW not supported for L4Socket"))
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "IPPROTO_RAW not supported for L4Socket",
+                    ));
                 }
                 protocol as i32
             }
@@ -125,12 +128,17 @@ impl L4Socket {
     }
 
     /// Send a datagram to the specified IPv4 address.
-    pub fn send_to(&self, buf: &[u8], rem_addr: SocketAddrV4, flags: SendFlags) -> io::Result<usize> {
+    pub fn send_to(
+        &self,
+        buf: &[u8],
+        rem_addr: SocketAddrV4,
+        flags: SendFlags,
+    ) -> io::Result<usize> {
         let sockaddr = libc::sockaddr_in {
             sin_family: libc::AF_INET as u16,
             sin_port: rem_addr.port(),
             sin_addr: libc::in_addr {
-                s_addr: rem_addr.ip().to_bits(),
+                s_addr: u32::from_be_bytes(rem_addr.ip().octets()), // TODO: endianness?
             },
             sin_zero: [0u8; 8],
         };
@@ -157,9 +165,7 @@ impl L4Socket {
         let sockaddr = libc::sockaddr_in {
             sin_family: libc::AF_INET as u16,
             sin_port: 0,
-            sin_addr: libc::in_addr {
-                s_addr: 0,
-            },
+            sin_addr: libc::in_addr { s_addr: 0 },
             sin_zero: [0u8; 8],
         };
 
@@ -177,9 +183,12 @@ impl L4Socket {
         } {
             ..=-1 => Err(io::Error::last_os_error()),
             recvd => {
-                let rem_addr = SocketAddrV4::new(Ipv4Addr::from_bits(sockaddr.sin_addr.s_addr), sockaddr.sin_port);
+                let rem_addr = SocketAddrV4::new(
+                    Ipv4Addr::from(sockaddr.sin_addr.s_addr.to_be_bytes()), // TODO: endianness?
+                    sockaddr.sin_port,
+                );
                 Ok((recvd as usize, rem_addr))
-            },
+            }
         }
     }
 }

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 //! (Windows) npcap packet capture and transmission interface.
-//! 
+//!
 
 // RSCAP_NPCAP_PATH:
 // C:\Windows\System32\Npcap\Packet.dll
@@ -23,12 +23,14 @@ use std::mem::MaybeUninit;
 use std::ptr::{self, NonNull};
 
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_ACCESS_DENIED, ERROR_BAD_UNIT};
-use windows_sys::Win32::Networking::WinSock::{WSACleanup, WSAStartup, WSADATA, WSAEPROCLIM, WSASYSNOTREADY, WSAVERNOTSUPPORTED};
+use windows_sys::Win32::Networking::WinSock::{
+    WSACleanup, WSAStartup, WSADATA, WSAEPROCLIM, WSASYSNOTREADY, WSAVERNOTSUPPORTED,
+};
 
 use dll::{Adapter, BpfStat, Npcap, PACKET_MODE_CAPT, PACKET_MODE_STAT};
 
-use crate::Interface;
 use crate::filter::PacketStatistics;
+use crate::Interface;
 
 const WSA_VERSION: u16 = 0x0202;
 
@@ -46,11 +48,11 @@ pub struct NpcapError {
 
 impl NpcapError {
     pub fn new<E>(kind: NpcapErrorKind, error: E) -> Self
-    where 
+    where
         E: Into<Box<dyn Error + Send + Sync>>,
     {
         Self {
-            kind, 
+            kind,
             error: Some(error.into()),
         }
     }
@@ -132,18 +134,28 @@ impl L2Socket {
                 WSASYSNOTREADY => return Err(NpcapErrorKind::NetworkNotReady.into()),
                 WSAVERNOTSUPPORTED => return Err(NpcapErrorKind::UnsupportedSystem.into()),
                 WSAEPROCLIM => return Err(NpcapErrorKind::ProcessLimit.into()),
-                e => return Err(NpcapError::new(NpcapErrorKind::Internal, format!("WSAStartup() returned error value {}", e))),
+                e => {
+                    return Err(NpcapError::new(
+                        NpcapErrorKind::Internal,
+                        format!("WSAStartup() returned error value {}", e),
+                    ))
+                }
             }
         }
 
         let npcap = Npcap::new()?;
 
         let adapter = match NonNull::new(npcap.open_adapter(iface.name())) {
-            None => return Err(match unsafe { GetLastError() } {
-                ERROR_BAD_UNIT => NpcapErrorKind::InvalidInterface.into(),
-                ERROR_ACCESS_DENIED => NpcapErrorKind::PermissionDenied.into(),
-                e => NpcapError::new(NpcapErrorKind::Internal, format!("unspecified error {} in opening npcap adapter", e)),
-            }),
+            None => {
+                return Err(match unsafe { GetLastError() } {
+                    ERROR_BAD_UNIT => NpcapErrorKind::InvalidInterface.into(),
+                    ERROR_ACCESS_DENIED => NpcapErrorKind::PermissionDenied.into(),
+                    e => NpcapError::new(
+                        NpcapErrorKind::Internal,
+                        format!("unspecified error {} in opening npcap adapter", e),
+                    ),
+                })
+            }
             Some(p) => p,
         };
 
@@ -159,7 +171,7 @@ impl L2Socket {
     }
 
     /// Retrieves the name of the npcap driver.
-    /// 
+    ///
     /// As Winpcap uses a very similar API to npcap, this function is useful in disambiguating
     /// the one from the other.
     #[inline]
@@ -187,7 +199,10 @@ impl L2Socket {
         match self.npcap.set_monitor_mode(self.iface.name(), enabled) {
             1 => Ok(()),
             0 => Err(NpcapErrorKind::UnsupportedMode.into()),
-            error => Err(NpcapError::new(NpcapErrorKind::OperationFailed, format!("setting monitor mode failed with error {}", error))),
+            error => Err(NpcapError::new(
+                NpcapErrorKind::OperationFailed,
+                format!("setting monitor mode failed with error {}", error),
+            )),
         }
     }
 
@@ -199,39 +214,54 @@ impl L2Socket {
             bs_capt: 0,
         };
 
-        match self.npcap.get_stats_ex(unsafe { self.adapter.as_mut() }, &mut stat) {
+        match self
+            .npcap
+            .get_stats_ex(unsafe { self.adapter.as_mut() }, &mut stat)
+        {
             true => Ok(PacketStatistics {
                 received: stat.bs_recv,
                 dropped: stat.bs_drop,
             }),
-            false => Err(NpcapErrorKind::OperationFailed.into())
+            false => Err(NpcapErrorKind::OperationFailed.into()),
         }
     }
 
     /// Sets the size of the buffer used by the npcap driver to queue packets for the socket.
     pub fn set_driver_buffer(&mut self, buffer_size: usize) -> Result<(), NpcapError> {
-        let buffer_size = libc::c_int::try_from(buffer_size).map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
-        match self.npcap.set_buff(unsafe { self.adapter.as_mut() }, buffer_size) {
+        let buffer_size = libc::c_int::try_from(buffer_size)
+            .map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
+        match self
+            .npcap
+            .set_buff(unsafe { self.adapter.as_mut() }, buffer_size)
+        {
             true => Ok(()),
-            false => Err(NpcapErrorKind::OperationFailed.into())
+            false => Err(NpcapErrorKind::OperationFailed.into()),
         }
     }
 
     /// Defines the minimum amount of data npcap driver that will cause a `recv()` to return.
     pub fn set_min_to_copy(&mut self, copy_bytes: usize) -> Result<(), NpcapError> {
-        let copy_bytes = libc::c_int::try_from(copy_bytes).map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
-        match self.npcap.set_min_to_copy(unsafe { self.adapter.as_mut() }, copy_bytes) {
+        let copy_bytes = libc::c_int::try_from(copy_bytes)
+            .map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
+        match self
+            .npcap
+            .set_min_to_copy(unsafe { self.adapter.as_mut() }, copy_bytes)
+        {
             true => Ok(()),
-            false => Err(NpcapErrorKind::OperationFailed.into())
+            false => Err(NpcapErrorKind::OperationFailed.into()),
         }
     }
 
     /// Configures the number of times a packet written to the interface via `send()` will b
     /// repeated.
     pub fn set_repeat_send(&mut self, num_repeats: u32) -> Result<(), NpcapError> {
-        let num_repeats = libc::c_int::try_from(num_repeats).map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
-        
-        match self.npcap.set_num_writes(unsafe { self.adapter.as_mut() }, num_repeats) {
+        let num_repeats = libc::c_int::try_from(num_repeats)
+            .map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?;
+
+        match self
+            .npcap
+            .set_num_writes(unsafe { self.adapter.as_mut() }, num_repeats)
+        {
             true => Ok(()),
             false => Err(NpcapErrorKind::OperationFailed.into()),
         }
@@ -239,7 +269,7 @@ impl L2Socket {
 
     /*
     /// Sets the capture mode of the interface.
-    /// 
+    ///
     /// By default, the capture mode is set to `NpcapMode::Capture`.
     pub fn set_mode(&self, mode: NpcapMode) -> Result<(), NpcapError> {
         let mode_int = match mode {
@@ -255,18 +285,22 @@ impl L2Socket {
     */
 
     /// Sets the value of the read timeout associated with the socket.
-    /// 
+    ///
     /// `timeout` indicates how long the socket will wait to receive a packet before returning.
     pub fn set_timeout(&mut self, timeout: NpcapTimeout) -> Result<(), NpcapError> {
         let timeout = match timeout {
             NpcapTimeout::None => -1,
             NpcapTimeout::Immediate => 0,
-            NpcapTimeout::Milliseconds(ms) => libc::c_int::try_from(ms).map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?,
+            NpcapTimeout::Milliseconds(ms) => libc::c_int::try_from(ms)
+                .map_err(|_| NpcapError::from(NpcapErrorKind::InvalidValue))?,
         };
 
-        match self.npcap.set_read_timeout(unsafe { self.adapter.as_mut() }, timeout) {
+        match self
+            .npcap
+            .set_read_timeout(unsafe { self.adapter.as_mut() }, timeout)
+        {
             true => Ok(()),
-            false => Err(NpcapErrorKind::OperationFailed.into())
+            false => Err(NpcapErrorKind::OperationFailed.into()),
         }
     }
 
@@ -281,11 +315,8 @@ impl L2Socket {
 
 impl Drop for L2Socket {
     fn drop(&mut self) {
-
-
         unsafe {
             WSACleanup();
         }
     }
 }
-

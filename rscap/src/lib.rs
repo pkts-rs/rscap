@@ -9,19 +9,28 @@
 // except according to those terms.
 
 //! Rust packet capture and manipulation utilities.
-//! 
-//! 
+//!
+//!
 
 use std::ffi::CStr;
 use std::io;
 
-#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "macos", target_os = "netbsd", target_os = "openbsd"))]
-pub mod bsd;
-#[cfg(target_os = "linux")]
-pub mod linux;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::NetworkManagement::IpHelper::MAX_ADAPTER_NAME;
+
+#[cfg(any(
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+pub mod bpf;
 #[cfg(any(target_os = "illumos", target_os = "solaris"))]
 pub mod dlpi;
 pub mod filter;
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(all(target_os = "windows", feature = "npcap"))]
 pub mod npcap;
 #[cfg(target_os = "windows")]
@@ -30,8 +39,7 @@ pub mod pktmon;
 #[cfg(not(target_os = "windows"))]
 const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = libc::IF_NAMESIZE - 1;
 #[cfg(target_os = "windows")]
-const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = MAX_ADAPTER_NAME_LEN - 1;
-
+const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = MAX_ADAPTER_NAME as usize - 1;
 
 // pub use pkts::*;
 
@@ -56,10 +64,10 @@ pub struct Interface {
 }
 
 impl Interface {
-    const ANY: &'static CStr = c"any";
+    const ANY: &[u8] = b"any\0";
 
     /// The maximum length (in bytes) that an interface name can be.
-    /// 
+    ///
     /// Note that this value is platform-dependent. It determines the size of the buffer used for
     /// storing the interface name in an `Interface` instance, so the size of an `Interface` is
     /// likewise platform-dependent.
@@ -68,7 +76,7 @@ impl Interface {
     /// A special catch-all interface identifier that specifies all operational interfaces.
     pub fn any() -> io::Result<Self> {
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
-        name[..Self::ANY.to_bytes().len()].copy_from_slice(Self::ANY.to_bytes());
+        name[..Self::ANY.len()].copy_from_slice(Self::ANY);
 
         Ok(Self {
             name,
@@ -95,8 +103,6 @@ impl Interface {
 
     /// Find all available interfaces on the given machine.
     pub fn find_all() -> io::Result<Vec<Self>> {
-
-
         todo!()
     }
 
@@ -123,7 +129,10 @@ impl Interface {
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
         name[..if_name.len()].copy_from_slice(if_name);
 
-        let interface = Interface { name, is_catchall: false, };
+        let interface = Interface {
+            name,
+            is_catchall: false,
+        };
 
         // If we can, check to see if the interface is valid
         #[cfg(not(target_os = "windows"))]
@@ -142,7 +151,7 @@ impl Interface {
     pub fn from_index(if_index: u32) -> io::Result<Self> {
         // TODO: do systems other than Linux actually consider '0' to be a catchall?
         if if_index == 0 {
-            return Self::any()
+            return Self::any();
         }
 
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
@@ -151,7 +160,7 @@ impl Interface {
             _ => Ok(Self {
                 name,
                 is_catchall: false,
-            })
+            }),
         }
     }
 
@@ -175,14 +184,20 @@ impl Interface {
     /// Otherwise, a returned error indicates that [`Interface`] does not correspond to a valid
     /// interface.
     pub fn name(&self) -> &CStr {
-        CStr::from_bytes_until_nul(&self.name).unwrap()
+        unsafe { CStr::from_ptr(self.name.as_ptr() as *const i8) }
     }
 
     /// Returns the raw byte name associated with the given interface.
     ///
     /// The returned byte slice contains a single null-terminating character at the end of the slice.
     pub fn name_raw(&self) -> &[u8] {
-        let end = self.name.iter().enumerate().find(|(_, c)| **c == b'\0').unwrap().0;
+        let end = self
+            .name
+            .iter()
+            .enumerate()
+            .find(|(_, c)| **c == b'\0')
+            .unwrap()
+            .0;
         &self.name[..end + 1]
     }
 }

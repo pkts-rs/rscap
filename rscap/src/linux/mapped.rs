@@ -9,7 +9,7 @@
 // except according to those terms.
 
 //! Structures used for memory-mapped packet sockets.
-//! 
+//!
 //! These structures transparently perform the necessary `setsockopt(PACKET_RX_RING)` and `mmap()`
 //! procedures to enable zero-copy transmission and reception of packets over a socket.
 
@@ -149,27 +149,23 @@ pub struct PacketTxRing {
 
 impl PacketTxRing {
     /// Constructs a new `PacketTxRing` instance from a raw memory-mapped segment and configuration.
-    pub(crate) unsafe fn new(
-        ring_start: *mut u8,
-        config: BlockConfig,
-
-    ) -> Self {
+    pub(crate) unsafe fn new(ring_start: *mut u8, config: BlockConfig) -> Self {
         let frame_size = config.frame_size as usize;
         let block_cnt = config.block_cnt as usize;
         let block_size = config.block_size as usize;
 
-        debug_assert!(block_size >= mem::size_of::<libc::tpacket_block_desc>());
+        debug_assert!(block_size >= mem::size_of::<crate::linux::tpacket_block_desc>());
 
         let mut blocks = Vec::new();
 
         for i in 0..block_cnt {
             let block_slice = slice::from_raw_parts_mut(ring_start.add(block_size * i), block_size);
             let (description_bytes, block_slice) =
-                block_slice.split_at_mut(mem::size_of::<libc::tpacket_block_desc>());
+                block_slice.split_at_mut(mem::size_of::<crate::linux::tpacket_block_desc>());
 
             // SAFETY: each block must begin with an initialized tpacket_block_desc
             let block_description = unsafe {
-                (description_bytes.as_mut_ptr() as *mut libc::tpacket_block_desc)
+                (description_bytes.as_mut_ptr() as *mut crate::linux::tpacket_block_desc)
                     .as_mut()
                     .unwrap()
             };
@@ -238,14 +234,14 @@ impl PacketTxRing {
 
 /// An individual block in a reception-oriented ring buffer.
 pub struct PacketTxBlock {
-    description: &'static mut libc::tpacket_block_desc,
+    description: &'static mut crate::linux::tpacket_block_desc,
     frames: &'static mut [u8],
     frame_size: usize,
 }
 
 impl PacketTxBlock {
     #[inline]
-    fn block_header(&self) -> &libc::tpacket_hdr_v1 {
+    fn block_header(&self) -> &crate::linux::tpacket_hdr_v1 {
         // SAFETY: the `tpacket_bd_hdr_u` union has only one variant, so this access is memory-safe.
         unsafe { &self.description.hdr.bh1 }
     }
@@ -283,7 +279,7 @@ pub struct PacketTxFrameIter<'a> {
 
 impl<'a> PacketTxFrameIter<'a> {
     /// Retrieves the next available transmission frame (or `None` if no frames remain).
-    /// 
+    ///
     /// The behavior of `next_frame()` depends on the variant of the returned transmission frame:
     /// - [`TxFrameVariant::Available`] causes the iterator to move its index to the next available
     /// frame; a subsequent call to `next_frame()` will return a frame from the next contiguous
@@ -318,11 +314,11 @@ impl<'a> PacketTxFrameIter<'a> {
 
         let curr_frame_data = &mut frames[offset..];
 
-        let (header_data, rem) =
-            curr_frame_data.split_at_mut(tpacket_align(mem::size_of::<libc::tpacket3_hdr>()));
+        let (header_data, rem) = curr_frame_data
+            .split_at_mut(tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>()));
         // SAFETY: tpacket3_header must be present at this data offset
         let header = unsafe {
-            (header_data.as_mut_ptr() as *mut libc::tpacket3_hdr)
+            (header_data.as_mut_ptr() as *mut crate::linux::tpacket3_hdr)
                 .as_mut()
                 .unwrap()
         };
@@ -340,15 +336,15 @@ impl<'a> PacketTxFrameIter<'a> {
         let packet = &mut rem[..frame_end];
 
         let frame_variant = match header.tp_status {
-            libc::TP_STATUS_AVAILABLE => {
+            crate::linux::TP_STATUS_AVAILABLE => {
                 header.tp_next_offset = 0;
                 header.tp_len = 0;
                 header.tp_snaplen = 0;
                 TxFrameVariant::Available(TxFrame { header, packet })
             }
-            libc::TP_STATUS_SEND_REQUEST => TxFrameVariant::SendRequest,
-            libc::TP_STATUS_SENDING => TxFrameVariant::Sending,
-            libc::TP_STATUS_WRONG_FORMAT => {
+            crate::linux::TP_STATUS_SEND_REQUEST => TxFrameVariant::SendRequest,
+            crate::linux::TP_STATUS_SENDING => TxFrameVariant::Sending,
+            crate::linux::TP_STATUS_WRONG_FORMAT => {
                 TxFrameVariant::WrongFormat(InvalidTxFrame { header, packet })
             }
             _ => TxFrameVariant::WrongFormat(InvalidTxFrame { header, packet }),
@@ -359,7 +355,7 @@ impl<'a> PacketTxFrameIter<'a> {
 }
 
 /// An individual transmission frame.
-/// 
+///
 /// The variant represents the state of the frame _at the time the frame is accessed_. The kernel
 /// may modify the underlying state of a [`SendRequest`](TxFrameVariant::SendRequest) or
 /// [`Sending`](TxFrameVariant::Sending) frame at any time, so they should not be relied on as an
@@ -378,7 +374,7 @@ pub enum TxFrameVariant<'a> {
 
 /// A transmission frame capable of conveying a single packet.
 pub struct TxFrame<'a> {
-    header: &'a mut libc::tpacket3_hdr,
+    header: &'a mut crate::linux::tpacket3_hdr,
     packet: &'a mut [u8],
 }
 
@@ -403,7 +399,7 @@ impl TxFrame<'_> {
 
         self.header.tp_len = packet_length;
         self.header.tp_snaplen = packet_length;
-        self.header.tp_status = libc::TP_STATUS_SEND_REQUEST;
+        self.header.tp_status = crate::linux::TP_STATUS_SEND_REQUEST;
     }
 }
 
@@ -412,7 +408,7 @@ impl TxFrame<'_> {
 /// When dropped, this structure will mark its frame as available for use in subsequent packet
 /// transmissions.
 pub struct InvalidTxFrame<'a> {
-    header: &'a mut libc::tpacket3_hdr,
+    header: &'a mut crate::linux::tpacket3_hdr,
     packet: &'a mut [u8],
 }
 
@@ -428,7 +424,7 @@ impl Drop for InvalidTxFrame<'_> {
     fn drop(&mut self) {
         self.header.tp_len = 0;
         self.header.tp_snaplen = 0;
-        self.header.tp_status = libc::TP_STATUS_AVAILABLE;
+        self.header.tp_status = crate::linux::TP_STATUS_AVAILABLE;
     }
 }
 
@@ -460,18 +456,18 @@ impl PacketRxRing {
         let block_cnt = config.block_cnt as usize;
         let block_size = config.block_size as usize;
 
-        debug_assert!(frame_size >= mem::size_of::<libc::tpacket_block_desc>());
+        debug_assert!(frame_size >= mem::size_of::<crate::linux::tpacket_block_desc>());
 
         let mut blocks = Vec::new();
 
         for i in 0..block_cnt {
             let block_slice = slice::from_raw_parts_mut(ring_start.add(block_size * i), block_size);
             let (description_bytes, block_slice) =
-                block_slice.split_at_mut(mem::size_of::<libc::tpacket_block_desc>());
+                block_slice.split_at_mut(mem::size_of::<crate::linux::tpacket_block_desc>());
 
             // SAFETY: each block must begin with an initialized tpacket_block_desc
             let block_description = unsafe {
-                (description_bytes.as_mut_ptr() as *mut libc::tpacket_block_desc)
+                (description_bytes.as_mut_ptr() as *mut crate::linux::tpacket_block_desc)
                     .as_mut()
                     .unwrap()
             };
@@ -479,7 +475,7 @@ impl PacketRxRing {
             debug_assert!(block_description.version == 1);
 
             let priv_offset = block_description.offset_to_priv as usize
-                - mem::size_of::<libc::tpacket_block_desc>();
+                - mem::size_of::<crate::linux::tpacket_block_desc>();
             let first_frame_offset =
                 unsafe { block_description.hdr.bh1.offset_to_first_pkt as usize };
 
@@ -533,7 +529,7 @@ impl PacketRxRing {
             None => {
                 let block_index = (index.blocks_index + 1) % self.blocks.len();
                 let block = &mut self.blocks[index.blocks_index];
-                if (block.block_header().block_status & libc::TP_STATUS_USER) == 0 {
+                if (block.block_header().block_status & crate::linux::TP_STATUS_USER) == 0 {
                     return None; // No data from the next block is ready to be read yet
                 }
 
@@ -566,7 +562,7 @@ impl PacketRxRing {
 
 /// An individual block in a reception-orieented ring buffer.
 pub struct PacketRxBlock {
-    description: &'static mut libc::tpacket_block_desc,
+    description: &'static mut crate::linux::tpacket_block_desc,
     priv_data: &'static mut [u8],
     frames: &'static mut [u8],
     osi_layer: OsiLayer,
@@ -574,7 +570,7 @@ pub struct PacketRxBlock {
 
 impl PacketRxBlock {
     #[inline]
-    fn block_header(&self) -> &libc::tpacket_hdr_v1 {
+    fn block_header(&self) -> &crate::linux::tpacket_hdr_v1 {
         // SAFETY: the `tpacket_bd_hdr_u` union has only one variant, so this access is memory-safe.
         unsafe { &self.description.hdr.bh1 }
     }
@@ -590,7 +586,7 @@ impl PacketRxBlock {
     /// The availability status of the block.
     #[inline]
     pub fn status(&self) -> PacketRxStatus {
-        if (self.block_header().block_status & libc::TP_STATUS_USER) != 0 {
+        if (self.block_header().block_status & crate::linux::TP_STATUS_USER) != 0 {
             PacketRxStatus::User
         } else {
             PacketRxStatus::Kernel
@@ -663,16 +659,16 @@ impl<'a> PacketRxFrameIter<'a> {
         // This, combined with the current frame shift and the packet header and sockaddr shifts, gives us our final adjusted offset value
         let full_offset = init_offset
             + curr_offset
-            + tpacket_align(mem::size_of::<libc::tpacket3_hdr>())
+            + tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>())
             + mem::size_of::<libc::sockaddr_ll>();
 
         let curr_frame_data = &mut frames[curr_offset..];
 
-        let (header_data, rem) =
-            curr_frame_data.split_at_mut(tpacket_align(mem::size_of::<libc::tpacket3_hdr>()));
+        let (header_data, rem) = curr_frame_data
+            .split_at_mut(tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>()));
         // SAFETY: tpacket3_header must be present at this data offset
         let header = unsafe {
-            (header_data.as_mut_ptr() as *mut libc::tpacket3_hdr)
+            (header_data.as_mut_ptr() as *mut crate::linux::tpacket3_hdr)
                 .as_mut()
                 .unwrap()
         };
@@ -715,7 +711,7 @@ impl<'a> PacketRxFrameIter<'a> {
 
 /// A reception frame capable of conveying a single packet.
 pub struct RxFrame<'a> {
-    header: &'a mut libc::tpacket3_hdr,
+    header: &'a mut crate::linux::tpacket3_hdr,
     sockaddr: &'a mut libc::sockaddr_ll,
     padding: &'a mut [u8],
     packet: &'a mut [u8],
@@ -763,14 +759,14 @@ impl RxFrame<'_> {
     /// Note that this flag is only set if `set_copy_thresh()` has been enabled for the socket.
     #[inline]
     pub fn is_copied(&self) -> bool {
-        (self.header.tp_status & libc::TP_STATUS_COPY) != 0
+        (self.header.tp_status & crate::linux::TP_STATUS_COPY) != 0
     }
 
     /// Indicates there have been dropped packets since the last call to `packet_statistics()` was made
     /// on the socket.
     #[inline]
     pub fn dropped_packets(&self) -> bool {
-        (self.header.tp_status & libc::TP_STATUS_LOSING) != 0
+        (self.header.tp_status & crate::linux::TP_STATUS_LOSING) != 0
     }
 
     /// Indicates that the packet's Internet/Transport-layer checksums will be done in hardware (and
@@ -779,7 +775,7 @@ impl RxFrame<'_> {
     /// This option is applicable to outgoing IP packets when checksum offloading is enabled.
     #[inline]
     pub fn offloaded_checksum(&self) -> bool {
-        (self.header.tp_status & libc::TP_STATUS_CSUMNOTREADY) != 0
+        (self.header.tp_status & crate::linux::TP_STATUS_CSUMNOTREADY) != 0
     }
 
     /// Indicates that at least the transport header checksum has been validated by the operating system.
@@ -789,13 +785,13 @@ impl RxFrame<'_> {
     /// and determined to be valid or invalid in userspace.
     #[inline]
     pub fn checksum_valid(&self) -> bool {
-        (self.header.tp_status & libc::TP_STATUS_CSUM_VALID) != 0
+        (self.header.tp_status & crate::linux::TP_STATUS_CSUM_VALID) != 0
     }
 
     /// The VLAN TCI value associated with the packet, if such a value exists.
     #[inline]
     pub fn vlan_tci(&self) -> Option<u32> {
-        if (self.header.tp_status & libc::TP_STATUS_VLAN_VALID) != 0 {
+        if (self.header.tp_status & crate::linux::TP_STATUS_VLAN_VALID) != 0 {
             Some(self.header.hv1.tp_vlan_tci)
         } else {
             None
@@ -805,7 +801,7 @@ impl RxFrame<'_> {
     /// The VLAN TPID value associated with the packet, if such a value exists.
     #[inline]
     pub fn vlan_tpid(&self) -> Option<u16> {
-        if (self.header.tp_status & libc::TP_STATUS_VLAN_TPID_VALID) != 0 {
+        if (self.header.tp_status & crate::linux::TP_STATUS_VLAN_TPID_VALID) != 0 {
             Some(self.header.hv1.tp_vlan_tpid)
         } else {
             None
@@ -828,5 +824,5 @@ impl RxFrame<'_> {
 
 const fn tpacket_align(len: usize) -> usize {
     // identical to libc::TPACKET_ALIGN(), but const and safe
-    (len + libc::TPACKET_ALIGNMENT - 1) & !(libc::TPACKET_ALIGNMENT - 1)
+    (len + crate::linux::TPACKET_ALIGNMENT - 1) & !(crate::linux::TPACKET_ALIGNMENT - 1)
 }
