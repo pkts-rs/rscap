@@ -38,4 +38,4 @@ dlopen2_derive = { version = "0.4" }
 pkts-common = { version = "0.1.0" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32","Win32_Networking", "Win32_Networking_WinSock", "Win32_System", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_Threading"] }

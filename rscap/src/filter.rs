@@ -1,9 +1,6 @@
-
-
 //! Cross-platform packet filtering utilities.
-//! 
-//! 
-
+//!
+//!
 
 #[derive(Clone, Debug)]
 pub struct PacketStatistics {

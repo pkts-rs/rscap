@@ -8,16 +8,20 @@ pub use dlopen::Npcap;
 #[cfg(feature = "npcap-require")]
 pub use link::Npcap;
 
+use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE;
+
 use std::mem;
 
-pub const PACKET_MODE_CAPT: libc::c_int      = 0x00;
-pub const PACKET_MODE_STAT: libc::c_int      = 0x01;
-pub const PACKET_MODE_MON: libc::c_int       = 0x02;
-pub const PACKET_MODE_DUMP: libc::c_int      = 0x10;
+pub const PACKET_MODE_CAPT: libc::c_int = 0x00;
+pub const PACKET_MODE_STAT: libc::c_int = 0x01;
+pub const PACKET_MODE_MON: libc::c_int = 0x02;
+pub const PACKET_MODE_DUMP: libc::c_int = 0x10;
 pub const PACKET_MODE_STAT_DUMP: libc::c_int = PACKET_MODE_DUMP | PACKET_MODE_STAT;
 
 pub const PACKET_ALIGNMENT: usize = mem::size_of::<libc::c_int>();
-pub const fn packet_wordalign(x: usize) -> usize { (x + (PACKET_ALIGNMENT - 1)) & !(PACKET_ALIGNMENT - 1) }
+pub const fn packet_wordalign(x: usize) -> usize {
+    (x + (PACKET_ALIGNMENT - 1)) & !(PACKET_ALIGNMENT - 1)
+}
 
 pub const NDIS_MEDIUM_NULL: i32 = -1;
 pub const NDIS_MEDIUM_CHDLC: i32 = -2;
@@ -41,7 +45,6 @@ pub const ADAPTER_NAME_LENGTH: usize = 256 + 12;
 pub const ADAPTER_DESC_LENGTH: usize = 128;
 pub const MAX_MAC_ADDR_LENGTH: usize = 8;
 pub const MAX_NETWORK_ADDRESSES: usize = 16;
-
 
 pub const INFO_FLAG_NDIS_ADAPTER: libc::c_int = 0;
 pub const INFO_FLAG_NDISWAN_ADAPTER: libc::c_int = 1;
@@ -99,9 +102,9 @@ pub struct DumpBpfHdr {
 
 #[repr(C)]
 pub struct NpfIfAddr {
-    pub ip_address: libc::sockaddr_storage,
-    pub subnet_mask: libc::sockaddr_storage,
-    pub broadcast: libc::sockaddr_storage,
+    pub ip_address: SOCKADDR_STORAGE,
+    pub subnet_mask: SOCKADDR_STORAGE,
+    pub broadcast: SOCKADDR_STORAGE,
 }
 
 #[repr(C)]
@@ -138,21 +141,21 @@ pub struct PacketOidData {
 pub struct WanAdapter {
     pub h_capture_blob: *const libc::c_void, // HBLOB
     pub critical_section: windows_sys::Win32::System::Threading::CRITICAL_SECTION,
-    pub buffer: *mut libc::c_uchar, // PUCHAR
-    pub c: libc::c_ulong, // DWORD
-    pub p: libc::c_ulong, // DWORD
-    pub free: libc::c_ulong, // DWORD
-    pub size: libc::c_ulong, // DWORD
-    pub dropped: libc::c_ulong, // DWORD
-    pub accepted: libc::c_ulong, // DWORD
-    pub received: libc::c_ulong, // DWORD
-    pub min_to_copy: libc::c_ulong, // DWORD
+    pub buffer: *mut libc::c_uchar,  // PUCHAR
+    pub c: libc::c_ulong,            // DWORD
+    pub p: libc::c_ulong,            // DWORD
+    pub free: libc::c_ulong,         // DWORD
+    pub size: libc::c_ulong,         // DWORD
+    pub dropped: libc::c_ulong,      // DWORD
+    pub accepted: libc::c_ulong,     // DWORD
+    pub received: libc::c_ulong,     // DWORD
+    pub min_to_copy: libc::c_ulong,  // DWORD
     pub read_timeout: libc::c_ulong, // DWORD
     pub h_read_event: libc::c_ulong, // DWORD
     pub fileter_code: *mut BpfInsn,
     pub mode: libc::c_ulong, // DWORD
-    pub nbytes: i64, // LARGE_INTEGER,
-    pub npackets: i64, // LARGE_INTEGER,
+    pub nbytes: i64,         // LARGE_INTEGER,
+    pub npackets: i64,       // LARGE_INTEGER,
     // ifdef have buggy tme support
     // mem_ex: MEM_TYPE,
     // tme: TME_CORE,

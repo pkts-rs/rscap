@@ -32,30 +32,13 @@ if [ -n "$INSTALL_RUST_SRC" ]; then
 fi
 
 if [ "$OS" = "windows" ]; then
-  if [ "$ARCH_BITS" = "i686" ]; then
-    echo "Install MinGW32"
-    choco install mingw --x86 --force
-  fi
-
-  echo "Find GCC libraries"
-  gcc -print-search-dirs
-  /usr/bin/find "C:\ProgramData\Chocolatey" -name "crt2*"
-  /usr/bin/find "C:\ProgramData\Chocolatey" -name "dllcrt2*"
-  /usr/bin/find "C:\ProgramData\Chocolatey" -name "libmsvcrt*"
-
-  if [ -n "$ARCH_BITS" ]; then
-    echo "Fix MinGW"
-    for i in crt2.o dllcrt2.o libmingwex.a libmsvcrt.a ; do
-      cp -f "/C/ProgramData/Chocolatey/lib/mingw/tools/install/mingw$ARCH_BITS/$ARCH-w64-mingw32/lib/$i" "$(rustc --print sysroot)/lib/rustlib/$TARGET/lib"
-    done
-  fi
-
-  # Install Wintun
-  echo "Install Wintun"
-  curl.exe -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
-  powershell.exe -NoP -NonI -Command "Expand-Archive './wintun.zip' './'"
-  cp -f "./wintun/bin/amd64/wintun.dll" "./"
-  rm -rf "./wintun"
+  # Install Npcap
+  curl.exe -o "C:/npcap-sdk.zip" "https://npcap.com/dist/npcap-sdk-0.zip"
+  powershell.exe -NoP -NonI -Command "Expand-Archive -LiteralPath C:/npcap-sdk.zip -DestinationPath C:/"
+  cp "C:/npcap-sdk/Lib/x64/Packet.lib" "C:/Packet.lib"
+  cp "C:/npcap-sdk/Lib/x64/Packet.lib" "./Packet.lib"
+  curl.exe -o "C:/npcap.exe" "https://github.com/nmap/npcap/releases/download/v0.80/npcap-0.80.exe"
+  C:/npcap.exe "/S"
 fi
 
 echo "Query rust and cargo versions"
