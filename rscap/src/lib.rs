@@ -12,18 +12,27 @@
 //!
 //!
 
-use std::ffi::CStr;
-use std::io;
+// TODO:
+// Packet sockets (`PF_PACKET`) are available in Solaris/IllumOS as well as Linux:
+// https://docs.oracle.com/cd/E88353_01/html/E37851/pf-packet-4p.html
+// https://www.illumos.org/opensolaris/ARChive/PSARC/2009/232/pfp-psarc.txt
+//
+// While neither support memory-mapped ring buffers (`PACKET_TX_RING`/`PACKET_RX_RING`),
+// IllumOS *does* support attaching BPF programs to a packet socket:
+// https://github.com/illumos/illumos-gate/blob/47ec9542e2cec788e0d0ff35e54ad5cef6f520d5/usr/src/uts/common/sys/socket.h#L155
+//
+// NOTE: Solaris and IllumOS both support /dev/bpf. Should probably just use that by default.
 
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::NetworkManagement::IpHelper::MAX_ADAPTER_NAME;
+// NOTE: Fuschia OS likewise supports `/dev/bpf`.
 
 #[cfg(any(
     target_os = "dragonfly",
     target_os = "freebsd",
+    target_os = "illumos",
     target_os = "macos",
     target_os = "netbsd",
-    target_os = "openbsd"
+    target_os = "openbsd",
+    target_os = "solaris",
 ))]
 pub mod bpf;
 #[cfg(any(target_os = "illumos", target_os = "solaris"))]
@@ -35,6 +44,19 @@ pub mod linux;
 pub mod npcap;
 #[cfg(target_os = "windows")]
 pub mod pktmon;
+
+#[cfg(any(not(target_os = "windows"), feature = "npcap"))]
+mod sniffer;
+mod utils;
+
+#[cfg(any(not(target_os = "windows"), feature = "npcap"))]
+pub use sniffer::Sniffer;
+
+use std::ffi::CStr;
+use std::io;
+
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::NetworkManagement::IpHelper::MAX_ADAPTER_NAME;
 
 #[cfg(not(target_os = "windows"))]
 const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = libc::IF_NAMESIZE - 1;
@@ -64,7 +86,7 @@ pub struct Interface {
 }
 
 impl Interface {
-    const ANY: &[u8] = b"any\0";
+    const ANY: &'static [u8] = b"any\0";
 
     /// The maximum length (in bytes) that an interface name can be.
     ///
@@ -168,6 +190,10 @@ impl Interface {
     #[inline]
     #[cfg(not(target_os = "windows"))]
     pub fn index(&self) -> io::Result<u32> {
+        if self.is_catchall {
+            return Ok(0);
+        }
+
         match unsafe { libc::if_nametoindex(self.name.as_ptr() as *const i8) } {
             0 => Err(io::Error::last_os_error()),
             i => Ok(i),
@@ -199,6 +225,50 @@ impl Interface {
             .unwrap()
             .0;
         &self.name[..end + 1]
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn arp_type(&self) -> io::Result<u16> {
+        use std::ptr;
+
+        let mut ifr = libc::ifreq {
+            ifr_name: std::array::from_fn(|i| self.name[i] as i8),
+            ifr_ifru: libc::__c_anonymous_ifr_ifru {
+                ifru_hwaddr: libc::sockaddr {
+                    sa_family: 0,
+                    sa_data: [0; 14],
+                },
+            },
+        };
+
+        let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        if unsafe { libc::ioctl(fd, libc::SIOCGIFHWADDR, ptr::addr_of_mut!(ifr)) } < 0 {
+            let err = io::Error::last_os_error();
+            unsafe {
+                libc::close(fd);
+            }
+            return Err(err);
+        }
+
+        unsafe {
+            libc::close(fd);
+            Ok(ifr.ifr_ifru.ifru_hwaddr.sa_family)
+        }
+    }
+
+    // See https://github.com/the-tcpdump-group/libpcap/blob/afa58de01aba5b7f971b1f8d72a1fc5b5fd514e4/pcap-linux.c#L1868
+    #[cfg(target_os = "linux")]
+    #[inline]
+    pub fn datalink_type(&self) -> io::Result<u16> {
+        match self.arp_type()? {
+            // TODO: Android incorrectly assigns ARPHRD_ETHER to some interfaces
+            libc::ARPHRD_ETHER => todo!(), // DLT_EN10MB
+            _ => todo!(),
+        }
     }
 }
 

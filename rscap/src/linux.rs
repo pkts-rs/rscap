@@ -17,6 +17,15 @@
 //! To include all common linux-specific structures, simply add `use rscap::linux::prelude::*` to
 //! your source.
 
+pub use addr::L2Protocol;
+pub use l2::{L2MappedSocket, L2Socket};
+
+use mapped::{BlockConfig, RxFrame};
+
+use std::io;
+
+use crate::{filter::PacketFilter, Interface};
+
 pub mod addr;
 pub mod l2;
 pub mod l3;
@@ -334,4 +343,122 @@ pub enum FanoutAlgorithm {
     Random,
     /// Selects the socket using the kernel's recorded queue_mapping for the received packet skb.
     QueueMapping,
+}
+
+pub const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024 * 1024; // Default each buffer of 1MB
+
+pub(crate) struct SnifferImpl {
+    socket: L2MappedSocket,
+}
+
+impl SnifferImpl {
+    #[inline]
+    pub fn new(if_name: Interface) -> io::Result<Self> {
+        Self::new_with_size(if_name, DEFAULT_DRIVER_BUFFER)
+    }
+
+    /// Note that `ring_size` must be greater than or equal to 524288 (512 KiB), and will be
+    /// rounded down to the nearest 512 KiB when allocating buffers.
+    #[inline]
+    pub fn new_with_size(if_name: Interface, ring_size: usize) -> io::Result<Self> {
+        let individual_ring_size = ring_size / 2;
+
+        let units = individual_ring_size / (131072 * 2);
+        if units == 0 {
+            // Need at least 2 blocks, each of size 2*2^16.
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "ring_size must be >= 524288 (512 KiB)",
+            ));
+        }
+
+        let Ok(units) = u32::try_from(units) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "specified ring size was too big to represent for internal integers",
+            ));
+        };
+
+        let mut block_size = 131072;
+        let mut block_cnt = 2;
+
+        // Double the block size, and allocate the rest toward block count
+        // This algorithm may be changed in the future based on perf measurements
+        if units > 1 {
+            let remainder = units % 2;
+            let units = units / 2;
+
+            // Double the block size to 256 KiB
+            block_size *= 2;
+            // Put the rest towards block count
+            block_cnt = (block_cnt * units) + remainder;
+            // remainder is 1/2; 1/2 of 2 (block_cnt) is 1
+        }
+
+        let socket = L2Socket::new()?;
+        let config = BlockConfig::new(block_size, block_cnt, 65648)?;
+        let mapped_socket = socket.packet_ring(config, None, None)?;
+        mapped_socket.set_filter(&mut PacketFilter::reject_all())?;
+        mapped_socket.bind(if_name, L2Protocol::All)?;
+
+        Ok(Self {
+            socket: mapped_socket,
+        })
+    }
+
+    #[inline]
+    pub fn activate(&mut self, filter: Option<PacketFilter>) -> io::Result<()> {
+        self.socket.flush()?;
+
+        match filter {
+            None => self.socket.clear_filter(),
+            Some(mut filter) => self.socket.set_filter(&mut filter),
+        }
+    }
+
+    #[inline]
+    pub fn deactivate(&mut self) -> io::Result<()> {
+        self.socket.set_filter(&mut PacketFilter::reject_all())
+    }
+
+    #[inline]
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        self.socket.nonblocking()
+    }
+
+    #[inline]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        self.socket.set_nonblocking(nonblocking)
+    }
+
+    #[inline]
+    pub fn send(&self, packet: &[u8]) -> io::Result<usize> {
+        self.socket.send(packet)
+    }
+
+    #[inline]
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
+    #[inline]
+    pub fn mapped_recv(&mut self) -> Option<RxFrameImpl<'_>> {
+        Some(RxFrameImpl {
+            frame: self.socket.mapped_recv()?,
+        })
+    }
+}
+
+pub struct RxFrameImpl<'a> {
+    frame: RxFrame<'a>,
+}
+
+impl RxFrameImpl<'_> {
+    pub fn data(&self) -> &[u8] {
+        self.frame.data()
+    }
+
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        self.frame.data_mut()
+    }
 }

@@ -890,6 +890,7 @@ impl L3MappedSocket {
     // }
     //
     // assert!(malformed == 5);
+    // # Ok::<(), io::Error>(())
     // ```
 
     /// Checks the status of previously-sent packets in the order they were sent.
@@ -1119,6 +1120,7 @@ impl L3TxMappedSocket {
     // }
     //
     // assert!(malformed == 5);
+    // # Ok::<(), io::Error>(())
     // ```
 
     /// Checks the status of previously-sent packets in the order they were sent.

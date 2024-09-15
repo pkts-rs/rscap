@@ -1,15 +1,17 @@
-# Rscap
+# rscap
 
-[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.65+]][Rust 1.65]
+[![Cross-Platform]][CI Status] [![Documentation]][docs.rs] [![Latest Version]][crates.io] [![v1.66+]][Rust 1.66]
 
-[Latest Version]: https://img.shields.io/crates/v/rscap.svg
-[crates.io]: https://crates.io/crates/rscap
-[rscap: rustc 1.65+]: https://img.shields.io/badge/MSRV-rustc_1.65+-blue.svg
-[Rust 1.65]: https://blog.rust-lang.org/2022/11/03/Rust-1.65.0.html
+[Cross-Platform]: https://github.com/pkts-rs/rscap/actions/workflows/full_CI.yml/badge.svg
+[CI Status]: https://github.com/pkts-rs/rscap/actions/workflows/full_ci.yml
 [Documentation]: https://docs.rs/rscap/badge.svg
 [docs.rs]: https://docs.rs/rscap/
+[Latest Version]: https://img.shields.io/crates/v/rscap.svg
+[crates.io]: https://crates.io/crates/rscap
+[v1.66+]: https://img.shields.io/badge/MSRV-rustc_1.66+-blue.svg
+[Rust 1.66]: https://blog.rust-lang.org/2022/12/15/Rust-1.66.0.html
 
-### **rscap - Rust packet capture and manipulation utilities**
+**rscap - Rust packet capture and manipulation utilities**
 
 ---
 
@@ -19,6 +21,7 @@
 2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
 
 The `rscap` submodule focuses specifically on (1)--it provides safe, Rust-native APIs for capturing packets over network interfaces. 
+The sibling [`pkts` crate](https://github.com/pkts-rs/pkts) handles (2).
 
 ## Development Status
 
@@ -53,5 +56,21 @@ pkt[Tcp].set_dport(12345);
 
 ## License
 
-The source code of this project is licensed under either the MIT License or the Apache 2.0 License, at your option.
+This project is licensed under either of
 
+* [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+  ([LICENSE-APACHE](https://github.com/rust-lang/libc/blob/HEAD/LICENSE-APACHE))
+
+* [MIT License](https://opensource.org/licenses/MIT)
+  ([LICENSE-MIT](https://github.com/rust-lang/libc/blob/HEAD/LICENSE-MIT))
+
+at your option.
+
+## Contributing
+
+`rscap` is open to contribution--feel free to submit an Issue or Pull Request if there's
+something you'd like to add to this library.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
+`rscap` by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without
+any additional terms or conditions.

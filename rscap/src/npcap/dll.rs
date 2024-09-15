@@ -1,16 +1,21 @@
-#[cfg(not(feature = "npcap-require"))]
+#[cfg(feature = "npcap-runtime")]
 mod dlopen;
-#[cfg(feature = "npcap-require")]
+#[cfg(not(feature = "npcap-runtime"))]
 mod link;
 
-#[cfg(not(feature = "npcap-require"))]
+#[cfg(feature = "npcap-runtime")]
 pub use dlopen::Npcap;
-#[cfg(feature = "npcap-require")]
+#[cfg(not(feature = "npcap-runtime"))]
 pub use link::Npcap;
 
+use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE;
+use windows_sys::Win32::System::Threading::CRITICAL_SECTION;
+use windows_sys::Win32::System::IO::OVERLAPPED;
 
 use std::mem;
+
+use crate::filter::BpfInstruction;
 
 pub const PACKET_MODE_CAPT: libc::c_int = 0x00;
 pub const PACKET_MODE_STAT: libc::c_int = 0x01;
@@ -64,20 +69,6 @@ pub struct NetType {
 }
 
 #[repr(C)]
-pub struct BpfProgram {
-    pub bf_len: libc::c_uint,
-    pub bf_insns: *mut BpfInsn,
-}
-
-#[repr(C)]
-pub struct BpfInsn {
-    pub code: libc::c_ushort,
-    pub jt: libc::c_uchar,
-    pub jf: libc::c_uchar,
-    pub k: libc::c_int,
-}
-
-#[repr(C)]
 pub struct BpfStat {
     pub bs_recv: libc::c_uint,
     pub bs_drop: libc::c_uint,
@@ -109,10 +100,10 @@ pub struct NpfIfAddr {
 
 #[repr(C)]
 pub struct Adapter {
-    pub h_file: windows_sys::Win32::Foundation::HANDLE,
+    pub h_file: HANDLE,
     pub symbolic_link: [libc::c_char; MAX_LINK_NAME_LENGTH],
     pub num_writes: libc::c_int,
-    pub read_event: windows_sys::Win32::Foundation::HANDLE,
+    pub read_event: HANDLE,
     pub read_timeout: libc::c_uint,
     pub name: [libc::c_char; ADAPTER_NAME_LENGTH],
     pub wan_adapter: *mut WanAdapter, // PWAN_ADAPTER
@@ -121,12 +112,12 @@ pub struct Adapter {
 
 #[repr(C)]
 pub struct Packet {
-    pub h_event: windows_sys::Win32::Foundation::HANDLE,
-    pub overlapped: windows_sys::Win32::System::IO::OVERLAPPED,
+    pub h_event: HANDLE,
+    pub overlapped: OVERLAPPED,
     pub buffer: *mut libc::c_void,
     pub length: libc::c_uint,
     pub ul_bytes_received: libc::c_ulong, // DWORD
-    pub bio_complete: windows_sys::Win32::Foundation::BOOLEAN,
+    pub bio_complete: BOOLEAN,
 }
 
 #[repr(C)]
@@ -140,7 +131,7 @@ pub struct PacketOidData {
 #[repr(C)]
 pub struct WanAdapter {
     pub h_capture_blob: *const libc::c_void, // HBLOB
-    pub critical_section: windows_sys::Win32::System::Threading::CRITICAL_SECTION,
+    pub critical_section: CRITICAL_SECTION,
     pub buffer: *mut libc::c_uchar,  // PUCHAR
     pub c: libc::c_ulong,            // DWORD
     pub p: libc::c_ulong,            // DWORD
@@ -152,7 +143,7 @@ pub struct WanAdapter {
     pub min_to_copy: libc::c_ulong,  // DWORD
     pub read_timeout: libc::c_ulong, // DWORD
     pub h_read_event: libc::c_ulong, // DWORD
-    pub fileter_code: *mut BpfInsn,
+    pub filter_code: *mut BpfInstruction,
     pub mode: libc::c_ulong, // DWORD
     pub nbytes: i64,         // LARGE_INTEGER,
     pub npackets: i64,       // LARGE_INTEGER,
