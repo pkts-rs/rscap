@@ -26,7 +26,34 @@ use pkts_common::Buffer;
 /// A link-layer protocol identifier.
 ///
 /// This value corresponds directly to `libc::ETH_P_*` protocol specifier values.
-pub type L2Protocol = i32;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum L2Protocol {
+    All,
+    Ip,
+    Other(u16),
+}
+
+impl From<u16> for L2Protocol {
+    #[inline]
+    fn from(value: u16) -> Self {
+        match value as i32 {
+            libc::ETH_P_ALL => L2Protocol::All,
+            libc::ETH_P_IP => L2Protocol::Ip,
+            _ => L2Protocol::Other(value),
+        }
+    }
+}
+
+impl From<L2Protocol> for u16 {
+    #[inline]
+    fn from(value: L2Protocol) -> Self {
+        match value {
+            L2Protocol::All => libc::ETH_P_ALL as u16,
+            L2Protocol::Ip => libc::ETH_P_IP as u16,
+            L2Protocol::Other(val) => val,
+        }
+    }
+}
 
 /// Defines a generic link-layer address.
 pub trait L2Addr: TryFrom<libc::sockaddr_ll> {
@@ -227,6 +254,14 @@ impl FromStr for MacAddr {
     }
 }
 
+// TODO: ETH_P_IP and similar only capture incoming traffic. You need
+// ETH_P_ALL to capture outgoing traffic.
+
+/// A link-layer address corresponding to the `ETH_P_ALL` protocol.
+pub struct L2AddrAll {
+    iface: Interface,
+}
+
 /// A link-layer address corresponding to the `ETH_P_IP` protocol.
 pub struct L2AddrIp {
     addr: MacAddr,
@@ -275,7 +310,7 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
 impl L2Addr for L2AddrIp {
     #[inline]
     fn protocol(&self) -> L2Protocol {
-        libc::ETH_P_IP
+        L2Protocol::Ip
     }
 
     #[inline]
@@ -389,7 +424,7 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrUnspec {
         Ok(L2AddrUnspec {
             addr,
             iface: Interface::from_index(value.sll_ifindex as u32)?,
-            protocol: value.sll_protocol as i32,
+            protocol: value.sll_protocol.into(),
         })
     }
 }

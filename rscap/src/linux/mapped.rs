@@ -43,10 +43,11 @@ pub struct BlockConfig {
     /// the frame contains header and address information in addition to packet data. To guarantee
     /// that packets with a maximum snaplen (`65535`) will be received, a `frame_size` of at least
     /// `65648` should be used. Note that using a larger `frame_size` will not result in wasted
-    /// space at the end of each packet--frames are dynamically sized to take up the minimum space
-    /// needed to represent a packet.
+    /// space at the end of each packet for RX rings--frames are dynamically sized to take up the
+    /// minimum space needed to represent a packet.
     frame_size: u32,
 
+    // TODO: ^ what about for TX rings?
     frame_cnt: u32,
 
     map_length: usize,
@@ -720,7 +721,13 @@ pub struct RxFrame<'a> {
 impl RxFrame<'_> {
     /// A zero-copy slice of the contents of the received packet.
     #[inline]
-    pub fn data(&mut self) -> &mut [u8] {
+    pub fn data(&self) -> &[u8] {
+        self.packet
+    }
+
+    /// A mutable zero-copy slice of the contents of the received packet.
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut [u8] {
         self.packet
     }
 

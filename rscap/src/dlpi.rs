@@ -11,3 +11,5 @@
 //! (Solaris/Illumos) Data Link Provider Interface (DLPI) raw mode packet capture and transmission.
 //!
 //!
+
+mod l2;

@@ -1,14 +1,14 @@
 #![allow(non_snake_case)]
 
-use std::{
-    ffi::CStr,
-    ptr::{self, NonNull},
-};
+use std::ffi::CStr;
+use std::io;
+use std::ptr::NonNull;
 
 use windows_sys::Win32::Foundation::{BOOL, BOOLEAN, HANDLE};
 
-use super::{Adapter, BpfProgram, BpfStat, NetType, NpfIfAddr, Packet, PacketOidData};
-use crate::npcap::NpcapError;
+use crate::filter::BpfProgram;
+
+use super::{Adapter, BpfStat, NetType, NpfIfAddr, Packet, PacketOidData};
 
 #[link(name = "Packet", kind = "dylib")]
 extern "C" {
@@ -100,7 +100,7 @@ extern "C" {
 pub struct Npcap;
 
 impl Npcap {
-    pub fn new() -> Result<Self, NpcapError> {
+    pub fn new() -> io::Result<Self> {
         Ok(Self)
     }
 
@@ -270,7 +270,7 @@ impl Npcap {
             PacketSendPackets(
                 adapter,
                 packets.as_mut_ptr() as *mut libc::c_void,
-                packets.len() as u64,
+                packets.len() as u32,
                 1,
             )
         }
@@ -280,11 +280,11 @@ impl Npcap {
         unsafe { PacketAllocatePacket() }
     }
 
-    pub fn init_packet(packet: &mut Packet, buffer: NonNull<u8>, buflen: usize) {
+    pub fn init_packet(&self, packet: &mut Packet, buffer: NonNull<u8>, buflen: usize) {
         unsafe {
             PacketInitPacket(
                 packet,
-                buffer.as_ptr() as &mut libc::c_void,
+                buffer.as_ptr() as *mut libc::c_void,
                 buflen as libc::c_uint,
             )
         }

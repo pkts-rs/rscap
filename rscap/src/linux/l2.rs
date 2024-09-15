@@ -11,15 +11,17 @@
 //! Link-layer packet capture/transmission utilities.
 //!
 
-use std::{io, mem, os::fd::AsRawFd, ptr};
+use std::os::fd::{AsRawFd, RawFd};
+use std::{io, mem, ptr};
 
-use super::addr::{L2Addr, L2AddrAny};
+use super::addr::{L2Addr, L2Protocol};
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
-use crate::filter::PacketStatistics;
+use crate::filter::{PacketFilter, PacketStatistics};
+use crate::Interface;
 
 /// A socket that exchanges packets at the link-layer.
 ///
@@ -47,13 +49,363 @@ impl L2Socket {
         }
     }
 
-    /// Bind the link-layer socket to a particular protocol/address and interface and begin
-    /// receiving packets.
+    /// Sets `filter` as the packet filter for the socket.
     ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        let sockaddr = addr.to_sockaddr();
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
+        let bpf = unsafe { filter.as_bpf_program() };
+
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_ATTACH_FILTER,
+                    ptr::addr_of!(bpf) as *const libc::c_void,
+                    mem::size_of::<libc::sock_fprog>() as u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            (_, libc::EFAULT) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "internal filter memory corrupt (EFAULT)",
+            )),
+            (_, libc::EINVAL) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid filter program",
+            )),
+            (_, libc::EPERM) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "filter is locked",
+            )),
+            (_, libc::ENOMEM) => Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "insufficient memory to allocate packet filter in operating system",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                io::Error::last_os_error(),
+            )),
+        }
+    }
+
+    /// Removes any filter previously applied to the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::NotFound] - no filter was found for the given socket
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter removed.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn clear_filter(&self) -> io::Result<()> {
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_DETACH_FILTER,
+                    ptr::null(),
+                    0u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            (_, libc::ENOENT) => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no filter was found for the given socket",
+            )),
+            (_, libc::EPERM) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "filter is locked",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                io::Error::last_os_error(),
+            )),
+        }
+    }
+
+    /// Locks the current filter configuration of the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure this function will return an [`io::Error`] indicating the cause of the error.
+    /// Generally, this method will succeed unless there is some fundamental issue in the `rscap`
+    /// library.
+    pub fn lock_filter(&self) -> io::Result<()> {
+        let lock = 1i32;
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_LOCK_FILTER,
+                    ptr::addr_of!(lock) as *const libc::c_void,
+                    mem::size_of::<i32>() as u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+
+    /// Retrieves the packet filter currently being used by the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [`io::ErrorKind::NotFound`] - no filter (BPF or eBPF) is currently assigned to the socket.
+    /// - [`io::ErrorKind::InvalidData`] - the filter assigned to the socket exceeded an internal
+    /// maximum size limit (currently 128 MiB). This is _highly unlikely_ to ever be returned, as
+    /// the Linux kernel has internal limits on filters that are usually set to far below this.
+    /// - [`io::ErrorKind::Unsupported`] - the filter attached to the socket is an eBPF program
+    /// with no original classical BPF representation.
+    /// - [io::ErrorKind::Other] - an unexpected internal error occurred while attempting to obtain
+    /// the filter program. This error kind may be raised if the packet filter of the socket is
+    /// modified by another thread or process during this method's invocation.
+    ///
+    #[inline]
+    pub fn get_filter(&self) -> io::Result<PacketFilter> {
+        let mut len = 24u32;
+
+        loop {
+            let mut optlen = len;
+            match unsafe {
+                (
+                    libc::getsockopt(
+                        self.fd,
+                        libc::SOL_SOCKET,
+                        libc::SO_GET_FILTER,
+                        ptr::null_mut(),
+                        ptr::addr_of_mut!(optlen),
+                    ),
+                    *libc::__errno_location(),
+                )
+            } {
+                (0, _) => return Err(io::ErrorKind::NotFound.into()),
+                (-1, libc::EINVAL) => {
+                    // The supplied length was insufficient for the filter program's length
+                    // Retry with 1.5x buffer size. A buffer increase of 1.5x will still lead to
+                    // the maximum size being reached within 40 `setsockopt` calls
+                    len = len + (len >> 1);
+
+                    if len > 0x8000000 {
+                        // 128 MiB
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "excessively large BPF program detected",
+                        ));
+                    }
+                }
+                (-1, libc::EACCES) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "attached filter has no classical BPF representation",
+                    ))
+                }
+                (-1, libc::EFAULT) => break,
+                (_, errno) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "unexpected error received from `getsockopt()` (errno {}",
+                            errno
+                        ),
+                    ))
+                }
+            }
+        }
+
+        // Now allocate
+
+        let mut filter = Vec::new();
+        filter.reserve_exact(len as usize);
+        let mut actual_len = len;
+
+        unsafe {
+            if libc::getsockopt(
+                self.fd,
+                libc::SOL_SOCKET,
+                libc::SO_GET_FILTER,
+                filter.as_mut_ptr() as *mut libc::c_void,
+                ptr::addr_of_mut!(actual_len),
+            ) != 0
+                || actual_len > len
+            {
+                let errno = *libc::__errno_location();
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "internal error in correctly estimating filter buffer size (errno {}",
+                        errno
+                    ),
+                ));
+            }
+
+            filter.set_len(actual_len as usize);
+        }
+
+        Ok(PacketFilter::from_vec(filter))
+    }
+
+    /// Sets the filter to reject all packets and fushes any packets currently pending in the
+    /// socket's buffer.
+    ///
+    /// This method should not need to be called during general active capture; Raw/Packet sockets
+    /// internally use a ring buffer, so if more packets are received than the application can
+    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// buffer. **However**, this method is very important when it comes to applying a new filter
+    /// to an active socket or changing the `Interface`/protocol an active socket is bound to
+    /// (see [`set_filter()`](Self::set_filter) or [`bind()`](Self::bind) for more details on this).
+    ///
+    /// If a `flush()` that preserves the original filter is desired, something like the following
+    /// can be used:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::Interface;
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    ///
+    /// // Start receiving packets...
+    ///
+    /// // At some point, flush all outstanding packets
+    /// let prev_filter = match socket.get_filter() {
+    ///     Ok(filter) => Ok(Some(filter)),
+    ///     Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+    ///     Err(e) => Err(e),
+    /// }?;
+    ///
+    /// socket.flush()?;
+    /// match prev_filter {
+    ///     None => socket.clear_filter()?,
+    ///     Some(mut filter) => socket.set_filter(&mut filter)?,
+    /// }
+    /// // Outstanding packets have now been flushed and the filter restored
+    ///
+    /// // Continue receiving packets...
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method only returns error originating from [`set_filter()`](Self::set_filter); refer
+    /// to its documentation for the list of possible error kinds that can be returned.
+    pub fn flush(&mut self) -> io::Result<()> {
+        if let Err(e) = self.set_filter(&mut PacketFilter::reject_all()) {
+            return Err(io::Error::new(io::ErrorKind::Other, e));
+        }
+
+        // Loop through messages until none left to be received
+        loop {
+            unsafe {
+                match libc::recv(
+                    self.fd,
+                    ptr::null_mut(),
+                    0,
+                    libc::MSG_TRUNC | libc::MSG_DONTWAIT,
+                ) {
+                    0.. => (),
+                    _ if *libc::__errno_location() == libc::EINTR => (),
+                    _ => break,
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // TODO: add the following line at the end of paragraph 2 once packet filters have been
+    // implemented:
+    //
+    // " To capture outgoing packets from a specific protocol, consider applying a
+    // [`PacketFilter`] to the program via the [`set_bpf()`] method."
+
+    /// Binds the device to the given interface, enabling it to begin receiving packets from that
+    /// interface.
+    ///
+    /// `proto` specifies what protocol the socket should bind to. If `proto` is set to
+    /// [`L2Protocol::All`] then packets of any protocol type can be received on the socket.
+    /// Outgoing packets (e.g. packets sent by applications on the host) are **only** captured when
+    /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
+    /// incoming packets being captured.
+    ///
+    /// **WARNING:** calling `bind()` will cause the socket to immediately begin capturing packets.
+    /// Any packet filters (see [`set_filter()`](Self::set_filter286gg)) must be applied prior to
+    /// `bind()`; otherwise an unspecified number of packets that do not adhere to the filter rule
+    /// may be subsequently returned by the socket. See the following example:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::Interface;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::filter::PacketFilter;
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.set_filter(&mut PacketFilter::reject_all())?;
+    /// //     ^ always set the filter of the socket...
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// //     ^ ... prior to binding to the interface.
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// To change the filter on a socket that has already been bound and is actively sniffing
+    /// packets, call [`flush()`](Self::flush) prior to setting the new filter:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::Interface;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::filter::PacketFilter;
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// // Start by listening for all packets...
+    ///
+    /// // Read some packets here
+    ///
+    /// socket.flush()?;
+    /// //     ^ Once the filter needs to be changed, first flush the socket...
+    /// socket.set_filter(&mut PacketFilter::reject_all())?;
+    /// //     ^ ... and then set the new filter.
+    ///
+    /// // Read more packets with new filter applied
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
+        let sockaddr = libc::sockaddr_ll {
+            sll_family: libc::AF_PACKET as u16,
+            sll_protocol: u16::from(proto),
+            sll_ifindex: if_name.index()? as i32,
+            sll_hatype: 0,
+            sll_pkttype: 0,
+            sll_halen: 6,
+            sll_addr: [0u8; 8],
+        };
 
         // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
         // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
@@ -67,6 +419,43 @@ impl L2Socket {
             0 => Ok(()),
             _ => Err(io::Error::last_os_error()),
         }
+    }
+
+    /// Retrieves the [`Interface`] the socket is currently bound to.
+    pub fn bound_interface(&self) -> io::Result<Interface> {
+        let mut sockaddr = libc::sockaddr_ll {
+            sll_family: libc::AF_PACKET as u16,
+            sll_protocol: 0,
+            sll_ifindex: 0,
+            sll_hatype: 0,
+            sll_pkttype: 0,
+            sll_halen: 0,
+            sll_addr: [0u8; 8],
+        };
+        let mut sockaddr_len = mem::size_of::<libc::sockaddr_ll>() as u32;
+
+        let res = unsafe {
+            libc::getsockname(
+                self.fd,
+                ptr::addr_of_mut!(sockaddr) as *mut libc::sockaddr,
+                ptr::addr_of_mut!(sockaddr_len),
+            )
+        };
+
+        if res < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        if sockaddr_len != mem::size_of::<libc::sockaddr_ll>() as u32
+            || sockaddr.sll_family != libc::AF_PACKET as u16
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "bound address was not of type sockaddr_ll",
+            ));
+        }
+
+        Ok(Interface::from_index(sockaddr.sll_ifindex as u32)?)
     }
 
     /// Moves the link-layer socket's behavior in or out of blocking mode.
@@ -92,6 +481,20 @@ impl L2Socket {
             0 => Ok(()),
             _ => Err(io::Error::last_os_error()),
         }
+    }
+
+    /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
+    ///
+    /// When enabled, calls to [`send()`](Self::send) or [`recv()`](Self::recv) will return an error
+    /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
+    /// a packet.
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        let flags = unsafe { libc::fcntl(self.fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(flags & libc::O_NONBLOCK > 0)
     }
 
     /// Configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
@@ -152,43 +555,6 @@ impl L2Socket {
         })
     }
 
-    /// Returns the link-layer address the socket is currently bound to.
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        let mut sockaddr = libc::sockaddr_ll {
-            sll_family: 0,
-            sll_protocol: 0,
-            sll_ifindex: 0,
-            sll_hatype: 0,
-            sll_pkttype: 0,
-            sll_halen: 0,
-            sll_addr: [0u8; 8],
-        };
-        let mut sockaddr_len = mem::size_of::<libc::sockaddr_ll>() as u32;
-
-        let res = unsafe {
-            libc::getsockname(
-                self.fd,
-                ptr::addr_of_mut!(sockaddr) as *mut libc::sockaddr,
-                ptr::addr_of_mut!(sockaddr_len),
-            )
-        };
-
-        if res != 0 {
-            return Err(io::Error::last_os_error());
-        }
-
-        if sockaddr_len != mem::size_of::<libc::sockaddr_ll>() as u32
-            || sockaddr.sll_family != libc::AF_PACKET as u16
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                "bound address was not of type sockaddr_ll",
-            ));
-        }
-
-        L2AddrAny::try_from(sockaddr)
-    }
-
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
     /// If `true`, this option requests that the operating system use hardware timestamps
     /// provided by the NIC.
@@ -216,12 +582,12 @@ impl L2Socket {
                 } as i32,
             };
 
-            let addr = self.bound_addr()?;
+            let iface = self.bound_interface()?;
 
             let mut if_name = [0i8; libc::IF_NAMESIZE];
             let if_name_ptr = if_name.as_mut_ptr();
 
-            let res = unsafe { libc::if_indextoname(addr.interface().index()?, if_name_ptr) };
+            let res = unsafe { libc::if_indextoname(iface.index()?, if_name_ptr) };
             if res.is_null() {
                 return Err(io::Error::last_os_error());
             }
@@ -264,13 +630,87 @@ impl L2Socket {
         Ok(())
     }
 
+    /*
+    /// Retrieves the source of timestamp information for TX_RING/RX_RING packets.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    fn timestamp_method(&self) -> io::Result<(TxTimestamping, RxTimestamping)> {
+        if tx == TxTimestamping::Hardware || rx == RxTimestamping::Hardware {
+            let mut hwtstamp_config = libc::hwtstamp_config {
+                flags: 0,
+                tx_type: if tx == TxTimestamping::Hardware {
+                    libc::HWTSTAMP_TX_ON
+                } else {
+                    libc::HWTSTAMP_TX_OFF
+                } as i32,
+                rx_filter: if rx == RxTimestamping::Hardware {
+                    libc::HWTSTAMP_FILTER_ALL
+                } else {
+                    libc::HWTSTAMP_FILTER_NONE
+                } as i32,
+            };
+
+            let iface = self.bound_interface()?;
+
+            let mut if_name = [0i8; libc::IF_NAMESIZE];
+            let if_name_ptr = if_name.as_mut_ptr();
+
+            let res = unsafe { libc::if_indextoname(iface.index()?, if_name_ptr) };
+            if res.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+
+            let mut ifreq = libc::ifreq {
+                ifr_name: if_name,
+                ifr_ifru: libc::__c_anonymous_ifr_ifru {
+                    ifru_data: ptr::addr_of_mut!(hwtstamp_config) as *mut i8,
+                },
+            };
+
+            let res =
+                unsafe { libc::ioctl(self.fd, libc::SIOCSHWTSTAMP, ptr::addr_of_mut!(ifreq)) };
+            if res != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+
+        let timestamp_req = match tx {
+            TxTimestamping::Hardware => libc::SOF_TIMESTAMPING_TX_HARDWARE,
+            TxTimestamping::Software => libc::SOF_TIMESTAMPING_TX_SOFTWARE,
+            TxTimestamping::Sched => libc::SOF_TIMESTAMPING_TX_SCHED,
+        } | match rx {
+            RxTimestamping::Hardware => libc::SOF_TIMESTAMPING_RX_HARDWARE,
+            RxTimestamping::Software => libc::SOF_TIMESTAMPING_RX_SOFTWARE,
+        };
+
+        if unsafe {
+            libc::setsockopt(
+                self.fd,
+                libc::SOL_PACKET,
+                crate::linux::PACKET_TIMESTAMP,
+                ptr::addr_of!(timestamp_req) as *const libc::c_void,
+                mem::size_of::<crate::linux::tpacket_versions>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+    */
+
     /// Configures the network device the socket is currently bound to to act in promiscuous mode.
     ///
     /// A network device in promiscuous mode will capture all packets observed on a physical medium,
     /// not just those destined for it.
     pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
-        let addr = self.bound_addr()?;
-        let iface = addr.interface();
+        let iface = self.bound_interface()?;
 
         let req = libc::packet_mreq {
             mr_ifindex: iface.index()? as i32,
@@ -488,7 +928,7 @@ impl L2Socket {
         Ok(())
     }
 
-    /// Sets the PACKET_RX_RING socket option.
+    /// Sets the `PACKET_RX_RING` socket option.
     fn set_rx_ring_opt(
         &self,
         config: BlockConfig,
@@ -562,7 +1002,8 @@ impl L2Socket {
     ///
     /// NOTE: some performance issues have been noted when TX_RING sockets are used in blocking mode (see
     /// [here](https://stackoverflow.com/questions/43193889/sending-data-with-packet-mmap-and-packet-tx-ring-is-slower-than-normal-withou)).
-    /// It is recommended that the socket be set as nonblocking before calling `packet_ring`.
+    /// It is recommended that the socket be set as nonblocking before calling `packet_ring` when
+    /// using on legacy systems.
     pub fn packet_ring(
         self,
         config: BlockConfig,
@@ -695,110 +1136,113 @@ pub struct L2MappedSocket {
 }
 
 impl L2MappedSocket {
-    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// Bind the link-layer socket to a particular interface (and optionally protocol) and begin
     /// receiving packets.
     ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
+    /// `proto` specifies what protocol the socket should bind to. If `proto` is set to
+    /// [`L2Protocol::All`] then packets of any protocol type can be received on the socket.
+    ///
+    /// Outgoing packets (e.g. packets sent by applications on the host) are **only** captured when
+    /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
+    /// incoming packets being captured.
     #[inline]
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(if_name, proto)
     }
 
-    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
-    ///
-    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
-    /// applications that intend to intentionally flood a network with traffic. Enabling this option
-    /// will lead to increased packet drops in transmission when network devices are busy (as the
-    /// kernel will not be buffering packets originating from the socket).
-    ///
-    /// This option is disabled (`false`) by default.
+    /// Retrieves the [`Interface`] the given link-layer socket is currently bound to.
     #[inline]
-    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
-        self.socket.set_qdisc_bypass(bypass)
+    pub fn bound_interface(&self) -> io::Result<Interface> {
+        self.socket.bound_interface()
     }
 
-    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
-    ///
-    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
-    /// `amount` due to alignment requirements.
-    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
-        if unsafe {
-            libc::setsockopt(
-                self.socket.fd,
-                libc::SOL_PACKET,
-                crate::linux::PACKET_RESERVE,
-                ptr::addr_of!(amount) as *const libc::c_void,
-                mem::size_of::<u32>() as u32,
-            ) != 0
-        } {
-            return Err(io::Error::last_os_error());
-        }
-
-        Ok(())
-    }
-
-    /// Returns packet statistics about the current socket.
-    ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
-    #[inline]
-    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
-        self.socket.packet_stats()
-    }
-
-    /// Returns the link-layer address the socket is currently bound to.
-    #[inline]
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
-    }
-
-    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
-    /// If `true`, this option requests that the operating system use hardware timestamps
-    /// provided by the NIC.
-    ///
-    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    /// Sets `filter` as the packet filter for the socket.
     ///
     /// # Errors
     ///
-    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    /// On failure, one of the following error kinds may be returned:
     ///
-    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
-    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
-        self.socket.set_timestamp_method(tx, rx)
+    pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
+        self.socket.set_filter(filter)
     }
 
-    /// Configures the network device the socket is currently bound to to act in promiscuous mode.
+    /// Removes any filter previously applied to the socket.
     ///
-    /// A network device in promiscuous mode will capture all packets observed on a physical medium,
-    /// not just those destined for it.
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::NotFound] - no filter was found for the given socket
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter removed.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
-    pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
-        self.socket.set_promiscuous(promisc)
+    pub fn clear_filter(&self) -> io::Result<()> {
+        self.socket.clear_filter()
     }
 
-    /// Adds the given socket to a fanout group.
+    /// Sets the filter to reject all packets and fushes any packets currently pending in the
+    /// socket's buffer.
     ///
-    /// A fanout group is a set of sockets that act together to process packets. Each received
-    /// packet is sent to only one of the sockets in the fanout group, based on the algorithm
-    /// chosen in `fan_alg`. The group is specified using a 16-bit group identifier, `group_id`.
-    /// Some additional options can be set:
+    /// This method should not need to be called during general active capture; Raw/Packet sockets
+    /// internally use a ring buffer, so if more packets are received than the application can
+    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// buffer. **However**, this method is very important when it comes to applying a new filter
+    /// to an active socket or changing the `Interface`/protocol an active socket is bound to
+    /// (see [`set_filter()`](Self::set_filter) or [`bind()`](Self::bind) for more details on this).
     ///
-    /// - `defrag` causes the kernel to defragment IP packets prior to sending them to the
-    /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
-    /// - `rollover` causes packets to be sent to a different socket than originally decided
-    /// by `fan_alg` if the original socket is backlogged with packets.
-    #[inline]
-    pub fn set_packet_fanout(
-        &self,
-        group_id: u16,
-        fan_alg: FanoutAlgorithm,
-        defrag: bool,
-        rollover: bool,
-    ) -> io::Result<()> {
-        self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
+    /// If a `flush()` that preserves the original filter is desired, something like the following
+    /// can be used:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::Interface;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    ///
+    /// // Start receiving packets...
+    ///
+    /// // At some point, flush all outstanding packets
+    /// let prev_filter = match socket.get_filter() {
+    ///     Ok(filter) => Ok(Some(filter)),
+    ///     Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+    ///     Err(e) => Err(e),
+    /// }?;
+    ///
+    /// socket.flush()?;
+    /// match prev_filter {
+    ///     None => socket.clear_filter()?,
+    ///     Some(mut filter) => socket.set_filter(&mut filter)?,
+    /// }
+    /// // Outstanding packets have now been flushed and the filter restored
+    ///
+    /// // Continue receiving packets...
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method only returns error originating from [`set_filter()`](Self::set_filter); refer
+    /// to its documentation for the list of possible error kinds that can be returned.
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.socket.flush()?;
+
+        // Clear all outstanding packets from the RX ring buffer
+        while let Some(_) = self.mapped_recv() {}
+
+        Ok(())
     }
 
     /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
@@ -816,17 +1260,19 @@ impl L2MappedSocket {
         self.manual_tx_status = manual;
     }
 
-    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
-    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
-    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
-    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
-    ///
-    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
-    /// [`bind()`](L2MappedSocket::bind())).
+    /// The returned [`TxFrame`] should have data written to it via the
+    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
+    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
+    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
+    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     #[inline]
-    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        self.socket.send(buf)
+    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
+        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
+        self.next_rx = next_rx;
+
+        Some(rx_frame)
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -858,6 +1304,103 @@ impl L2MappedSocket {
         Some(frame)
     }
 
+    /// Moves the link-layer socket's behavior in or out of blocking mode.
+    ///
+    /// An [`L2Socket`] that is nonblocking will return with an error of kind
+    /// [WouldBlock](io::ErrorKind::WouldBlock) whenever a packet cannot be immediately sent or
+    /// received. This is only applicable to the [`send()`](Self::send) or
+    /// [`recv()`](Self::recv) methods; any memory-mapped methods are always guaranteed to be
+    /// nonblocking.
+    #[inline]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        self.socket.set_nonblocking(nonblocking)
+    }
+
+    /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
+    ///
+    /// When enabled, calls to [`send()`](Self::send) or [`recv()`](Self::recv) will return an error
+    /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
+    /// a packet.
+    #[inline]
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        self.socket.nonblocking()
+    }
+
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    #[inline]
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
+    ///
+    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
+    /// `amount` due to alignment requirements.
+    #[inline]
+    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
+        if unsafe {
+            libc::setsockopt(
+                self.socket.fd,
+                libc::SOL_PACKET,
+                crate::linux::PACKET_RESERVE,
+                ptr::addr_of!(amount) as *const libc::c_void,
+                mem::size_of::<u32>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    /// Adds the given socket to a fanout group.
+    ///
+    /// A fanout group is a set of sockets that act together to process packets. Each received
+    /// packet is sent to only one of the sockets in the fanout group, based on the algorithm
+    /// chosen in `fan_alg`. The group is specified using a 16-bit group identifier, `group_id`.
+    /// Some additional options can be set:
+    ///
+    /// - `defrag` causes the kernel to defragment IP packets prior to sending them to the
+    /// fanout group (e.g. to ensure [`FanoutAlgorithm::Hash`] works despite fragmentation)
+    /// - `rollover` causes packets to be sent to a different socket than originally decided
+    /// by `fan_alg` if the original socket is backlogged with packets.
+    #[inline]
+    pub fn set_packet_fanout(
+        &self,
+        group_id: u16,
+        fan_alg: FanoutAlgorithm,
+        defrag: bool,
+        rollover: bool,
+    ) -> io::Result<()> {
+        self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
+    }
+
+    /// Configures the network device the socket is currently bound to to act in promiscuous mode.
+    ///
+    /// A network device in promiscuous mode will capture all packets observed on a physical medium,
+    /// not just those destined for it.
+    #[inline]
+    pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
+        self.socket.set_promiscuous(promisc)
+    }
+
     /// Receive a datagram from the socket.
     ///
     /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
@@ -871,19 +1414,33 @@ impl L2MappedSocket {
         self.socket.recv(buf)
     }
 
-    /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
-    /// The returned [`TxFrame`] should have data written to it via the
-    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
-    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
-    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
-    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2MappedSocket::bind())).
     #[inline]
-    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
+    }
 
-        Some(rx_frame)
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[inline]
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
     }
 
     //
@@ -918,6 +1475,7 @@ impl L2MappedSocket {
     // }
     //
     // assert!(malformed == 5);
+    // # Ok::<(), io::Error>(())
     // ```
 
     /// Checks the status of previously-sent packets in the order they were sent.
@@ -968,7 +1526,7 @@ impl Drop for L2MappedSocket {
 
 impl AsRawFd for L2MappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }
@@ -984,27 +1542,107 @@ pub struct L2TxMappedSocket {
 }
 
 impl L2TxMappedSocket {
-    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// Bind the link-layer socket to a particular interface (and optionally protocol) and begin
     /// receiving packets.
     ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    #[inline]
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    /// `proto` specifies what protocol the socket should bind to. If `proto` is set to
+    /// [`L2Protocol::All`] then packets of any protocol type can be received on the socket.
+    ///
+    /// Outgoing packets (e.g. packets sent by applications on the host) are **only** captured when
+    /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
+    /// incoming packets being captured.
+    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(if_name, proto)
     }
 
-    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
-    ///
-    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
-    /// applications that intend to intentionally flood a network with traffic. Enabling this option
-    /// will lead to increased packet drops in transmission when network devices are busy (as the
-    /// kernel will not be buffering packets originating from the socket).
-    ///
-    /// This option is disabled (`false`) by default.
+    /// Retrieves the [`Interface`] the given link-layer socket is currently bound to.
     #[inline]
-    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
-        self.socket.set_qdisc_bypass(bypass)
+    pub fn bound_interface(&self) -> io::Result<Interface> {
+        self.socket.bound_interface()
+    }
+
+    /// Sets `filter` as the packet filter for the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
+        self.socket.set_filter(filter)
+    }
+
+    /// Removes any filter previously applied to the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::NotFound] - no filter was found for the given socket
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter removed.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn clear_filter(&self) -> io::Result<()> {
+        self.socket.clear_filter()
+    }
+
+    /// Sets the filter to reject all packets and fushes any packets currently pending in the
+    /// socket's buffer.
+    ///
+    /// This method should not need to be called during general active capture; Raw/Packet sockets
+    /// internally use a ring buffer, so if more packets are received than the application can
+    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// buffer. **However**, this method is very important when it comes to applying a new filter
+    /// to an active socket or changing the `Interface`/protocol an active socket is bound to
+    /// (see [`set_filter()`](Self::set_filter) or [`bind()`](Self::bind) for more details on this).
+    ///
+    /// If a `flush()` that preserves the original filter is desired, something like the following
+    /// can be used:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::Interface;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    ///
+    /// // Start receiving packets...
+    ///
+    /// // At some point, flush all outstanding packets
+    /// let prev_filter = match socket.get_filter() {
+    ///     Ok(filter) => Some(filter),
+    ///     Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+    ///     Err(e) => return Err(e),
+    /// };
+    ///
+    /// socket.flush()?;
+    /// match prev_filter {
+    ///     None => socket.clear_filter()?,
+    ///     Some(mut filter) => socket.set_filter(&mut filter)?,
+    /// }
+    /// // Outstanding packets have now been flushed and the filter restored
+    ///
+    /// // Continue receiving packets...
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method only returns error originating from [`set_filter()`](Self::set_filter); refer
+    /// to its documentation for the list of possible error kinds that can be returned.
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.socket.flush()
     }
 
     /// Returns packet statistics about the current socket.
@@ -1015,52 +1653,6 @@ impl L2TxMappedSocket {
     #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
-    }
-
-    /// Returns the link-layer address the socket is currently bound to.
-    #[inline]
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
-    }
-
-    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
-    /// If `true`, this option requests that the operating system use hardware timestamps
-    /// provided by the NIC.
-    ///
-    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
-    ///
-    /// # Errors
-    ///
-    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
-    ///
-    /// `EINVAL` - hardware timestamping is not supported by the network card.
-    #[inline]
-    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
-        self.socket.set_timestamp_method(tx, rx)
-    }
-
-    /// Receive a datagram from the socket.
-    ///
-    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
-    /// to [`L2Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
-    /// [`L2MappedSocket::mapped_recv()`] instead.
-    ///
-    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
-    /// [`bind()`](L2RxMappedSocket::bind())).
-    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.socket.recv(buf)
-    }
-
-    /// Sends a datagram over the socket. On success, returns the number of bytes written.
-    ///
-    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
-    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
-    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
-    ///
-    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
-    /// [`bind()`](L2TxMappedSocket::bind())).
-    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        self.socket.send(buf)
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -1090,6 +1682,81 @@ impl L2TxMappedSocket {
         self.next_tx = next_tx;
 
         Some(frame)
+    }
+
+    /// Moves the link-layer socket's behavior in or out of blocking mode.
+    ///
+    /// An [`L2Socket`] that is nonblocking will return with an error of kind
+    /// [WouldBlock](io::ErrorKind::WouldBlock) whenever a packet cannot be immediately sent or
+    /// received. This is only applicable to the [`send()`](Self::send) or
+    /// [`recv()`](Self::recv) methods; any memory-mapped methods are always guaranteed to be
+    /// nonblocking.
+    #[inline]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        self.socket.set_nonblocking(nonblocking)
+    }
+
+    /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
+    ///
+    /// When enabled, calls to [`send()`](Self::send) or [`recv()`](Self::recv) will return an error
+    /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
+    /// a packet.
+    #[inline]
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        self.socket.nonblocking()
+    }
+
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    #[inline]
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Receive a datagram from the socket.
+    ///
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::recv()`]. If you are looking to receive a memory-mapped packet, use
+    /// [`L2MappedSocket::mapped_recv()`] instead.
+    ///
+    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2RxMappedSocket::bind())).
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+    }
+
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
+    ///
+    /// NOTE: this method DOES NOT employ memory-mapped I/O and is functionally equivalent
+    /// to [`L2Socket::send()`]. If you are looking to send a memory-mapped packet, use
+    /// [`mapped_send()`](L2MappedSocket::mapped_send()) instead.
+    ///
+    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// [`bind()`](L2TxMappedSocket::bind())).
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
+    }
+
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
+    ///
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    #[inline]
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
     }
 
     /// Sets [`mapped_send()`](Self::mapped_send()) results to be manually handled via repeated
@@ -1140,6 +1807,7 @@ impl L2TxMappedSocket {
     // }
     //
     // assert!(malformed == 5);
+    // # Ok::<(), io::Error>(())
     // ```
 
     /// Checks the status of previously-sent packets in the order they were sent.
@@ -1203,79 +1871,123 @@ pub struct L2RxMappedSocket {
 }
 
 impl L2RxMappedSocket {
-    /// Bind the link-layer socket to a particular protocol/address and interface and begin
+    /// Bind the link-layer socket to a particular interface (and optionally protocol) and begin
     /// receiving packets.
     ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    #[inline]
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    /// `proto` specifies what protocol the socket should bind to. If `proto` is set to
+    /// [`L2Protocol::All`] then packets of any protocol type can be received on the socket.
+    ///
+    /// Outgoing packets (e.g. packets sent by applications on the host) are **only** captured when
+    /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
+    /// incoming packets being captured.
+    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(if_name, proto)
     }
 
-    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    /// Sets `filter` as the packet filter for the socket.
     ///
-    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
-    /// applications that intend to intentionally flood a network with traffic. Enabling this option
-    /// will lead to increased packet drops in transmission when network devices are busy (as the
-    /// kernel will not be buffering packets originating from the socket).
+    /// # Errors
     ///
-    /// This option is disabled (`false`) by default.
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
-    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
-        self.socket.set_qdisc_bypass(bypass)
+    pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
+        self.socket.set_filter(filter)
     }
 
-    /// Returns packet statistics about the current socket.
+    /// Removes any filter previously applied to the socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::NotFound] - no filter was found for the given socket
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter removed.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
-    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
-        self.socket.packet_stats()
+    pub fn clear_filter(&self) -> io::Result<()> {
+        self.socket.clear_filter()
     }
 
-    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
+    /// Sets the filter to reject all packets and fushes any packets currently pending in the
+    /// socket's buffer.
     ///
-    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
-    /// `amount` due to alignment requirements.
-    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
-        if unsafe {
-            libc::setsockopt(
-                self.socket.fd,
-                libc::SOL_PACKET,
-                crate::linux::PACKET_RESERVE,
-                ptr::addr_of!(amount) as *const libc::c_void,
-                mem::size_of::<u32>() as u32,
-            ) != 0
-        } {
-            return Err(io::Error::last_os_error());
-        }
+    /// This method should not need to be called during general active capture; Raw/Packet sockets
+    /// internally use a ring buffer, so if more packets are received than the application can
+    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// buffer. **However**, this method is very important when it comes to applying a new filter
+    /// to an active socket or changing the `Interface`/protocol an active socket is bound to
+    /// (see [`set_filter()`](Self::set_filter) or [`bind()`](Self::bind) for more details on this).
+    ///
+    /// If a `flush()` that preserves the original filter is desired, something like the following
+    /// can be used:
+    ///
+    /// ```
+    /// use std::io;
+    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::Interface;
+    ///
+    /// let mut socket = L2Socket::new()?;
+    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    ///
+    /// // Start receiving packets...
+    ///
+    /// // At some point, flush all outstanding packets
+    /// let prev_filter = match socket.get_filter() {
+    ///     Ok(filter) => Some(filter),
+    ///     Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+    ///     Err(e) => return Err(e),
+    /// };
+    ///
+    /// socket.flush()?;
+    /// match prev_filter {
+    ///     None => socket.clear_filter()?,
+    ///     Some(mut filter) => socket.set_filter(&mut filter)?,
+    /// }
+    /// // Outstanding packets have now been flushed and the filter restored
+    ///
+    /// // Continue receiving packets...
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method only returns error originating from [`set_filter()`](Self::set_filter); refer
+    /// to its documentation for the list of possible error kinds that can be returned.
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.socket.flush()?;
+
+        // Clear all outstanding packets from the RX ring buffer
+        while let Some(_) = self.mapped_recv() {}
 
         Ok(())
     }
 
-    /// Returns the link-layer address the socket is currently bound to.
+    /// Retrieves the [`Interface`] the given link-layer socket is currently bound to.
     #[inline]
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
+    pub fn bound_interface(&self) -> io::Result<Interface> {
+        self.socket.bound_interface()
     }
 
-    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
-    /// If `true`, this option requests that the operating system use hardware timestamps
-    /// provided by the NIC.
+    /// Retrieves the next frame in the memory-mapped ring buffer to receive a packet from.
     ///
-    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
-    ///
-    /// # Errors
-    ///
-    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
-    ///
-    /// `EINVAL` - hardware timestamping is not supported by the network card.
+    /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
     #[inline]
-    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
-        self.socket.set_timestamp_method(tx, rx)
+    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
+        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
+        self.next_rx = next_rx;
+
+        Some(rx_frame)
     }
 
     /// Adds the given socket to a fanout group.
@@ -1298,6 +2010,49 @@ impl L2RxMappedSocket {
         rollover: bool,
     ) -> io::Result<()> {
         self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
+    }
+
+    /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
+    ///
+    /// This allows packet buffering at the qdisc layer to be avoided, which is useful for
+    /// applications that intend to intentionally flood a network with traffic. Enabling this option
+    /// will lead to increased packet drops in transmission when network devices are busy (as the
+    /// kernel will not be buffering packets originating from the socket).
+    ///
+    /// This option is disabled (`false`) by default.
+    #[inline]
+    pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
+        self.socket.set_qdisc_bypass(bypass)
+    }
+
+    /// Reserves `amount` padding bytes before the packet in an [`RxFrame`].
+    ///
+    /// Note that the actual padding bytes available in an [`RxFrame`] may be slightly more than
+    /// `amount` due to alignment requirements.
+    pub fn set_reserve(&self, amount: u32) -> io::Result<()> {
+        if unsafe {
+            libc::setsockopt(
+                self.socket.fd,
+                libc::SOL_PACKET,
+                crate::linux::PACKET_RESERVE,
+                ptr::addr_of!(amount) as *const libc::c_void,
+                mem::size_of::<u32>() as u32,
+            ) != 0
+        } {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
     }
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
@@ -1324,15 +2079,20 @@ impl L2RxMappedSocket {
         self.socket.recv(buf)
     }
 
-    /// Retrieves the next frame in the memory-mapped ring buffer to receive a packet from.
+    /// Determines the source of timestamp information for TX_RING/RX_RING packets.
+    /// If `true`, this option requests that the operating system use hardware timestamps
+    /// provided by the NIC.
     ///
-    /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
+    /// For hardware timestamping to be employed, the socket must be bound to a specific interface.
+    ///
+    /// # Errors
+    ///
+    /// `ERANGE` - the requested packets cannot be timestamped by hardware.
+    ///
+    /// `EINVAL` - hardware timestamping is not supported by the network card.
     #[inline]
-    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
-
-        Some(rx_frame)
+    pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
+        self.socket.set_timestamp_method(tx, rx)
     }
 }
 
@@ -1350,7 +2110,7 @@ impl Drop for L2RxMappedSocket {
 
 impl AsRawFd for L2RxMappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }
