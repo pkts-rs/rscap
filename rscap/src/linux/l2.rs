@@ -283,7 +283,7 @@ impl L2Socket {
     /// If a `flush()` that preserves the original filter is desired, something like the following
     /// can be used:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::linux::{L2Protocol, L2Socket};
     /// use rscap::Interface;
@@ -359,7 +359,7 @@ impl L2Socket {
     /// `bind()`; otherwise an unspecified number of packets that do not adhere to the filter rule
     /// may be subsequently returned by the socket. See the following example:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
     /// use rscap::linux::{L2Protocol, L2Socket};
@@ -376,7 +376,7 @@ impl L2Socket {
     /// To change the filter on a socket that has already been bound and is actively sniffing
     /// packets, call [`flush()`](Self::flush) prior to setting the new filter:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
     /// use rscap::linux::{L2Protocol, L2Socket};
@@ -1204,7 +1204,7 @@ impl L2MappedSocket {
     /// If a `flush()` that preserves the original filter is desired, something like the following
     /// can be used:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
     /// use rscap::linux::{L2Protocol, L2Socket};
@@ -1245,7 +1245,8 @@ impl L2MappedSocket {
         Ok(())
     }
 
-    /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
+    /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
+    /// calls to [`tx_status()`](Self::tx_status).
     ///
     /// By default (i.e., when `manual` = `false`), the results of packet transmission are
     /// transparently handled. As a result, packets flagged as malformed by the kernel are
@@ -1443,41 +1444,6 @@ impl L2MappedSocket {
         self.socket.set_timestamp_method(tx, rx)
     }
 
-    //
-    // # Examples
-    //
-    // ```
-    // use std::{thread, time::Duration};
-    // use rscap::linux::prelude::*;
-    // use rscap::linux::mapped::TxFrameVariant;
-    //
-    // let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?)?;
-    // sock.manual_tx_status(true);
-    // let mut sending = 0;
-    // let mut malformed = 0;
-    // for _ in 0..5 {
-    //     let mut tx_frame = sock.mapped_send().unwrap();
-    //     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
-    //     tx_frame.send(11);
-    //     sending += 1;
-    // }
-    //
-    // while sending > 0 {
-    //     match sock.tx_status() {
-    //         TxFrameVariant::Available(_) => sending -= 1,
-    //         TxFrameVariant::WrongFormat(pkt) => {
-    //             println!("Malformed packet: {:?}", pkt.data());
-    //             malformed += 1;
-    //             sending -= 1;
-    //         }
-    //         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
-    //     }
-    // }
-    //
-    // assert!(malformed == 5);
-    // # Ok::<(), io::Error>(())
-    // ```
-
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when `manual_tx_status` is set to `false`, this method will only return the
@@ -1495,6 +1461,41 @@ impl L2MappedSocket {
     /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of pending
     /// packets should be decremented. The contents of the packet can be retrieved from the
     /// [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::io;
+    /// use std::{thread, time::Duration};
+    /// use rscap::linux::prelude::*;
+    /// use rscap::linux::mapped::{BlockConfig, TxFrameVariant};
+    ///
+    /// let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?)?;
+    /// sock.manual_tx_status(true);
+    /// let mut sending = 0;
+    /// let mut malformed = 0;
+    /// for _ in 0..5 {
+    ///     let mut tx_frame = sock.mapped_send().unwrap();
+    ///     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
+    ///     tx_frame.send(11);
+    ///     sending += 1;
+    /// }
+    ///
+    /// while sending > 0 {
+    ///     match sock.tx_status() {
+    ///         TxFrameVariant::Available(_) => sending -= 1,
+    ///         TxFrameVariant::WrongFormat(pkt) => {
+    ///             println!("Malformed packet: {:?}", pkt.data());
+    ///             malformed += 1;
+    ///             sending -= 1;
+    ///         }
+    ///         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
+    ///     }
+    /// }
+    ///
+    /// assert!(malformed == 5);
+    /// # Ok::<(), io::Error>(())
+    /// ```
     #[inline]
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
@@ -1609,7 +1610,7 @@ impl L2TxMappedSocket {
     /// If a `flush()` that preserves the original filter is desired, something like the following
     /// can be used:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
     /// use rscap::linux::{L2Protocol, L2Socket};
@@ -1645,14 +1646,20 @@ impl L2TxMappedSocket {
         self.socket.flush()
     }
 
-    /// Returns packet statistics about the current socket.
+    /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
+    /// calls to [`tx_status()`](Self::tx_status).
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// By default (i.e., when `manual` = `false`), the results of packet transmission are
+    /// transparently handled. As a result, packets flagged as malformed by the kernel are
+    /// aggregated into statistics rather than being reported back to the user on a case-by-case
+    /// basis.
+    ///
+    /// If individual packet results are desired, setting this option to `true` modifies socket
+    /// behavior such that each sent packet must have its status checked using `tx_status` prior
+    /// to that packet being discarded from the ring.
     #[inline]
-    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
-        self.socket.packet_stats()
+    pub fn manual_tx_status(&mut self, manual: bool) {
+        self.manual_tx_status = manual;
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -1704,6 +1711,16 @@ impl L2TxMappedSocket {
     #[inline]
     pub fn nonblocking(&self) -> io::Result<bool> {
         self.socket.nonblocking()
+    }
+
+    /// Returns packet statistics about the current socket.
+    ///
+    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
+    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
+    /// each time `packet_stats()` is called.
+    #[inline]
+    pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
+        self.socket.packet_stats()
     }
 
     /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
@@ -1775,41 +1792,6 @@ impl L2TxMappedSocket {
         self.manual_tx_status = manual;
     }
 
-    //
-    // # Examples
-    //
-    // ```
-    // use std::{thread, time::Duration};
-    // use rscap::linux::prelude::*;
-    // use rscap::linux::mapped::TxFrameVariant;
-    //
-    // let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?)?;
-    // sock.manual_tx_status(true);
-    // let mut sending = 0;
-    // let mut malformed = 0;
-    // for _ in 0..5 {
-    //     let mut tx_frame = sock.mapped_send().unwrap();
-    //     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
-    //     tx_frame.send(11);
-    //     sending += 1;
-    // }
-    //
-    // while sending > 0 {
-    //     match sock.tx_status() {
-    //         TxFrameVariant::Available(_) => sending -= 1,
-    //         TxFrameVariant::WrongFormat(pkt) => {
-    //             println!("Malformed packet: {:?}", pkt.data());
-    //             malformed += 1;
-    //             sending -= 1;
-    //         }
-    //         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
-    //     }
-    // }
-    //
-    // assert!(malformed == 5);
-    // # Ok::<(), io::Error>(())
-    // ```
-
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when [`set_tx_status()`](Self::set_tx_status()) is set to `false`, this
@@ -1827,6 +1809,42 @@ impl L2TxMappedSocket {
     /// [`TxFrameVariant::WrongFormat`], the kernel has rejected the packet, and the count of
     /// pending packets should be decremented. The contents of the packet can be retrieved from the
     /// encapsulated [`InvalidTxFrame`](super::mapped::InvalidTxFrame) if desired.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::io;
+    ///
+    /// use std::{thread, time::Duration};
+    /// use rscap::linux::prelude::*;
+    /// use rscap::linux::mapped::{BlockConfig, TxFrameVariant};
+    ///
+    /// let mut sock = L2Socket::new()?.packet_tx_ring(BlockConfig::new(65536, 16, 8192)?)?;
+    /// sock.manual_tx_status(true);
+    /// let mut sending = 0;
+    /// let mut malformed = 0;
+    /// for _ in 0..5 {
+    ///     let mut tx_frame = sock.mapped_send().unwrap();
+    ///     tx_frame.data()[0..11].copy_from_slice(b"hello world"); // This will obviously be malformed
+    ///     tx_frame.send(11);
+    ///     sending += 1;
+    /// }
+    ///
+    /// while sending > 0 {
+    ///     match sock.tx_status() {
+    ///         TxFrameVariant::Available(_) => sending -= 1,
+    ///         TxFrameVariant::WrongFormat(pkt) => {
+    ///             println!("Malformed packet: {:?}", pkt.data());
+    ///             malformed += 1;
+    ///             sending -= 1;
+    ///         }
+    ///         TxFrameVariant::SendRequest | TxFrameVariant::Sending => thread::sleep(Duration::from_millis(50)),
+    ///     }
+    /// }
+    ///
+    /// assert!(malformed == 5);
+    /// # Ok::<(), io::Error>(())
+    /// ```
     #[inline]
     pub fn tx_status(&mut self) -> TxFrameVariant<'_> {
         let (frame_variant, next_tx) = self.tx_ring.next_frame(self.last_checked_tx);
@@ -1932,7 +1950,7 @@ impl L2RxMappedSocket {
     /// If a `flush()` that preserves the original filter is desired, something like the following
     /// can be used:
     ///
-    /// ```
+    /// ```no_run
     /// use std::io;
     /// use rscap::linux::{L2Protocol, L2Socket};
     /// use rscap::Interface;

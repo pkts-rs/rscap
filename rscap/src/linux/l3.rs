@@ -791,7 +791,8 @@ impl L3MappedSocket {
         self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
     }
 
-    /// Sets `mapped_send` results to be manually handled through repeated calls to `tx_status`.
+    /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
+    /// calls to [`tx_status()`](Self::tx_status).
     ///
     /// By default (i.e., when `manual` = `false`), the results of packet transmission are
     /// transparently handled. As a result, packets flagged as malformed by the kernel are
@@ -799,8 +800,8 @@ impl L3MappedSocket {
     /// basis.
     ///
     /// If individual packet results are desired, setting this option to `true` modifies socket
-    /// behavior such that each sent packet must have its status checked using `tx_status` prior
-    /// to that packet being discarded from the ring.
+    /// behavior such that each sent packet must have its status checked using
+    /// [`tx_status()`](Self::tx_status) prior to that packet being discarded from the ring.
     #[inline]
     pub fn manual_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
