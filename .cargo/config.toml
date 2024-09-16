@@ -1,5 +1,5 @@
 [target.'cfg(unix)']
-runner = 'sudo -E'
+runner = "sudo -E"
 
 [target.'cfg(windows)']
 runner = "powershell -Command Start-Process -Verb runAs -FilePath"

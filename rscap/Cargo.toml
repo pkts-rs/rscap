@@ -11,9 +11,6 @@ repository = "https://github.com/pkts-rs/rscap"
 keywords = ["packets", "capture", "pcap", "libpcap", "npcap", "bpf", "raw_sockets"]
 categories = ["network-programming"]
 
-[lib]
-doctest = false
-
 [features]
 # Enables use of the npcap driver on Windows systems when the necessary dll libraries are present.
 # 
