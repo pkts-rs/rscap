@@ -1,9 +1,9 @@
 # rscap
 
-[![Cross-Platform]][CI Status] [![Documentation]][docs.rs] [![Latest Version]][crates.io] [![v1.66+]][Rust 1.66]
+[![Latest Version]][crates.io] [![Cross-Platform]][CI Status] [![Documentation]][docs.rs] [![v1.66+]][Rust 1.66]
 
-[Cross-Platform]: https://github.com/pkts-rs/rscap/actions/workflows/full_CI.yml/badge.svg
-[CI Status]: https://github.com/pkts-rs/rscap/actions/workflows/full_ci.yml
+[Cross-Platform]: https://github.com/pkts-rs/rscap/actions/workflows/full_ci.yaml/badge.svg
+[CI Status]: https://github.com/pkts-rs/rscap/actions
 [Documentation]: https://docs.rs/rscap/badge.svg
 [docs.rs]: https://docs.rs/rscap/
 [Latest Version]: https://img.shields.io/crates/v/rscap.svg
@@ -11,17 +11,17 @@
 [v1.66+]: https://img.shields.io/badge/MSRV-rustc_1.66+-blue.svg
 [Rust 1.66]: https://blog.rust-lang.org/2022/12/15/Rust-1.66.0.html
 
-**rscap - Rust packet capture and manipulation utilities**
+**rscap - Rust packet capture and manipulation library**
 
 ---
 
 `rscap` is a multi-purpose library for network packet capture/transmission and packet building. Its aims are twofold:
 
-1. To provide Rust-native platform tools for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
+1. To provide Rust-native cross-platform APIs for packet capture and transmission (comparable to `libpcap`, but written from the ground up in Rust)
 2. To expose a robust and ergonomic API for building packets and accessing/modifying packet data fields in various network protocols (like `scapy`, but with strong typing and significantly improved performance)
 
 The `rscap` submodule focuses specifically on (1)--it provides safe, Rust-native APIs for capturing packets over network interfaces. 
-The sibling [`pkts` crate](https://github.com/pkts-rs/pkts) handles (2).
+The sibling [`pkts` crate](https://github.com/pkts-rs/pkts) handles building/dissecting specific protocols and packet types (2).
 
 ## Development Status
 
@@ -29,13 +29,14 @@ Supported:
 - Linux link/network/transport-layer sockets (RX + TX)
 - Linux memory-mapped socket I/O (RX + TX)
 - *BSD/MacOS link-layer `/dev/bpf` packet capture/transmission interfaces (RX + TX)
-- `/dev/bpf` memory-mapped packet capture (RX only)
+- FreeBSD `/dev/bpf` memory-mapped packet capture (RX only)
 - Windows `npcap` driver packet capture/transmission (RX + TX)
+- Unifying interface to provide common features in a cross-platform manner
+- Creating and attaching *very* basic BPF programs to sockets (e.g. accept all/deny all)
 
 In Progress:
-- Unifying interface to provide common features in a cross-platform manner
-- Attaching filter programs (BPF) to sockets
-- Solaris/IllumOS support via DLPI implementation (RX + TX)
+- Compiling/assmbling more advanced filter programs (BPF)
+- Solaris/IllumOS support via DLPI/`PF_SOCKET`/`/dev/bpf` (RX + TX)
 - Native Windows 10/11 capture support via reverse-engineered ioctl calls from `pktmon` (RX only)
 
 ## Features

@@ -8,18 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! (BSD/MacOS) Berkeley Packet Filter (BPF) packet capture and transmission interface (see `filter`
-//! for cross-platform BPF filtering utilities).
+//! (BSD/MacOS) Berkeley Packet Filter (BPF) packet capture and transmission interface.
 //!
+//! Note that this module is not for filtering packets, but rather for the `/dev/bpf` interface
+//! used for packet capture. See the `filter` module for cross-platform filtering utilities,
+//! including BPF programs.
 //!
 
 mod l2;
 
-pub use l2::Bpf;
-
-use l2::BpfAccess;
+pub use l2::{Bpf, BpfAccess, BpfVersion};
 #[cfg(target_os = "freebsd")]
-use l2::{RxFrame, RxMappedBpf};
+pub use l2::{RxBlock, RxFrame, RxMappedBpf};
 
 use std::io;
 

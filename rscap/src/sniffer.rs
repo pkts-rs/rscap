@@ -181,6 +181,7 @@ impl Sniffer {
     }
 }
 
+/// A packet frame holding a single received zero-copy packet.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub struct RxFrame<'a> {
     inner: RxFrameImpl<'a>,
@@ -188,24 +189,22 @@ pub struct RxFrame<'a> {
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 impl RxFrame<'_> {
+    /// A slice to the underlying zero-copy packet.
+    ///
+    /// Once a packet is finished with, simply dropping the `RxFrame` will lead to the packet frame
+    /// being correctly marked for the kernel to use for future packets.
     pub fn data(&self) -> &[u8] {
         self.inner.data()
     }
 
+    /// A mutable slice to the underlying zero-copy packet.
+    ///
+    /// Any desired modifications may be performed on the packet safely; once a packet is finished
+    /// with, simply dropping the `RxFrame` will lead to the packet frame being correctly marked
+    /// for the kernel to use for future packets.
     pub fn data_mut(&mut self) -> &mut [u8] {
         self.inner.data_mut()
     }
 
     // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
 }
-
-// L2Socket?
-// DatalinkSocket?
-// LLSocket?
-// Sniffer?
-// L2Channel?
-// Channel?
-// DatalinkTap?
-// Datalink?
-// DataLink?
-// Naming things is hard...
