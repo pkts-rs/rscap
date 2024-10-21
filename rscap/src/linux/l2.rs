@@ -955,7 +955,7 @@ impl L2Socket {
                 libc::SOL_PACKET,
                 crate::linux::PACKET_RX_RING,
                 ptr::addr_of!(req_rx) as *const libc::c_void,
-                mem::size_of::<crate::linux::tpacket_req>() as u32,
+                mem::size_of_val(&req_rx) as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
