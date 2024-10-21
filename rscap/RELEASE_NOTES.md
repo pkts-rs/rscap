@@ -1,5 +1,8 @@
 # Release History:
 
+* 0.2.1 (2024-10-21)
+  - Fix size of `tpacket_req` passed into setsockopt
+
 * 0.2.0 (2024-09-09)
   - Split out `rscap` and `pkts` into separate crates
   - Introduce CI pipeline
