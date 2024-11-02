@@ -122,9 +122,9 @@ impl L3Socket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = crate::linux::tpacket_stats {
             tp_packets: 0,
@@ -735,9 +735,9 @@ impl L3MappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }
@@ -995,9 +995,9 @@ impl L3TxMappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }
@@ -1207,9 +1207,9 @@ impl L3RxMappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
     }

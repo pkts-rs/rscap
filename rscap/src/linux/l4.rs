@@ -107,7 +107,7 @@ impl L4Socket {
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
-    /// This method will fail if the socket has not been bound to an [`L2Addr`] (i.e., via
+    /// This method will fail if the socket has not been bound to an address (i.e., via
     /// [`bind()`](L4Socket::bind())).
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         match unsafe { libc::send(self.fd, buf.as_ptr() as *const libc::c_void, buf.len(), 0) } {
@@ -118,8 +118,8 @@ impl L4Socket {
 
     /// Receive a datagram from the socket.
     ///
-    /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
-    /// [`bind()`](L2Socket::bind())).
+    /// This method will fail if the socket has not been bound  to an address (i.e., via
+    /// [`bind()`](L4Socket::bind())).
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         match unsafe { libc::recv(self.fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0) } {
             ..=-1 => Err(io::Error::last_os_error()),

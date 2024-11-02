@@ -285,7 +285,8 @@ impl L2Socket {
     ///
     /// ```no_run
     /// use std::io;
-    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     /// use rscap::Interface;
     ///
     /// let mut socket = L2Socket::new()?;
@@ -355,14 +356,15 @@ impl L2Socket {
     /// incoming packets being captured.
     ///
     /// **WARNING:** calling `bind()` will cause the socket to immediately begin capturing packets.
-    /// Any packet filters (see [`set_filter()`](Self::set_filter286gg)) must be applied prior to
+    /// Any packet filters (see [`set_filter()`](Self::set_filter)) must be applied prior to
     /// `bind()`; otherwise an unspecified number of packets that do not adhere to the filter rule
     /// may be subsequently returned by the socket. See the following example:
     ///
     /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
-    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     /// use rscap::filter::PacketFilter;
     ///
     /// let mut socket = L2Socket::new()?;
@@ -379,7 +381,8 @@ impl L2Socket {
     /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
-    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     /// use rscap::filter::PacketFilter;
     ///
     /// let mut socket = L2Socket::new()?;
@@ -525,9 +528,9 @@ impl L2Socket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         let mut stats = crate::linux::tpacket_stats {
             tp_packets: 0,
@@ -1176,6 +1179,18 @@ impl L2MappedSocket {
         self.socket.set_filter(filter)
     }
 
+    /// Locks the current filter configuration of the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure this function will return an [`io::Error`] indicating the cause of the error.
+    /// Generally, this method will succeed unless there is some fundamental issue in the `rscap`
+    /// library.
+    #[inline]
+    pub fn lock_filter(&self) -> io::Result<()> {
+        self.socket.lock_filter()
+    }
+
     /// Removes any filter previously applied to the socket.
     ///
     /// # Errors
@@ -1207,7 +1222,8 @@ impl L2MappedSocket {
     /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
-    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
     /// socket.bind(Interface::any()?, L2Protocol::All)?;
@@ -1385,9 +1401,9 @@ impl L2MappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
@@ -1582,6 +1598,18 @@ impl L2TxMappedSocket {
         self.socket.set_filter(filter)
     }
 
+    /// Locks the current filter configuration of the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure this function will return an [`io::Error`] indicating the cause of the error.
+    /// Generally, this method will succeed unless there is some fundamental issue in the `rscap`
+    /// library.
+    #[inline]
+    pub fn lock_filter(&self) -> io::Result<()> {
+        self.socket.lock_filter()
+    }
+
     /// Removes any filter previously applied to the socket.
     ///
     /// # Errors
@@ -1613,7 +1641,8 @@ impl L2TxMappedSocket {
     /// ```no_run
     /// use std::io;
     /// use rscap::Interface;
-    /// use rscap::linux::{L2Protocol, L2Socket};
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
     /// socket.bind(Interface::any()?, L2Protocol::All)?;
@@ -1715,9 +1744,9 @@ impl L2TxMappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
@@ -1922,6 +1951,18 @@ impl L2RxMappedSocket {
         self.socket.set_filter(filter)
     }
 
+    /// Locks the current filter configuration of the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure this function will return an [`io::Error`] indicating the cause of the error.
+    /// Generally, this method will succeed unless there is some fundamental issue in the `rscap`
+    /// library.
+    #[inline]
+    pub fn lock_filter(&self) -> io::Result<()> {
+        self.socket.lock_filter()
+    }
+
     /// Removes any filter previously applied to the socket.
     ///
     /// # Errors
@@ -1952,8 +1993,9 @@ impl L2RxMappedSocket {
     ///
     /// ```no_run
     /// use std::io;
-    /// use rscap::linux::{L2Protocol, L2Socket};
     /// use rscap::Interface;
+    /// use rscap::linux::l2::L2Socket;
+    /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
     /// socket.bind(Interface::any()?, L2Protocol::All)?;
@@ -2032,9 +2074,9 @@ impl L2RxMappedSocket {
 
     /// Returns packet statistics about the current socket.
     ///
-    /// Packet statistics include [`packets_seen`](PacketStatistics::packets_seen) and
-    /// [`packets_dropped`](PacketStatistics::packets_dropped); both of these counters are reset
-    /// each time `packet_stats()` is called.
+    /// Packet statistics include [`received`](PacketStatistics::received) and
+    /// [`dropped`](PacketStatistics::dropped) packet counts; both of these counters are reset
+    /// each time this method is called.
     #[inline]
     pub fn packet_stats(&self) -> io::Result<PacketStatistics> {
         self.socket.packet_stats()
