@@ -1,10 +1,11 @@
 use std::ffi::{CStr, CString};
 use std::mem;
+#[cfg(unix)]
 use std::os::fd::RawFd;
 #[cfg(target_os = "freebsd")]
 use std::slice;
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{array, cmp, io, ptr};
 
@@ -79,6 +80,7 @@ const fn BPF_WORDALIGN(x: usize) -> usize {
     (x + (BPF_ALIGNMENT - 1)) & !(BPF_ALIGNMENT - 1)
 }
 
+/// The access mode for a BPF device.
 #[derive(Clone, Copy, Debug)]
 pub enum BpfAccess {
     /// The socket can only be used to read packets being sent/received.
@@ -89,6 +91,7 @@ pub enum BpfAccess {
     WriteOnly,
 }
 
+/// The version of BPF devices being used by the operating system.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct BpfVersion {
@@ -122,15 +125,15 @@ pub enum LinkType {
     Fddi = 10,
     #[cfg(target_os = "openbsd")]
     Raw = 14,
-    #[cfg(not(target_os = "openbsd"))]
+    #[cfg(any(doc, not(target_os = "openbsd")))]
     Raw = 12,
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    #[cfg(any(doc, target_os = "freebsd", target_os = "netbsd"))]
     SlipBsdos = 13,
-    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    #[cfg(any(doc, target_os = "freebsd", target_os = "netbsd"))]
     PppBsdos = 14,
-    #[cfg(target_os = "netbsd")]
+    #[cfg(any(doc, target_os = "netbsd"))]
     Hippi = 15,
-    #[cfg(not(target_os = "freebsd"))]
+    #[cfg(any(doc, not(target_os = "freebsd")))]
     Pfsync = 18,
     AtmClip = 19,
     RedbackSmartedge = 32,
@@ -142,15 +145,15 @@ pub enum LinkType {
     Frelay = 107,
     #[cfg(target_os = "openbsd")]
     Loop = 12,
-    #[cfg(not(target_os = "openbsd"))]
+    #[cfg(any(doc, not(target_os = "openbsd")))]
     Loop = 108,
     #[cfg(target_os = "openbsd")]
     Enc = 13,
-    #[cfg(not(target_os = "openbsd"))]
+    #[cfg(any(doc, not(target_os = "openbsd")))]
     Enc = 109,
     #[cfg(target_os = "netbsd")]
     Hdlc = 16,
-    #[cfg(not(target_os = "netbsd"))]
+    #[cfg(any(doc, not(target_os = "netbsd")))]
     Hdlc = 112,
     LinuxSll = 113,
     Ltalk = 114,
@@ -162,7 +165,7 @@ pub enum LinkType {
     AironetHeader = 120,
     #[cfg(target_os = "freebsd")]
     Pfsync = 121,
-    #[cfg(not(target_os = "freebsd"))]
+    #[cfg(any(doc, not(target_os = "freebsd")))]
     Hhdlc = 121,
     IpOverFc = 122,
     SunAtm = 123,
@@ -175,7 +178,7 @@ pub enum LinkType {
     /* more defined in <net/dlt.h> or <net/bpf.h> */
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 #[repr(C)]
 struct BpfHeader {
     bzh_kernel_gen: AtomicU32,
@@ -206,11 +209,14 @@ impl ReceiveIndex {
     }
 }
 
+/// A BPF device, capable of spoofing or sniffing packets on a specified interface.
 pub struct Bpf {
+    #[cfg(unix)]
     fd: RawFd,
 }
 
 impl Bpf {
+    /// Creates a new BPF instance with the given access mode.
     pub fn new(access_mode: BpfAccess) -> io::Result<Self> {
         let mode = match access_mode {
             BpfAccess::ReadOnly => libc::O_RDONLY,
@@ -246,6 +252,7 @@ impl Bpf {
         Err(io::Error::last_os_error())
     }
 
+    /// Returns the BPF version currently in use by the operating system.
     pub fn bpf_version(&self) -> io::Result<BpfVersion> {
         let mut version = bpf_version { major: 0, minor: 0 };
 
@@ -327,6 +334,19 @@ impl Bpf {
         }
     }
 
+    /// Sets `filter` as the packet filter for the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be returned if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
     pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
         let mut bpf_program = unsafe { filter.as_bpf_program() };
@@ -571,7 +591,7 @@ impl Bpf {
     /// Enable memory-mapped I/O for incoming packets.
     ///
     /// In the event of failure, the consumed `L2Socket` will automatically be closed.
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(doc, target_os = "freebsd"))]
     pub fn packet_rx_ring(self, buffer_size: usize) -> io::Result<RxMappedBpf> {
         let flags = libc::MAP_ANONYMOUS; // MAP_ANONYMOUS initializes contents to zero.
         let prot = libc::PROT_READ | libc::PROT_WRITE;
@@ -615,7 +635,8 @@ impl Drop for Bpf {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+/// A BPF device that includes a memory-mapped buffer for more efficient packet sniffing.
+#[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxMappedBpf {
     l2: Bpf,
     raw: *mut libc::c_void,
@@ -623,8 +644,12 @@ pub struct RxMappedBpf {
     recv_idx: ReceiveIndex,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl RxMappedBpf {
+    /// Returns the ring buffer used to receive packets.
+    ///
+    /// This is offered as a lower-level API for certain use cases; in the general case,
+    /// [`mapped_recv()`](Self::mapped_recv) should be sufficient to use.
     #[inline]
     pub fn rx_ring(&mut self) -> RxRing<'_> {
         RxRing {
@@ -634,16 +659,20 @@ impl RxMappedBpf {
         }
     }
 
+    /// Sends a packet out on the BPF device.
     #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.l2.send(buf)
     }
 
+    /// Receives a sniffed packet from the BPF device.
     #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        // TODO: do this with mapped-recv anyways?
         self.l2.recv(buf)
     }
 
+    /// Receives packet from the BPF device in a zero-copy fashion.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
         let (raw, block_idx) = match self.recv_idx {
@@ -674,7 +703,7 @@ impl RxMappedBpf {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl Drop for RxMappedBpf {
     fn drop(&mut self) {
         unsafe { libc::munmap(self.raw, self.buflen * 2) };
@@ -683,15 +712,23 @@ impl Drop for RxMappedBpf {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+/// The memory-mapped ring populated with received packets by the operating system.
+///
+/// This ring consists of two blocks of memory, which are alternately filled with individual packet
+/// frames. To properly use this ring manually, iterate through all frames in the first block, then
+/// invoke [`mark_read()`](RxBlock::mark_read) on that block and iterate through frames in the
+/// second block. Once the second block's frames have been read, similarly mark that block as having
+/// been read and move back to the first.
+#[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxRing<'a> {
     block_1: *mut libc::c_void,
     block_2: *mut libc::c_void,
     recv_idx: &'a mut ReceiveIndex,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl<'a> RxRing<'a> {
+    /// The first block of the memory-mapped ring.
     pub fn first_block(&'a mut self) -> Option<RxBlock<'a>> {
         let (header, data) = unsafe { RxBlock::block_parts(self.block_1)? };
         Some(RxBlock {
@@ -702,6 +739,7 @@ impl<'a> RxRing<'a> {
         })
     }
 
+    /// The second block of the memory-mapped ring.
     pub fn second_block(&'a mut self) -> Option<RxBlock<'a>> {
         let (header, data) = unsafe { RxBlock::block_parts(self.block_2)? };
         Some(RxBlock {
@@ -713,7 +751,8 @@ impl<'a> RxRing<'a> {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+/// A memory-mapped region used for zero-copy reception of packet frames.
+#[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxBlock<'a> {
     header: &'a mut BpfHeader,
     data: &'a mut [u8],
@@ -721,7 +760,7 @@ pub struct RxBlock<'a> {
     recv_idx: &'a mut ReceiveIndex,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl<'a> RxBlock<'a> {
     unsafe fn block_parts(buf: *mut libc::c_void) -> Option<(&'a mut BpfHeader, &'a mut [u8])> {
         let header = &mut *(buf as *mut BpfHeader);
@@ -738,11 +777,14 @@ impl<'a> RxBlock<'a> {
         }
     }
 
+    /// An interator over the frames that have been written to the block.
     #[inline]
     pub fn frames(&'a mut self) -> RxFrameIter<'a> {
         RxFrameIter { rem: self.data }
     }
 
+    /// Indicates to the operating system that the block is ready to be written to, effectively
+    /// erasing all frames on the block.
     pub fn mark_read(self) {
         // Mark the recv index of the mapped socket as stale if necessary
         if self.is_first_block {
@@ -763,12 +805,13 @@ impl<'a> RxBlock<'a> {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+/// An iterator over frames on a block.
+#[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxFrameIter<'a> {
     rem: &'a mut [u8],
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl<'a> Iterator for RxFrameIter<'a> {
     type Item = RxFrame<'a>;
 
@@ -807,43 +850,51 @@ impl<'a> Iterator for RxFrameIter<'a> {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+/// A packet frame holding a single received zero-copy packet.
+#[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxFrame<'a> {
     data: &'a mut [u8],
     orig_len: usize,
     timestamp: bpf_ts,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(doc, target_os = "freebsd"))]
 impl RxFrame<'_> {
+    /// A zero-copy slice of the frame's packet data.
     #[inline]
     pub fn data(&self) -> &[u8] {
         self.data
     }
 
+    /// A mutable zero-copy slice of the frame's packet data.
     #[inline]
     pub fn data_mut(&mut self) -> &mut [u8] {
         self.data
     }
 
+    /// The original length of the received packet.
+    ///
+    /// Note that this may be greater than [`frame_len()`](Self::frame_len) if the received packet
+    /// exceeded the available space of the ringbuffer and had to be truncated.
     #[inline]
     pub fn original_len(&self) -> usize {
         self.orig_len
     }
 
+    /// The length of the received packet (taking into account any truncation).
     #[inline]
     pub fn frame_len(&self) -> usize {
         self.data.len()
     }
 
+    /// Indicates whether the packet within the given frame was truncated to fit within the frame.
     #[inline]
     pub fn truncated(&self) -> bool {
         self.original_len() != self.frame_len()
     }
 
+    /// A timestamp indicating when the packet was received.
     pub fn timestamp(&self) -> bpf_ts {
         self.timestamp
     }
 }
-
-// TODO: need to provide ergonomic semantics for writing BPF programs within rust.

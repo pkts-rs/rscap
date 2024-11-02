@@ -25,12 +25,14 @@ use crate::Interface;
 
 pub use adapter::NpcapAdapter;
 
+/// The mode of operation for the `npcap` adapter.
 #[derive(Clone, Copy, Debug)]
 pub enum NpcapMode {
     Capture,
     Statistic,
 }
 
+/// A timeout specifier for read operations on the `npcap` adapter.
 #[derive(Clone, Copy, Debug)]
 pub enum NpcapTimeout {
     /// A call to `read()` will return immediately if no packets are ready.

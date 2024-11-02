@@ -18,8 +18,8 @@
 mod l2;
 
 pub use l2::{Bpf, BpfAccess, BpfVersion};
-#[cfg(target_os = "freebsd")]
-pub use l2::{RxBlock, RxFrame, RxMappedBpf};
+#[cfg(any(doc, target_os = "freebsd"))]
+pub use l2::{RxBlock, RxFrame, RxFrameIter, RxMappedBpf, RxRing};
 
 use std::io;
 
@@ -28,7 +28,7 @@ use crate::{filter::PacketFilter, Interface};
 #[cfg(target_os = "freebsd")]
 pub const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024 * 1024; // Default each buffer of 1MB
 
-pub struct SnifferImpl {
+pub(crate) struct SnifferImpl {
     #[cfg(not(target_os = "freebsd"))]
     bpf: Bpf,
     #[cfg(target_os = "freebsd")]

@@ -17,8 +17,8 @@
 //! To include all common linux-specific structures, simply add `use rscap::linux::prelude::*` to
 //! your source.
 
-pub use addr::L2Protocol;
-pub use l2::{L2MappedSocket, L2Socket};
+use addr::L2Protocol;
+use l2::{L2MappedSocket, L2Socket};
 
 use mapped::{BlockConfig, RxFrame};
 
@@ -33,7 +33,7 @@ pub mod l4;
 pub mod mapped;
 #[doc(hidden)]
 pub mod prelude;
-pub mod sndrcv;
+mod sndrcv;
 
 // Temporarily used until they are merged into libc:
 
@@ -69,55 +69,55 @@ pub(crate) const PACKET_FANOUT_FLAG_ROLLOVER: libc::c_uint = 0x1000;
 pub(crate) const PACKET_FANOUT_FLAG_UNIQUEID: libc::c_uint = 0x2000;
 pub(crate) const PACKET_FANOUT_FLAG_DEFRAG: libc::c_uint = 0x8000;
 
-pub(crate) const TP_STATUS_KERNEL: libc::__u32 = 0;
-pub(crate) const TP_STATUS_USER: libc::__u32 = 1 << 0;
-pub(crate) const TP_STATUS_COPY: libc::__u32 = 1 << 1;
-pub(crate) const TP_STATUS_LOSING: libc::__u32 = 1 << 2;
-pub(crate) const TP_STATUS_CSUMNOTREADY: libc::__u32 = 1 << 3;
-pub(crate) const TP_STATUS_VLAN_VALID: libc::__u32 = 1 << 4;
-pub(crate) const TP_STATUS_BLK_TMO: libc::__u32 = 1 << 5;
-pub(crate) const TP_STATUS_VLAN_TPID_VALID: libc::__u32 = 1 << 6;
-pub(crate) const TP_STATUS_CSUM_VALID: libc::__u32 = 1 << 7;
+pub(crate) const TP_STATUS_KERNEL: u32 = 0;
+pub(crate) const TP_STATUS_USER: u32 = 1 << 0;
+pub(crate) const TP_STATUS_COPY: u32 = 1 << 1;
+pub(crate) const TP_STATUS_LOSING: u32 = 1 << 2;
+pub(crate) const TP_STATUS_CSUMNOTREADY: u32 = 1 << 3;
+pub(crate) const TP_STATUS_VLAN_VALID: u32 = 1 << 4;
+pub(crate) const TP_STATUS_BLK_TMO: u32 = 1 << 5;
+pub(crate) const TP_STATUS_VLAN_TPID_VALID: u32 = 1 << 6;
+pub(crate) const TP_STATUS_CSUM_VALID: u32 = 1 << 7;
 
-pub(crate) const TP_STATUS_AVAILABLE: libc::__u32 = 0;
-pub(crate) const TP_STATUS_SEND_REQUEST: libc::__u32 = 1 << 0;
-pub(crate) const TP_STATUS_SENDING: libc::__u32 = 1 << 1;
-pub(crate) const TP_STATUS_WRONG_FORMAT: libc::__u32 = 1 << 2;
+pub(crate) const TP_STATUS_AVAILABLE: u32 = 0;
+pub(crate) const TP_STATUS_SEND_REQUEST: u32 = 1 << 0;
+pub(crate) const TP_STATUS_SENDING: u32 = 1 << 1;
+pub(crate) const TP_STATUS_WRONG_FORMAT: u32 = 1 << 2;
 
-pub(crate) const TP_STATUS_TS_SOFTWARE: libc::__u32 = 1 << 29;
-pub(crate) const TP_STATUS_TS_SYS_HARDWARE: libc::__u32 = 1 << 30;
-pub(crate) const TP_STATUS_TS_RAW_HARDWARE: libc::__u32 = 1 << 31;
+pub(crate) const TP_STATUS_TS_SOFTWARE: u32 = 1 << 29;
+pub(crate) const TP_STATUS_TS_SYS_HARDWARE: u32 = 1 << 30;
+pub(crate) const TP_STATUS_TS_RAW_HARDWARE: u32 = 1 << 31;
 
-pub(crate) const TP_FT_REQ_FILL_RXHASH: libc::__u32 = 1;
+pub(crate) const TP_FT_REQ_FILL_RXHASH: u32 = 1;
 
 pub(crate) const TPACKET_ALIGNMENT: usize = 16;
 
 #[repr(align(8))]
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_rollover_stats {
-    pub tp_all: libc::__u64,
-    pub tp_huge: libc::__u64,
-    pub tp_failed: libc::__u64,
+pub(crate) struct tpacket_rollover_stats {
+    pub tp_all: u64,
+    pub tp_huge: u64,
+    pub tp_failed: u64,
 }
 
 #[repr(align(8))]
 #[repr(C)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
-pub struct tpacket_hdr_v1 {
-    pub block_status: libc::__u32,
-    pub num_pkts: libc::__u32,
-    pub offset_to_first_pkt: libc::__u32,
-    pub blk_len: libc::__u32,
-    pub seq_num: libc::__u64,
+pub(crate) struct tpacket_hdr_v1 {
+    pub block_status: u32,
+    pub num_pkts: u32,
+    pub offset_to_first_pkt: u32,
+    pub blk_len: u32,
+    pub seq_num: u64,
     pub ts_first_pkt: tpacket_bd_ts,
     pub ts_last_pkt: tpacket_bd_ts,
 }
 
 #[repr(u32)]
 #[allow(non_camel_case_types)]
-pub enum tpacket_versions {
+pub(crate) enum tpacket_versions {
     TPACKET_V1,
     TPACKET_V2,
     TPACKET_V3,
@@ -125,18 +125,18 @@ pub enum tpacket_versions {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct fanout_args {
+pub(crate) struct fanout_args {
     #[cfg(target_endian = "little")]
-    pub id: libc::__u16,
-    pub type_flags: libc::__u16,
+    pub id: u16,
+    pub type_flags: u16,
     #[cfg(target_endian = "big")]
-    pub id: libc::__u16,
-    pub max_num_members: libc::__u32,
+    pub id: u16,
+    pub max_num_members: u32,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct sockaddr_pkt {
+pub(crate) struct sockaddr_pkt {
     pub spkt_family: libc::c_ushort,
     pub spkt_device: [libc::c_uchar; 14],
     pub spkt_protocol: libc::c_ushort,
@@ -144,19 +144,19 @@ pub struct sockaddr_pkt {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_auxdata {
-    pub tp_status: libc::__u32,
-    pub tp_len: libc::__u32,
-    pub tp_snaplen: libc::__u32,
-    pub tp_mac: libc::__u16,
-    pub tp_net: libc::__u16,
-    pub tp_vlan_tci: libc::__u16,
-    pub tp_vlan_tpid: libc::__u16,
+pub(crate) struct tpacket_auxdata {
+    pub tp_status: u32,
+    pub tp_len: u32,
+    pub tp_snaplen: u32,
+    pub tp_mac: u16,
+    pub tp_net: u16,
+    pub tp_vlan_tci: u16,
+    pub tp_vlan_tpid: u16,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_hdr {
+pub(crate) struct tpacket_hdr {
     pub tp_status: libc::c_ulong,
     pub tp_len: libc::c_uint,
     pub tp_snaplen: libc::c_uint,
@@ -168,32 +168,32 @@ pub struct tpacket_hdr {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_hdr_variant1 {
-    pub tp_rxhash: libc::__u32,
-    pub tp_vlan_tci: libc::__u32,
-    pub tp_vlan_tpid: libc::__u16,
-    pub tp_padding: libc::__u16,
+pub(crate) struct tpacket_hdr_variant1 {
+    pub tp_rxhash: u32,
+    pub tp_vlan_tci: u32,
+    pub tp_vlan_tpid: u16,
+    pub tp_padding: u16,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket2_hdr {
-    pub tp_status: libc::__u32,
-    pub tp_len: libc::__u32,
-    pub tp_snaplen: libc::__u32,
-    pub tp_mac: libc::__u16,
-    pub tp_net: libc::__u16,
-    pub tp_sec: libc::__u32,
-    pub tp_nsec: libc::__u32,
-    pub tp_vlan_tci: libc::__u16,
-    pub tp_vlan_tpid: libc::__u16,
-    pub tp_padding: [libc::__u8; 4],
+pub(crate) struct tpacket2_hdr {
+    pub tp_status: u32,
+    pub tp_len: u32,
+    pub tp_snaplen: u32,
+    pub tp_mac: u16,
+    pub tp_net: u16,
+    pub tp_sec: u32,
+    pub tp_nsec: u32,
+    pub tp_vlan_tci: u16,
+    pub tp_vlan_tpid: u16,
+    pub tp_padding: [u8; 4],
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
-pub struct tpacket_req {
+pub(crate) struct tpacket_req {
     pub tp_block_size: libc::c_uint,
     pub tp_block_nr: libc::c_uint,
     pub tp_frame_size: libc::c_uint,
@@ -203,7 +203,7 @@ pub struct tpacket_req {
 #[repr(C)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
-pub struct tpacket_req3 {
+pub(crate) struct tpacket_req3 {
     pub tp_block_size: libc::c_uint,
     pub tp_block_nr: libc::c_uint,
     pub tp_frame_size: libc::c_uint,
@@ -215,14 +215,14 @@ pub struct tpacket_req3 {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_stats {
+pub(crate) struct tpacket_stats {
     pub tp_packets: libc::c_uint,
     pub tp_drops: libc::c_uint,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_stats_v3 {
+pub(crate) struct tpacket_stats_v3 {
     pub tp_packets: libc::c_uint,
     pub tp_drops: libc::c_uint,
     pub tp_freeze_q_cnt: libc::c_uint,
@@ -230,45 +230,45 @@ pub struct tpacket_stats_v3 {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket3_hdr {
-    pub tp_next_offset: libc::__u32,
-    pub tp_sec: libc::__u32,
-    pub tp_nsec: libc::__u32,
-    pub tp_snaplen: libc::__u32,
-    pub tp_len: libc::__u32,
-    pub tp_status: libc::__u32,
-    pub tp_mac: libc::__u16,
-    pub tp_net: libc::__u16,
+pub(crate) struct tpacket3_hdr {
+    pub tp_next_offset: u32,
+    pub tp_sec: u32,
+    pub tp_nsec: u32,
+    pub tp_snaplen: u32,
+    pub tp_len: u32,
+    pub tp_status: u32,
+    pub tp_mac: u16,
+    pub tp_net: u16,
     pub hv1: tpacket_hdr_variant1,
-    pub tp_padding: [libc::__u8; 8],
+    pub tp_padding: [u8; 8],
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
-pub struct tpacket_bd_ts {
+pub(crate) struct tpacket_bd_ts {
     pub ts_sec: libc::c_uint,
     pub ts_usec: libc::c_uint,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub union tpacket_req_u {
+pub(crate) union tpacket_req_u {
     pub req: tpacket_req,
     pub req3: tpacket_req3,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub union tpacket_bd_header_u {
+pub(crate) union tpacket_bd_header_u {
     pub bh1: tpacket_hdr_v1,
 }
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct tpacket_block_desc {
-    pub version: libc::__u32,
-    pub offset_to_priv: libc::__u32,
+pub(crate) struct tpacket_block_desc {
+    pub version: u32,
+    pub offset_to_priv: u32,
     pub hdr: tpacket_bd_header_u,
 }
 
@@ -345,7 +345,7 @@ pub enum FanoutAlgorithm {
     QueueMapping,
 }
 
-pub const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024 * 1024; // Default each buffer of 1MB
+pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024 * 1024; // Default each buffer of 1MB
 
 pub(crate) struct SnifferImpl {
     socket: L2MappedSocket,
@@ -449,7 +449,7 @@ impl SnifferImpl {
     }
 }
 
-pub struct RxFrameImpl<'a> {
+pub(crate) struct RxFrameImpl<'a> {
     frame: RxFrame<'a>,
 }
 

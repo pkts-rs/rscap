@@ -25,31 +25,33 @@
 
 // NOTE: Fuschia OS likewise supports `/dev/bpf`.
 
+// Show required OS/features on docs.rs.
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
 #[cfg(any(
+    doc,
     target_os = "dragonfly",
     target_os = "freebsd",
-    target_os = "illumos",
     target_os = "macos",
     target_os = "netbsd",
     target_os = "openbsd",
-    target_os = "solaris",
 ))]
 pub mod bpf;
-#[cfg(any(target_os = "illumos", target_os = "solaris"))]
-pub mod dlpi;
+// #[cfg(any(target_os = "illumos", target_os = "solaris"))]
+// pub mod dlpi;
 pub mod filter;
 #[cfg(target_os = "linux")]
 pub mod linux;
-#[cfg(all(target_os = "windows", feature = "npcap"))]
+#[cfg(any(doc, all(target_os = "windows", feature = "npcap")))]
 pub mod npcap;
-#[cfg(target_os = "windows")]
+#[cfg(any(doc, target_os = "windows"))]
 pub mod pktmon;
 
-#[cfg(any(not(target_os = "windows"), feature = "npcap"))]
+#[cfg(any(doc, not(target_os = "windows"), feature = "npcap"))]
 mod sniffer;
 mod utils;
 
-#[cfg(any(not(target_os = "windows"), feature = "npcap"))]
+#[cfg(any(doc, not(target_os = "windows"), feature = "npcap"))]
 pub use sniffer::Sniffer;
 
 use std::ffi::CStr;
@@ -227,7 +229,7 @@ impl Interface {
         &self.name[..end + 1]
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(doc, target_os = "linux"))]
     pub fn arp_type(&self) -> io::Result<u16> {
         use std::ptr;
 
@@ -271,33 +273,3 @@ impl Interface {
         }
     }
 }
-
-// Various platform-specific ways to get IPv4 + IPv6 interfaces:
-// https://stackoverflow.com/questions/20743709/get-ipv6-addresses-in-linux-using-ioctl
-
-// Linux:
-// use glibc if_nametoindex, it uses netlink properly:
-// https://github.com/bminor/glibc/blob/ae612c45efb5e34713859a5facf92368307efb6e/sysdeps/unix/sysv/linux/if_index.c
-// or use getifaddrs; it likewise does netlink right:
-// https://github.com/bminor/glibc/blob/ae612c45efb5e34713859a5facf92368307efb6e/sysdeps/unix/sysv/linux/ifaddrs.c
-
-// OpenBSD:
-// Supports IPv6 directly in calls to SIOCGIFCONF by mangling sockaddr ABI:
-// https://man.openbsd.org/netintro.4
-
-// Apple:
-// Use getifaddrs:
-// https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/getifaddrs.3.html
-// (evidence it returns IPv6 addrs)
-// https://developer.apple.com/forums/thread/660434
-
-// FreeBSD:
-// Likewise does some interesting ABI mangling behavior that should be watched out for:
-// https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=159099
-
-// Note that libpcap only uses either getifaddrs (if available) or SIOCGIFCONF (if getifaddrs isn't available):
-// https://github.com/the-tcpdump-group/libpcap/blob/fbcc461fbc2bd3b98de401cc04e6a4a10614e99f/fad-glifc.c
-// https://github.com/the-tcpdump-group/libpcap/blob/fbcc461fbc2bd3b98de401cc04e6a4a10614e99f/fad-getad.c
-
-// Some interfaces may only support certain packet families (that don't include AF_PACKET):
-// https://stackoverflow.com/questions/19227781/linux-getting-all-network-interface-names

@@ -11,6 +11,10 @@ repository = "https://github.com/pkts-rs/rscap"
 keywords = ["packets", "capture", "pcap", "npcap", "bpf"]
 categories = ["network-programming"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 # Enables use of the npcap driver on Windows systems when the necessary dll libraries are present.
 # 
@@ -32,9 +36,6 @@ npcap-runtime = ["npcap"]
 [dependencies]
 bitflags = { version = "2.6.0" }
 libc = { version = "0.2" }
-
-pkts-common = { version = "0.1.0" }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
 once_cell = { version = "1.19" }
+pkts-common = { version = "0.1.0" }
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Threading"] }

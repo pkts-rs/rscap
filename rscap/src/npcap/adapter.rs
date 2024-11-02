@@ -19,6 +19,7 @@ const WSA_VERSION: u16 = 0x0202;
 
 static NPCAP_API: OnceCell<Npcap> = OnceCell::new();
 
+/// A network adapter capable of sniffing and injecting packets over an interface.
 pub struct NpcapAdapter {
     adapter: NonNull<Adapter>,
     iface: Interface,
@@ -148,6 +149,19 @@ impl NpcapAdapter {
         Ok(socket)
     }
 
+    /// Sets `filter` as the packet filter for the adapter.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     pub fn set_filter(&mut self, filter: &mut PacketFilter) -> io::Result<()> {
         match unsafe {
             self.npcap
@@ -158,6 +172,20 @@ impl NpcapAdapter {
         }
     }
 
+    /// Sets the filter to reject all packets and fushes any packets currently pending in the
+    /// socket's buffer.
+    ///
+    /// This method should not need to be called during general active capture; Raw/Packet sockets
+    /// internally use a ring buffer, so if more packets are received than the application can
+    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// buffer. **However**, this method is very important when it comes to applying a new filter
+    /// to an active socket or changing the `Interface`/protocol an active socket is bound to
+    /// (see [`set_filter()`](Self::set_filter) for more details on this).
+    ///
+    /// # Errors
+    ///
+    /// This method only returns error originating from [`set_filter()`](Self::set_filter); refer
+    /// to its documentation for the list of possible error kinds that can be returned.
     pub fn flush(&mut self) -> io::Result<()> {
         if let Err(e) = self.set_filter(&mut PacketFilter::reject_all()) {
             return Err(io::Error::new(io::ErrorKind::Other, e));
@@ -185,16 +213,21 @@ impl NpcapAdapter {
         Ok(())
     }
 
+    /// Configures whether the adapter will perform [`send()`](Self::send)/[`recv()`](Self::recv)
+    /// methods in a nonblocking manner.
     #[inline]
     pub fn set_nonblocking(&mut self, nonblocking: bool) {
         self.nonblocking = nonblocking;
     }
 
+    /// Indicates whether the adapter will perform [`send()`](Self::send)/[`recv()`](Self::recv)
+    /// methods in a nonblocking manner.
     #[inline]
     pub fn nonblocking(&self) -> bool {
         self.nonblocking
     }
 
+    /// Retrieves statistical information on the number of packets the adapter has captured/dropped.
     pub fn packet_stats(&mut self) -> io::Result<PacketStatistics> {
         let mut stat = BpfStat {
             bs_recv: 0,
@@ -245,6 +278,7 @@ impl NpcapAdapter {
         self.npcap.get_read_event(unsafe { self.adapter.as_mut() })
     }
 
+    /// Receive a datagram from the socket.
     pub fn recv(&mut self, packet: &mut [u8]) -> io::Result<usize> {
         unsafe {
             let buf = NonNull::new_unchecked(packet.as_mut_ptr());
@@ -283,6 +317,7 @@ impl NpcapAdapter {
         }
     }
 
+    /// Sends a datagram over the socket. On success, returns the number of bytes written.
     pub fn send(&mut self, packet: &[u8]) -> io::Result<usize> {
         unsafe {
             // BUG: this casts a `*const u8` into a `*mut u8`.

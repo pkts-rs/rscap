@@ -1,4 +1,6 @@
 use std::io;
+#[cfg(doc)]
+use std::marker::PhantomData;
 
 #[cfg(target_os = "openbsd")]
 use crate::bpf::RxFrameImpl;
@@ -38,6 +40,7 @@ use crate::{filter::PacketFilter, Interface};
 /// direction_ through a given network interface (including those being transmitted by the device
 /// itself).
 pub struct Sniffer {
+    #[cfg(not(doc))]
     inner: SnifferImpl,
 }
 
@@ -58,7 +61,7 @@ impl Sniffer {
     ///
     /// `ring_size` must be a multiple of 524288 (0x80000, or 512 KiB) to work across relevant
     /// platforms (currently Linux and FreeBSD).
-    #[cfg(any(target_os = "freebsd", target_os = "linux"))]
+    #[cfg(any(doc, target_os = "freebsd", target_os = "linux"))]
     #[inline]
     pub fn new_with_size(iface: Interface, ring_size: usize) -> io::Result<Self> {
         Ok(Self {
@@ -172,7 +175,7 @@ impl Sniffer {
     /// The `Sniffer` must be activated prior to receiving packets. Any attempt to receive a packet
     /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
     /// fail with an error of kind [`io::ErrorKind::NotConnected`].
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    #[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
         Some(RxFrame {
@@ -182,12 +185,15 @@ impl Sniffer {
 }
 
 /// A packet frame holding a single received zero-copy packet.
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
 pub struct RxFrame<'a> {
+    #[cfg(not(doc))]
     inner: RxFrameImpl<'a>,
+    #[cfg(doc)]
+    _phantom: PhantomData<&'a ()>,
 }
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
 impl RxFrame<'_> {
     /// A slice to the underlying zero-copy packet.
     ///
