@@ -1,5 +1,10 @@
 # Release History:
 
+* 0.2.2 (2024-11-02)
+  - Add documentation
+  - Make OS-specific APIs visible to all documentation
+  - Update README
+
 * 0.2.1 (2024-10-21)
   - Fix size of `tpacket_req` passed into setsockopt
 
