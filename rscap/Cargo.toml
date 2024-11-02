@@ -4,10 +4,11 @@ authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
 description = "Cross-platform packet capture and transmission utilities"
 # 1.66 - `std::os::fd` stabilized
 rust-version = "1.66"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 repository = "https://github.com/pkts-rs/rscap"
+readme = "../README.md"
 keywords = ["packets", "capture", "pcap", "npcap", "bpf"]
 categories = ["network-programming"]
 
