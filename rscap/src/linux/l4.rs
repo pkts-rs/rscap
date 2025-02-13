@@ -14,6 +14,7 @@
 //!
 
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::os::fd::{AsRawFd, RawFd};
 use std::{io, mem, ptr};
 
 use super::sndrcv::{RecvFlags, SendFlags};
@@ -190,5 +191,40 @@ impl L4Socket {
                 Ok((recvd as usize, rem_addr))
             }
         }
+    }
+
+    #[inline]
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        let flags = unsafe { libc::fcntl(self.fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(flags & libc::O_NONBLOCK > 0)
+    }
+
+    #[inline]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        let mut fcntl_flags = match unsafe { libc::fcntl(self.fd, libc::F_GETFL, 0) } {
+            ..=-1 => return Err(io::Error::last_os_error()),
+            f => f,
+        };
+
+        if nonblocking {
+            fcntl_flags |= libc::O_NONBLOCK;
+        } else {
+            fcntl_flags &= !libc::O_NONBLOCK;
+        }
+
+        match unsafe { libc::fcntl(self.fd, libc::F_SETFL, fcntl_flags) } {
+            0 => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+}
+
+impl AsRawFd for L4Socket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
     }
 }
