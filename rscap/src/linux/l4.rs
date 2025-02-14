@@ -86,7 +86,7 @@ impl L4Socket {
         let sockaddr = libc::sockaddr_in {
             sin_family: libc::AF_INET as u16,
             sin_addr: libc::in_addr {
-                s_addr: u32::from_be_bytes(ip_addr.octets()), // TODO: check endianness of this
+                s_addr: u32::from_le_bytes(ip_addr.octets()), // TODO: check endianness of this
             },
             sin_port: port,
             sin_zero: [0u8; 8],
@@ -226,5 +226,17 @@ impl L4Socket {
 impl AsRawFd for L4Socket {
     fn as_raw_fd(&self) -> RawFd {
         self.fd
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bind_localhost() {
+        let sock = L4Socket::new(L4Protocol::Udp).unwrap();
+        sock.bind(&SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 777))
+            .unwrap();
     }
 }
