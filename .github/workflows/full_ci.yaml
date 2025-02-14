@@ -23,13 +23,14 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       OS: linux
+#      RUSTFLAGS: -D warnings
     strategy:
       fail-fast: true
       max-parallel: 2
       matrix:
         toolchain:
           - stable
-          - 1.66.0
+          - 1.74.0
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust toolchain
@@ -41,13 +42,14 @@ jobs:
     name: Build Channels macOS
     env:
       OS: macos
+#      RUSTFLAGS: -D warnings
     strategy:
       fail-fast: true
       max-parallel: 2
       matrix:
         target:
           - { toolchain: stable, os: macos-14 }
-          - { toolchain: 1.66.0, os: macos-14 }
+          - { toolchain: 1.74.0, os: macos-14 }
     runs-on: ${{ matrix.target.os }}
     steps:
       - uses: actions/checkout@v4
@@ -61,12 +63,13 @@ jobs:
     runs-on: windows-2019
     env:
       OS: windows
+#      RUSTFLAGS: -D warnings
     strategy:
       fail-fast: true
       matrix:
         toolchain:
           - stable
-          - 1.66.0
+          - 1.74.0
         target:
           - x86_64-pc-windows-msvc
     steps:
@@ -81,6 +84,8 @@ jobs:
   check_cfg:
     name: "Check #[cfg]s"
     runs-on: ubuntu-22.04
+#    env:
+#      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust toolchain
