@@ -1,11 +1,11 @@
 # rscap
 
-[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.66+]][Rust 1.66]
+[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.74+]][Rust 1.74]
 
 [Latest Version]: https://img.shields.io/crates/v/rscap.svg
 [crates.io]: https://crates.io/crates/rscap
-[rscap: rustc 1.66+]: https://img.shields.io/badge/MSRV-rustc_1.66+-blue.svg
-[Rust 1.66]: https://blog.rust-lang.org/2022/11/03/Rust-1.66.0.html
+[rscap: rustc 1.74+]: https://img.shields.io/badge/MSRV-rustc_1.74+-blue.svg
+[Rust 1.74]: https://blog.rust-lang.org/2023/11/16/Rust-1.74.0.html
 [Documentation]: https://docs.rs/rscap/badge.svg
 [docs.rs]: https://docs.rs/rscap/
 

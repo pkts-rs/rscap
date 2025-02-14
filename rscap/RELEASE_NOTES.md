@@ -1,5 +1,11 @@
 # Release History:
 
+* 0.3.0 (2025-02-14)
+  - Adjust `Interface` creation functions to work with wider range of inputs
+  - Add `AsRawFd` APIs for various sniffers
+  - Various quality-of-life improvements in CI
+  - Bump MSRV to 1.74
+
 * 0.2.2 (2024-11-02)
   - Add documentation
   - Make OS-specific APIs visible to all documentation
