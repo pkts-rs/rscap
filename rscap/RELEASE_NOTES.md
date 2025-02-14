@@ -1,5 +1,9 @@
 # Release History:
 
+* 0.3.1 (2025-02-14)
+  - Resolve bug in `L4Socket` address binding
+  - Add sponsors information
+
 * 0.3.0 (2025-02-14)
   - Adjust `Interface` creation functions to work with wider range of inputs
   - Add `AsRawFd` APIs for various sniffers

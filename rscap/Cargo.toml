@@ -4,7 +4,7 @@ authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
 description = "Cross-platform packet capture and transmission utilities"
 # 1.74 - `from_encoded_bytes_unchecked` stabilized
 rust-version = "1.74"
-version = "0.3.0"
+version = "0.3.1"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 repository = "https://github.com/pkts-rs/rscap"
