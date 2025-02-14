@@ -28,6 +28,7 @@ pub struct Npcap {
     container: NpcapApi,
 }
 
+#[allow(unused)]
 struct NpcapApi {
     PacketGetDriverVersion: unsafe extern "C" fn() -> PCSTR,
     PacketGetDriverName: unsafe extern "C" fn() -> PCSTR,
@@ -95,6 +96,7 @@ struct NpcapApi {
     // PacketGetAirPcapHandle: fn(adapter: *mut Adapter) -> PAirpcapHandle,
 }
 
+#[allow(unused)]
 impl Npcap {
     ///
     ///

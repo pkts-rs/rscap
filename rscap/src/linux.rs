@@ -37,22 +37,22 @@ mod sndrcv;
 
 // Temporarily used until they are merged into libc:
 
-pub(crate) const PACKET_HOST: libc::c_uchar = 0;
-pub(crate) const PACKET_BROADCAST: libc::c_uchar = 1;
-pub(crate) const PACKET_MULTICAST: libc::c_uchar = 2;
-pub(crate) const PACKET_OTHERHOST: libc::c_uchar = 3;
-pub(crate) const PACKET_OUTGOING: libc::c_uchar = 4;
-pub(crate) const PACKET_LOOPBACK: libc::c_uchar = 5;
-pub(crate) const PACKET_USER: libc::c_uchar = 6;
-pub(crate) const PACKET_KERNEL: libc::c_uchar = 7;
+// pub(crate) const PACKET_HOST: libc::c_uchar = 0;
+// pub(crate) const PACKET_BROADCAST: libc::c_uchar = 1;
+// pub(crate) const PACKET_MULTICAST: libc::c_uchar = 2;
+// pub(crate) const PACKET_OTHERHOST: libc::c_uchar = 3;
+// pub(crate) const PACKET_OUTGOING: libc::c_uchar = 4;
+// pub(crate) const PACKET_LOOPBACK: libc::c_uchar = 5;
+// pub(crate) const PACKET_USER: libc::c_uchar = 6;
+// pub(crate) const PACKET_KERNEL: libc::c_uchar = 7;
 
 pub(crate) const PACKET_RX_RING: libc::c_int = 5;
 pub(crate) const PACKET_STATISTICS: libc::c_int = 6;
-pub(crate) const PACKET_AUXDATA: libc::c_int = 8;
+// pub(crate) const PACKET_AUXDATA: libc::c_int = 8;
 pub(crate) const PACKET_VERSION: libc::c_int = 10;
 pub(crate) const PACKET_RESERVE: libc::c_int = 12;
 pub(crate) const PACKET_TX_RING: libc::c_int = 13;
-pub(crate) const PACKET_LOSS: libc::c_int = 14;
+// pub(crate) const PACKET_LOSS: libc::c_int = 14;
 pub(crate) const PACKET_TIMESTAMP: libc::c_int = 17;
 pub(crate) const PACKET_FANOUT: libc::c_int = 18;
 pub(crate) const PACKET_QDISC_BYPASS: libc::c_int = 20;
@@ -63,19 +63,19 @@ pub(crate) const PACKET_FANOUT_CPU: libc::c_uint = 2;
 pub(crate) const PACKET_FANOUT_ROLLOVER: libc::c_uint = 3;
 pub(crate) const PACKET_FANOUT_RND: libc::c_uint = 4;
 pub(crate) const PACKET_FANOUT_QM: libc::c_uint = 5;
-pub(crate) const PACKET_FANOUT_CBPF: libc::c_uint = 6;
-pub(crate) const PACKET_FANOUT_EBPF: libc::c_uint = 7;
+// pub(crate) const PACKET_FANOUT_CBPF: libc::c_uint = 6;
+// pub(crate) const PACKET_FANOUT_EBPF: libc::c_uint = 7;
 pub(crate) const PACKET_FANOUT_FLAG_ROLLOVER: libc::c_uint = 0x1000;
-pub(crate) const PACKET_FANOUT_FLAG_UNIQUEID: libc::c_uint = 0x2000;
+// pub(crate) const PACKET_FANOUT_FLAG_UNIQUEID: libc::c_uint = 0x2000;
 pub(crate) const PACKET_FANOUT_FLAG_DEFRAG: libc::c_uint = 0x8000;
 
-pub(crate) const TP_STATUS_KERNEL: u32 = 0;
+// pub(crate) const TP_STATUS_KERNEL: u32 = 0;
 pub(crate) const TP_STATUS_USER: u32 = 1 << 0;
 pub(crate) const TP_STATUS_COPY: u32 = 1 << 1;
 pub(crate) const TP_STATUS_LOSING: u32 = 1 << 2;
 pub(crate) const TP_STATUS_CSUMNOTREADY: u32 = 1 << 3;
 pub(crate) const TP_STATUS_VLAN_VALID: u32 = 1 << 4;
-pub(crate) const TP_STATUS_BLK_TMO: u32 = 1 << 5;
+// pub(crate) const TP_STATUS_BLK_TMO: u32 = 1 << 5;
 pub(crate) const TP_STATUS_VLAN_TPID_VALID: u32 = 1 << 6;
 pub(crate) const TP_STATUS_CSUM_VALID: u32 = 1 << 7;
 
@@ -84,14 +84,15 @@ pub(crate) const TP_STATUS_SEND_REQUEST: u32 = 1 << 0;
 pub(crate) const TP_STATUS_SENDING: u32 = 1 << 1;
 pub(crate) const TP_STATUS_WRONG_FORMAT: u32 = 1 << 2;
 
-pub(crate) const TP_STATUS_TS_SOFTWARE: u32 = 1 << 29;
-pub(crate) const TP_STATUS_TS_SYS_HARDWARE: u32 = 1 << 30;
-pub(crate) const TP_STATUS_TS_RAW_HARDWARE: u32 = 1 << 31;
+// pub(crate) const TP_STATUS_TS_SOFTWARE: u32 = 1 << 29;
+// pub(crate) const TP_STATUS_TS_SYS_HARDWARE: u32 = 1 << 30;
+// pub(crate) const TP_STATUS_TS_RAW_HARDWARE: u32 = 1 << 31;
 
-pub(crate) const TP_FT_REQ_FILL_RXHASH: u32 = 1;
+// pub(crate) const TP_FT_REQ_FILL_RXHASH: u32 = 1;
 
 pub(crate) const TPACKET_ALIGNMENT: usize = 16;
 
+/*
 #[repr(align(8))]
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -100,6 +101,7 @@ pub(crate) struct tpacket_rollover_stats {
     pub tp_huge: u64,
     pub tp_failed: u64,
 }
+*/
 
 #[repr(align(8))]
 #[repr(C)]
@@ -118,11 +120,14 @@ pub(crate) struct tpacket_hdr_v1 {
 #[repr(u32)]
 #[allow(non_camel_case_types)]
 pub(crate) enum tpacket_versions {
+    #[allow(unused)]
     TPACKET_V1,
+    #[allow(unused)]
     TPACKET_V2,
     TPACKET_V3,
 }
 
+/*
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) struct fanout_args {
@@ -134,6 +139,7 @@ pub(crate) struct fanout_args {
     pub max_num_members: u32,
 }
 
+
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) struct sockaddr_pkt {
@@ -141,6 +147,7 @@ pub(crate) struct sockaddr_pkt {
     pub spkt_device: [libc::c_uchar; 14],
     pub spkt_protocol: libc::c_ushort,
 }
+
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -165,6 +172,7 @@ pub(crate) struct tpacket_hdr {
     pub tp_sec: libc::c_uint,
     pub tp_usec: libc::c_uint,
 }
+*/
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -175,6 +183,7 @@ pub(crate) struct tpacket_hdr_variant1 {
     pub tp_padding: u16,
 }
 
+/*
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) struct tpacket2_hdr {
@@ -189,6 +198,7 @@ pub(crate) struct tpacket2_hdr {
     pub tp_vlan_tpid: u16,
     pub tp_padding: [u8; 4],
 }
+*/
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -220,6 +230,7 @@ pub(crate) struct tpacket_stats {
     pub tp_drops: libc::c_uint,
 }
 
+/*
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) struct tpacket_stats_v3 {
@@ -227,6 +238,7 @@ pub(crate) struct tpacket_stats_v3 {
     pub tp_drops: libc::c_uint,
     pub tp_freeze_q_cnt: libc::c_uint,
 }
+*/
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -251,12 +263,14 @@ pub(crate) struct tpacket_bd_ts {
     pub ts_usec: libc::c_uint,
 }
 
+/*
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub(crate) union tpacket_req_u {
     pub req: tpacket_req,
     pub req3: tpacket_req3,
 }
+*/
 
 #[repr(C)]
 #[allow(non_camel_case_types)]

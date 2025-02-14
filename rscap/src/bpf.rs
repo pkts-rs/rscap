@@ -17,7 +17,7 @@
 
 mod l2;
 
-pub use l2::{Bpf, BpfAccess, BpfVersion};
+pub use l2::{Bpf, BpfAccess, BpfVersion, LinkType};
 #[cfg(any(doc, target_os = "freebsd"))]
 pub use l2::{RxBlock, RxFrame, RxFrameIter, RxMappedBpf, RxRing};
 
