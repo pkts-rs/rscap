@@ -11,6 +11,8 @@
 use std::ffi::{CString, OsStr};
 use std::mem;
 #[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::fd::RawFd;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -656,6 +658,14 @@ impl Drop for Bpf {
     }
 }
 
+#[cfg(target_os = "freebsd")]
+impl AsRawFd for Bpf {
+    #[inline]
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
 /// A BPF device that includes a memory-mapped buffer for more efficient packet sniffing.
 #[cfg(any(doc, target_os = "freebsd"))]
 pub struct RxMappedBpf {
@@ -730,6 +740,14 @@ impl Drop for RxMappedBpf {
         unsafe { libc::munmap(self.raw, self.buflen * 2) };
         // close() is called on the fd when the inner l2 socket is dropped
         // It shouldn't matter whether munmap or close is called first
+    }
+}
+
+#[cfg(unix)]
+impl AsRawFd for Bpf {
+    #[inline]
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
     }
 }
 

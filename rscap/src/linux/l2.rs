@@ -1149,7 +1149,7 @@ impl Drop for L2Socket {
 
 impl AsRawFd for L2Socket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 }
@@ -1945,7 +1945,7 @@ impl Drop for L2TxMappedSocket {
 
 impl AsRawFd for L2TxMappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }
