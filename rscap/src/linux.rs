@@ -22,9 +22,9 @@ use l2::{L2MappedSocket, L2Socket};
 
 use mapped::{BlockConfig, RxFrame};
 
-use std::io;
 #[cfg(not(target_os = "windows"))]
 use std::os::fd::{AsRawFd, RawFd};
+use std::{cmp, io};
 
 use crate::{filter::PacketFilter, Interface};
 
@@ -361,7 +361,7 @@ pub enum FanoutAlgorithm {
     QueueMapping,
 }
 
-pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024 * 1024; // Default each buffer of 1MB
+pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024; // Default each buffer of 1MB
 
 pub(crate) struct SnifferImpl {
     socket: L2MappedSocket,
@@ -373,7 +373,7 @@ impl SnifferImpl {
         Self::new_with_size(if_name, DEFAULT_DRIVER_BUFFER)
     }
 
-    /// Note that `ring_size` must be greater than or equal to 524288 (512 KiB), and will be
+    /// Note that `ring_size` must be greater than or equal to 524288 (512 KiB), and may be
     /// rounded down to the nearest 512 KiB when allocating buffers.
     #[inline]
     pub fn new_with_size(if_name: Interface, ring_size: usize) -> io::Result<Self> {
@@ -401,18 +401,20 @@ impl SnifferImpl {
         // Double the block size, and allocate the rest toward block count
         // This algorithm may be changed in the future based on perf measurements
         if units > 1 {
-            let remainder = units % 2;
-            let units = units / 2;
+            let raw_exp = units.ilog2();
+            let exp = cmp::max(1, raw_exp / 3); // Leans towards more blocks rather than larger blocks
+            let remainder = units % 2u32.pow(exp);
+            let units = units / 2u32.pow(exp);
 
             // Double the block size to 256 KiB
-            block_size *= 2;
+            block_size *= 2u32.pow(exp);
             // Put the rest towards block count
             block_cnt = (block_cnt * units) + remainder;
             // remainder is 1/2; 1/2 of 2 (block_cnt) is 1
         }
 
         let socket = L2Socket::new()?;
-        let config = BlockConfig::new(block_size, block_cnt, 65648)?;
+        let config = BlockConfig::new(block_size, block_cnt, 131072)?; // Big enough for loopback ethernet frame
         let mapped_socket = socket.packet_ring(config, None, None)?;
         mapped_socket.set_filter(&mut PacketFilter::reject_all())?;
         mapped_socket.bind(if_name, L2Protocol::All)?;
