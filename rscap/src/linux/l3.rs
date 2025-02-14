@@ -11,6 +11,7 @@
 //! Network-layer packet capture/transmission utilities.
 //!
 
+use std::os::fd::RawFd;
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
@@ -709,7 +710,7 @@ impl Drop for L3Socket {
 
 impl AsRawFd for L3Socket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 }
@@ -996,7 +997,7 @@ impl Drop for L3MappedSocket {
 
 impl AsRawFd for L3MappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }
@@ -1218,7 +1219,7 @@ impl Drop for L3TxMappedSocket {
 
 impl AsRawFd for L3TxMappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }
@@ -1377,7 +1378,7 @@ impl Drop for L3RxMappedSocket {
 
 impl AsRawFd for L3RxMappedSocket {
     #[inline]
-    fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {
+    fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
     }
 }

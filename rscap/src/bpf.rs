@@ -22,6 +22,8 @@ pub use l2::{Bpf, BpfAccess, BpfVersion, LinkType};
 pub use l2::{RxBlock, RxFrame, RxFrameIter, RxMappedBpf, RxRing};
 
 use std::io;
+#[cfg(not(target_os = "windows"))]
+use std::os::fd::{AsRawFd, RawFd};
 
 use crate::{filter::PacketFilter, Interface};
 
@@ -108,6 +110,13 @@ impl SnifferImpl {
         Some(RxFrameImpl {
             frame: self.bpf.mapped_recv()?,
         })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl AsRawFd for SnifferImpl {
+    fn as_raw_fd(&self) -> RawFd {
+        self.bpf.as_raw_fd()
     }
 }
 

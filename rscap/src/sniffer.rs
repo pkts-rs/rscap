@@ -11,6 +11,8 @@
 use std::io;
 #[cfg(doc)]
 use std::marker::PhantomData;
+#[cfg(not(target_os = "windows"))]
+use std::os::fd::{AsRawFd, RawFd};
 
 #[cfg(target_os = "openbsd")]
 use crate::bpf::RxFrameImpl;
@@ -191,6 +193,14 @@ impl Sniffer {
         Some(RxFrame {
             inner: self.inner.mapped_recv()?,
         })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl AsRawFd for Sniffer {
+    #[inline]
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
     }
 }
 

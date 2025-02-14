@@ -23,6 +23,8 @@ use l2::{L2MappedSocket, L2Socket};
 use mapped::{BlockConfig, RxFrame};
 
 use std::io;
+#[cfg(not(target_os = "windows"))]
+use std::os::fd::{AsRawFd, RawFd};
 
 use crate::{filter::PacketFilter, Interface};
 
@@ -460,6 +462,12 @@ impl SnifferImpl {
         Some(RxFrameImpl {
             frame: self.socket.mapped_recv()?,
         })
+    }
+}
+
+impl AsRawFd for SnifferImpl {
+    fn as_raw_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
     }
 }
 
