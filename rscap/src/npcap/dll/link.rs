@@ -140,6 +140,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn set_mode(&self, adapter: &mut Adapter, mode: libc::c_int) -> bool {
         unsafe {
             match PacketSetMode(adapter, mode) {
@@ -167,6 +168,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn set_loopback_behavior(&self, adapter: &mut Adapter, behavior: libc::c_uint) -> bool {
         unsafe {
             match PacketSetLoopbackBehavior(adapter, behavior) {
@@ -176,6 +178,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn set_timestamp_mode(&self, adapter: &mut Adapter, mode: libc::c_ulong) -> bool {
         unsafe {
             match PacketSetTimestampMode(adapter, mode) {
@@ -185,6 +188,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_timestamp_modes(&self, adapter: &mut Adapter, modes: *mut libc::c_ulong) -> bool {
         unsafe {
             match PacketGetTimestampModes(adapter, modes) {
@@ -194,6 +198,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn set_snaplen(&self, adapter: &mut Adapter, snaplen: libc::c_int) -> bool {
         unsafe {
             match PacketSetSnaplen(adapter, snaplen) {
@@ -203,6 +208,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_stats(&self, adapter: &mut Adapter, stats: &mut BpfStat) -> bool {
         unsafe {
             match PacketGetStats(adapter, stats as *mut BpfStat) {
@@ -230,6 +236,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_net_type(&self, adapter: &mut Adapter, ty: &mut NetType) -> bool {
         unsafe {
             match PacketGetNetType(adapter, ty as *mut NetType) {
@@ -239,6 +246,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn is_loopback_adapter(&self, adapter_name: &CStr) -> bool {
         unsafe {
             match PacketIsLoopbackAdapter(adapter_name.as_ptr()) {
@@ -248,6 +256,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn is_monitor_mode_supported(&self, adapter_name: &CStr) -> libc::c_int {
         unsafe { PacketIsMonitorModeSupported(adapter_name.as_ptr()) }
     }
@@ -274,6 +283,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn send_packets(&self, adapter: &mut Adapter, packets: &mut [Packet]) -> libc::c_int {
         // TODO: does this set the correct length?
         unsafe {
@@ -300,6 +310,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn free_packet(&self, packet: &mut Packet) {
         unsafe { PacketFreePacket(packet) }
     }
@@ -313,6 +324,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn set_hw_filter(&self, adapter: &mut Adapter, filter: libc::c_ulong) -> bool {
         unsafe {
             match PacketSetHwFilter(adapter, filter) {
@@ -322,6 +334,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_adapter_names(&self, buf: &mut [u8], len: &mut libc::c_ulong) {
         unsafe {
             PacketGetAdapterNames(
@@ -331,6 +344,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_net_info_ex(
         &self,
         adapter: &mut Adapter,
@@ -345,6 +359,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn get_request(
         &self,
         adapter: &mut Adapter,
@@ -368,6 +383,7 @@ impl Npcap {
         unsafe { PacketGetReadEvent(adapter) }
     }
 
+    #[allow(unused)]
     pub fn stop_driver(&self) -> bool {
         unsafe {
             match PacketStopDriver() {
@@ -377,6 +393,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub fn stop_driver_60(&self) -> bool {
         unsafe {
             match PacketStopDriver60() {
@@ -386,6 +403,7 @@ impl Npcap {
         }
     }
 
+    #[allow(unused)]
     pub unsafe fn close_adapter(&self, adapter: *mut Adapter) {
         unsafe { PacketCloseAdapter(adapter) }
     }

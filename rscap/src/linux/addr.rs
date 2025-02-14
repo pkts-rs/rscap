@@ -262,6 +262,13 @@ pub struct L2AddrAll {
     iface: Interface,
 }
 
+impl L2AddrAll {
+    #[inline]
+    pub fn interface(&self) -> Interface {
+        self.iface
+    }
+}
+
 /// A link-layer address corresponding to the `ETH_P_IP` protocol.
 pub struct L2AddrIp {
     addr: MacAddr,

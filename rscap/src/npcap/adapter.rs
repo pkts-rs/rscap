@@ -56,6 +56,12 @@ impl NpcapAdapter {
         self.npcap.driver_version()
     }
 
+    /// Retrieves the interface the npcap driver is listening on.
+    #[inline]
+    pub fn interface(&self) -> Interface {
+        self.iface
+    }
+
     /// Indicates whether monitor mode is enabled for the associated network interface.
     pub fn monitor_mode(iface: Interface) -> io::Result<bool> {
         let npcap = NPCAP_API.get_or_try_init(Npcap::new)?;

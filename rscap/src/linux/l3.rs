@@ -13,7 +13,7 @@
 
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
-use super::addr::{L2Addr, L2AddrAny, L2Protocol};
+use super::addr::{L2Addr, L2Protocol};
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
@@ -188,8 +188,8 @@ impl L3Socket {
         })
     }
 
-    /// Returns the network-layer address the socket is currently bound to.
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
+    /// Returns the interface that the socket is currently sniffing on.
+    pub fn interface(&self) -> io::Result<Interface> {
         let mut sockaddr = libc::sockaddr_ll {
             sll_family: 0,
             sll_protocol: 0,
@@ -221,7 +221,7 @@ impl L3Socket {
             ));
         }
 
-        L2AddrAny::try_from(sockaddr)
+        Interface::from_index(sockaddr.sll_ifindex as u32)
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
@@ -251,12 +251,12 @@ impl L3Socket {
                 } as i32,
             };
 
-            let addr = self.bound_addr()?;
+            let iface = self.interface()?;
 
             let mut if_name = [0i8; libc::IF_NAMESIZE];
             let if_name_ptr = if_name.as_mut_ptr();
 
-            let res = unsafe { libc::if_indextoname(addr.interface().index()?, if_name_ptr) };
+            let res = unsafe { libc::if_indextoname(iface.index()?, if_name_ptr) };
             if res.is_null() {
                 return Err(io::Error::last_os_error());
             }
@@ -304,8 +304,7 @@ impl L3Socket {
     /// A network device in promiscuous mode will capture all packets observed on a physical medium,
     /// not just those destined for it.
     pub fn set_promiscuous(&self, promisc: bool) -> io::Result<()> {
-        let addr = self.bound_addr()?;
-        let iface = addr.interface();
+        let iface = self.interface()?;
 
         let req = libc::packet_mreq {
             mr_ifindex: iface.index()? as i32,
@@ -782,9 +781,10 @@ impl L3MappedSocket {
         self.socket.packet_stats()
     }
 
-    /// Returns the network-layer address the socket is currently bound to.
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
+    /// Returns the interface that the socket is currently sniffing on.
+    #[inline]
+    pub fn interface(&self) -> io::Result<Interface> {
+        self.socket.interface()
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
@@ -1048,9 +1048,10 @@ impl L3TxMappedSocket {
         self.socket.packet_stats()
     }
 
-    /// Returns the network-layer address the socket is currently bound to.
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
+    /// Returns the interface that the socket is currently sniffing on.
+    #[inline]
+    pub fn interface(&self) -> io::Result<Interface> {
+        self.socket.interface()
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.
@@ -1285,9 +1286,10 @@ impl L3RxMappedSocket {
         Ok(())
     }
 
-    /// Returns the network-layer address the socket is currently bound to.
-    pub fn bound_addr(&self) -> io::Result<L2AddrAny> {
-        self.socket.bound_addr()
+    /// Returns the interface that the socket is currently sniffing on.
+    #[inline]
+    pub fn interface(&self) -> io::Result<Interface> {
+        self.socket.interface()
     }
 
     /// Determines the source of timestamp information for TX_RING/RX_RING packets.

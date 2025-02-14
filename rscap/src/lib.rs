@@ -60,8 +60,6 @@ use std::ffi::{CStr, OsStr};
 use std::io;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
-use std::os::windows::ffi::OsStrExt;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::NetworkManagement::IpHelper::MAX_ADAPTER_NAME;

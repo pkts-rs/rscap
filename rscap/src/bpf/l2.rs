@@ -45,6 +45,7 @@ pub(crate) struct bpf_stat {
     bs_drop: libc::c_uint,
 }
 
+/*
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub(crate) struct bpf_zbuf {
@@ -52,6 +53,7 @@ pub(crate) struct bpf_zbuf {
     bz_bufb: *mut libc::c_void,
     bz_buflen: libc::size_t,
 }
+*/
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -72,7 +74,7 @@ pub(crate) struct bpf_ts {
 
 pub const BIOCSETF: libc::c_ulong = 0x80104267;
 pub const BIOCSETFNR: libc::c_ulong = 0x8010427e;
-const BIOCFLUSH: libc::c_ulong = 0x20004268;
+// const BIOCFLUSH: libc::c_ulong = 0x20004268;
 const BIOCPROMISC: libc::c_ulong = 0x20004269;
 const BIOCGDLT: libc::c_ulong = 0x4004426a;
 const BIOCGBLEN: libc::c_ulong = 0x40044266;
@@ -82,15 +84,17 @@ const BIOCGETIF: libc::c_ulong = 0x4020426b;
 const BIOCSETIF: libc::c_ulong = 0x8020426c;
 const BIOCGSTATS: libc::c_ulong = 0x4008426f;
 const BIOCIMMEDIATE: libc::c_ulong = 0x80044270;
-const BIOCSETZBUF: libc::c_ulong = 0x80184281;
+// const BIOCSETZBUF: libc::c_ulong = 0x80184281;
 const BIOCFEEDBACK: libc::c_ulong = 0x8004427c;
 const BIOCLOCK: libc::c_ulong = 0x2000427a;
 
-const BPF_ALIGNMENT: usize = mem::size_of::<libc::c_long>();
+// const BPF_ALIGNMENT: usize = mem::size_of::<libc::c_long>();
+/*
 #[allow(non_snake_case)]
 const fn BPF_WORDALIGN(x: usize) -> usize {
     (x + (BPF_ALIGNMENT - 1)) & !(BPF_ALIGNMENT - 1)
 }
+*/
 
 /// The access mode for a BPF device.
 #[derive(Clone, Copy, Debug)]
@@ -199,12 +203,14 @@ struct BpfHeader {
     _bzh_pad: [libc::c_uint; 5],
 }
 
+#[cfg(any(doc, target_os = "freebsd"))]
 #[derive(Clone, Copy)]
 enum ReceiveIndex {
     FirstBlock(usize),
     SecondBlock(usize),
 }
 
+#[cfg(any(doc, target_os = "freebsd"))]
 impl ReceiveIndex {
     pub fn increment(&mut self, amount: usize) {
         match self {
@@ -565,10 +571,8 @@ impl Bpf {
                 let xhdr: bpf_xhdr = unsafe { mem::transmute_copy(&xhdr_bytes) };
 
                 let caplen = xhdr.bh_caplen as usize;
-                let datalen = xhdr.bh_datalen as usize;
+                let _datalen = xhdr.bh_datalen as usize;
                 let hdrlen = xhdr.bh_hdrlen as usize;
-
-                panic!("hdrlen: {}", hdrlen); // To test for MacOS systems
 
                 // We attempt to anticipate the value of `hdrlen` at compile-time. If our guess
                 // is correct, return the buffer as-is. Otherwise, shift the data so that it is
@@ -578,14 +582,17 @@ impl Bpf {
                     cmp::Ordering::Less => {
                         // Some bytes of the payload are situated in `header`
                         let offset = header.len() - hdrlen;
+                        let buf_len = buf.len();
                         unsafe {
-                            ptr::copy(buf[offset..].as_ptr(), buf.as_mut_ptr(), buf.len() - offset)
+                            ptr::copy(buf[offset..].as_ptr(), buf.as_mut_ptr(), buf_len - offset)
                         };
                         buf[..offset].copy_from_slice(&header[header.len() - offset..]);
                     }
                     cmp::Ordering::Greater => {
                         // Some bytes of the payload are situated in `end_padding`
                         let offset = hdrlen - header.len();
+                        let buf_len = buf.len();
+
                         assert!(
                             offset <= end_padding.len(),
                             "BPF recv() returned unusually long header padding"
@@ -593,7 +600,7 @@ impl Bpf {
                         unsafe {
                             ptr::copy(buf.as_ptr(), buf[offset..].as_mut_ptr(), buf.len() - offset)
                         };
-                        buf[buf.len() - offset..].copy_from_slice(&end_padding[..offset]);
+                        buf[buf_len - offset..].copy_from_slice(&end_padding[..offset]);
                     }
                 }
                 Ok(cmp::min(caplen, buf.len()))
