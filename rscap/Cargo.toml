@@ -2,8 +2,8 @@
 name = "rscap"
 authors = ["Nathaniel Bennett <me[at]nathanielbennett[dotcom]>"]
 description = "Cross-platform packet capture and transmission utilities"
-# 1.66 - `std::os::fd` stabilized
-rust-version = "1.66"
+# 1.74 - `from_encoded_bytes_unchecked` stabilized
+rust-version = "1.74"
 version = "0.2.2"
 license = "MIT OR Apache-2.0"
 edition = "2021"

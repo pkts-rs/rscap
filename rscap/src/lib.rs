@@ -54,8 +54,14 @@ mod utils;
 #[cfg(any(doc, not(target_os = "windows"), feature = "npcap"))]
 pub use sniffer::Sniffer;
 
-use std::ffi::CStr;
+#[cfg(any(doc, target_os = "linux"))]
+use std::array;
+use std::ffi::{CStr, OsStr};
 use std::io;
+#[cfg(not(target_os = "windows"))]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::NetworkManagement::IpHelper::MAX_ADAPTER_NAME;
@@ -74,7 +80,7 @@ const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = MAX_ADAPTER_NAME as usize - 1;
 ///
 /// Network interfaces are not guaranteed to be static; network devices can be added and removed,
 /// and in certain circumstances an interface that once pointed to one device may end up pointing
-/// to another during the course of a program's lifetime.  Likewise, [`name()`](Interface::name())
+/// to another during the course of a program's lifetime. Likewise, [`name()`](Interface::name())
 /// and [`name_raw()`](Interface::name_raw()) aren't guaranteed to always return the same interface
 /// name for a given interface, as the network device associated to that interface could change
 /// between consecutive calls to `name()`/`name_raw()`.
@@ -82,31 +88,16 @@ const INTERNAL_MAX_INTERFACE_NAME_LEN: usize = MAX_ADAPTER_NAME as usize - 1;
 /// In general, best practice is to use an `Interface` soon after constructing it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Interface {
-    /// The stored name of the interface.
     name: [u8; Self::MAX_INTERFACE_NAME_LEN + 1],
-    is_catchall: bool,
 }
 
 impl Interface {
-    const ANY: &'static [u8] = b"any\0";
-
     /// The maximum length (in bytes) that an interface name can be.
     ///
     /// Note that this value is platform-dependent. It determines the size of the buffer used for
     /// storing the interface name in an `Interface` instance, so the size of an `Interface` is
     /// likewise platform-dependent.
     pub const MAX_INTERFACE_NAME_LEN: usize = INTERNAL_MAX_INTERFACE_NAME_LEN;
-
-    /// A special catch-all interface identifier that specifies all operational interfaces.
-    pub fn any() -> io::Result<Self> {
-        let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
-        name[..Self::ANY.len()].copy_from_slice(Self::ANY);
-
-        Ok(Self {
-            name,
-            is_catchall: true,
-        })
-    }
 
     /// Returns an `Interface` corresponding to the given `if_name`, if such an interface exists.
     ///
@@ -121,16 +112,25 @@ impl Interface {
     /// Otherwise, any returned error indicates that `if_name` does not correspond with a valid
     /// interface.
     #[inline]
-    pub fn new(if_name: &CStr) -> io::Result<Self> {
-        Self::new_raw(if_name.to_bytes())
+    pub fn new(if_name: impl AsRef<OsStr>) -> io::Result<Self> {
+        Self::new_inner(if_name)
     }
 
-    /// Find all available interfaces on the given machine.
-    pub fn find_all() -> io::Result<Vec<Self>> {
-        todo!()
+    #[cfg(target_os = "windows")]
+    #[inline]
+    fn new_inner(if_name: impl AsRef<OsStr>) -> io::Result<Self> {
+        let s = if_name.as_ref().as_encoded_bytes();
+        Self::new_raw(s)
     }
 
-    /// returns an `Interface` corresponding to the given `if_name`, if such an interface exists.
+    #[cfg(not(target_os = "windows"))]
+    #[inline]
+    fn new_inner(if_name: impl AsRef<OsStr>) -> io::Result<Self> {
+        let s = if_name.as_ref().as_bytes();
+        Self::new_raw(s)
+    }
+
+    /// Returns an `Interface` corresponding to the given `if_name`, if such an interface exists.
     ///
     /// `if_name` should consist of a sequence of up to 15 non-null byte characters. Any terminating
     /// null character must be removed prior to calling this method or it will fail.
@@ -153,16 +153,18 @@ impl Interface {
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
         name[..if_name.len()].copy_from_slice(if_name);
 
-        let interface = Interface {
-            name,
-            is_catchall: false,
-        };
+        let interface = Interface { name };
 
         // If we can, check to see if the interface is valid
         #[cfg(not(target_os = "windows"))]
         interface.index()?;
 
         Ok(interface)
+    }
+
+    /// Find all available interfaces on the given machine.
+    pub fn find_all() -> io::Result<Vec<Self>> {
+        todo!()
     }
 
     /// Returns an `Interface` corresponding to the given interface index.
@@ -173,18 +175,10 @@ impl Interface {
     #[inline]
     #[cfg(not(target_os = "windows"))]
     pub fn from_index(if_index: u32) -> io::Result<Self> {
-        // TODO: do systems other than Linux actually consider '0' to be a catchall?
-        if if_index == 0 {
-            return Self::any();
-        }
-
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
         match unsafe { libc::if_indextoname(if_index, name.as_mut_ptr() as *mut i8) } {
             ptr if ptr.is_null() => Err(io::Error::last_os_error()),
-            _ => Ok(Self {
-                name,
-                is_catchall: false,
-            }),
+            _ => Ok(Self { name }),
         }
     }
 
@@ -192,10 +186,6 @@ impl Interface {
     #[inline]
     #[cfg(not(target_os = "windows"))]
     pub fn index(&self) -> io::Result<u32> {
-        if self.is_catchall {
-            return Ok(0);
-        }
-
         match unsafe { libc::if_nametoindex(self.name.as_ptr() as *const i8) } {
             0 => Err(io::Error::last_os_error()),
             i => Ok(i),
@@ -203,38 +193,39 @@ impl Interface {
     }
 
     /// Returns the name associated with the given interface.
-    ///
-    /// # Errors
-    ///
-    /// Returns [InvalidData](io::ErrorKind::InvalidData) if the name assigned to the interface is
-    /// not valid UTF-8.
-    ///
-    /// Otherwise, a returned error indicates that [`Interface`] does not correspond to a valid
-    /// interface.
-    pub fn name(&self) -> &CStr {
-        unsafe { CStr::from_ptr(self.name.as_ptr() as *const i8) }
+    pub fn name(&self) -> &OsStr {
+        let end = self.name.partition_point(|&c| c != 0);
+        unsafe { OsStr::from_encoded_bytes_unchecked(&self.name[..end]) }
     }
 
+    /// Returns the C-string representation of the name associated with the given interface.
+    pub fn name_cstr(&self) -> &CStr {
+        let end = self.name.partition_point(|&c| c != 0);
+        CStr::from_bytes_with_nul(&self.name[..=end]).unwrap()
+    }
+
+    /// Returns the underlying buffer storing the name associated with the given interface.
+    pub fn name_raw(&self) -> [u8; Self::MAX_INTERFACE_NAME_LEN + 1] {
+        self.name.clone()
+    }
+
+    /*
     /// Returns the raw byte name associated with the given interface.
     ///
     /// The returned byte slice contains a single null-terminating character at the end of the slice.
+    #[cfg(not(target_os = "windows"))]
     pub fn name_raw(&self) -> &[u8] {
-        let end = self
-            .name
-            .iter()
-            .enumerate()
-            .find(|(_, c)| **c == b'\0')
-            .unwrap()
-            .0;
-        &self.name[..end + 1]
+        let end = self.name.partition_point(|&x| x != 0);
+        &self.name[..end]
     }
+    */
 
     #[cfg(any(doc, target_os = "linux"))]
     pub fn arp_type(&self) -> io::Result<u16> {
         use std::ptr;
 
         let mut ifr = libc::ifreq {
-            ifr_name: std::array::from_fn(|i| self.name[i] as i8),
+            ifr_name: array::from_fn(|i| self.name[i] as i8),
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_hwaddr: libc::sockaddr {
                     sa_family: 0,
