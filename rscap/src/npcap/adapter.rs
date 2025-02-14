@@ -60,7 +60,7 @@ impl NpcapAdapter {
     pub fn monitor_mode(iface: Interface) -> io::Result<bool> {
         let npcap = NPCAP_API.get_or_try_init(Npcap::new)?;
 
-        match npcap.get_monitor_mode(iface.name()) {
+        match npcap.get_monitor_mode(iface.name_cstr()) {
             1 => Ok(true),
             0 => Ok(false),
             _ => Err(io::Error::last_os_error()),
@@ -82,7 +82,7 @@ impl NpcapAdapter {
             false => 0,
         };
 
-        match npcap.set_monitor_mode(iface.name(), enabled) {
+        match npcap.set_monitor_mode(iface.name_cstr(), enabled) {
             1 => Ok(()),
             0 => Err(io::ErrorKind::Unsupported.into()),
             _ => Err(io::Error::last_os_error()),
@@ -134,7 +134,7 @@ impl NpcapAdapter {
         // TODO: should we append "\Device\" or "NPF_" to the interface name?
         // TODO: when should we append "WIFI_"? (for AirNpcap)
 
-        let adapter = match NonNull::new(npcap.open_adapter(iface.name())) {
+        let adapter = match NonNull::new(npcap.open_adapter(iface.name_cstr())) {
             None => {
                 let error = io::Error::last_os_error();
                 return Err(match error.raw_os_error().map(|e| e as u32) {

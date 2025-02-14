@@ -290,7 +290,7 @@ impl L2Socket {
     /// use rscap::Interface;
     ///
     /// let mut socket = L2Socket::new()?;
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     ///
     /// // Start receiving packets...
     ///
@@ -346,8 +346,8 @@ impl L2Socket {
     // " To capture outgoing packets from a specific protocol, consider applying a
     // [`PacketFilter`] to the program via the [`set_bpf()`] method."
 
-    /// Binds the device to the given interface, enabling it to begin receiving packets from that
-    /// interface.
+    /// Binds the device to the provided interface, enabling it to begin receiving packets matching
+    /// the link-layer protocol `proto`.
     ///
     /// `proto` specifies what protocol the socket should bind to. If `proto` is set to
     /// [`L2Protocol::All`] then packets of any protocol type can be received on the socket.
@@ -370,7 +370,7 @@ impl L2Socket {
     /// let mut socket = L2Socket::new()?;
     /// socket.set_filter(&mut PacketFilter::reject_all())?;
     /// //     ^ always set the filter of the socket...
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     /// //     ^ ... prior to binding to the interface.
     /// # Ok::<(), io::Error>(())
     /// ```
@@ -386,7 +386,7 @@ impl L2Socket {
     /// use rscap::filter::PacketFilter;
     ///
     /// let mut socket = L2Socket::new()?;
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     /// // Start by listening for all packets...
     ///
     /// // Read some packets here
@@ -399,11 +399,38 @@ impl L2Socket {
     /// // Read more packets with new filter applied
     /// # Ok::<(), io::Error>(())
     /// ```
-    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
         let sockaddr = libc::sockaddr_ll {
             sll_family: libc::AF_PACKET as u16,
             sll_protocol: u16::from(proto),
-            sll_ifindex: if_name.index()? as i32,
+            sll_ifindex: iface.index()? as i32,
+            sll_hatype: 0,
+            sll_pkttype: 0,
+            sll_halen: 6,
+            sll_addr: [0u8; 8],
+        };
+
+        // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
+        // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
+        match unsafe {
+            libc::bind(
+                self.fd,
+                ptr::addr_of!(sockaddr) as *const libc::sockaddr,
+                mem::size_of::<libc::sockaddr_ll>() as u32,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+
+    /// Binds the device to all interfaces, enabling it to begin receiving packets matching the
+    /// link-layer protocol `proto`.
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        let sockaddr = libc::sockaddr_ll {
+            sll_family: libc::AF_PACKET as u16,
+            sll_protocol: u16::from(proto),
+            sll_ifindex: 0,
             sll_hatype: 0,
             sll_pkttype: 0,
             sll_halen: 6,
@@ -458,6 +485,7 @@ impl L2Socket {
             ));
         }
 
+        // TODO: what happens here when an interface is bound with `bind_all`?
         Ok(Interface::from_index(sockaddr.sll_ifindex as u32)?)
     }
 
@@ -1149,8 +1177,14 @@ impl L2MappedSocket {
     /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
     /// incoming packets being captured.
     #[inline]
-    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
-        self.socket.bind(if_name, proto)
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(iface, proto)
+    }
+
+    /// Bind the link-layer socket to all interfaces and begin receiving packets.
+    #[inline]
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind_all(proto)
     }
 
     /// Retrieves the [`Interface`] the given link-layer socket is currently bound to.
@@ -1226,7 +1260,7 @@ impl L2MappedSocket {
     /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     ///
     /// // Start receiving packets...
     ///
@@ -1568,8 +1602,14 @@ impl L2TxMappedSocket {
     /// Outgoing packets (e.g. packets sent by applications on the host) are **only** captured when
     /// `proto` is set to [`L2Protocol::All`]; binding to any other protocol will result in only
     /// incoming packets being captured.
-    pub fn bind(&self, if_name: Interface, proto: L2Protocol) -> io::Result<()> {
-        self.socket.bind(if_name, proto)
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(iface, proto)
+    }
+
+    /// Bind the link-layer socket to all interfaces and begin receiving packets.
+    #[inline]
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind_all(proto)
     }
 
     /// Retrieves the [`Interface`] the given link-layer socket is currently bound to.
@@ -1645,7 +1685,7 @@ impl L2TxMappedSocket {
     /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     ///
     /// // Start receiving packets...
     ///
@@ -1998,7 +2038,7 @@ impl L2RxMappedSocket {
     /// use rscap::linux::addr::L2Protocol;
     ///
     /// let mut socket = L2Socket::new()?;
-    /// socket.bind(Interface::any()?, L2Protocol::All)?;
+    /// socket.bind(Interface::new("eth0")?, L2Protocol::All)?;
     ///
     /// // Start receiving packets...
     ///

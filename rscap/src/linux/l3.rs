@@ -13,13 +13,14 @@
 
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
-use super::addr::{L2Addr, L2AddrAny};
+use super::addr::{L2Addr, L2AddrAny, L2Protocol};
 use super::mapped::{
     BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
 };
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
 use crate::filter::PacketStatistics;
+use crate::Interface;
 
 /// A socket that exchanges packets at the network layer.
 ///
@@ -41,7 +42,7 @@ impl L3Socket {
     #[inline]
     pub fn new() -> io::Result<L3Socket> {
         // Set the socket to receive no packets by default (protocol: 0)
-        match unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_RAW, 0) } {
+        match unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_DGRAM, 0) } {
             ..=-1 => Err(std::io::Error::last_os_error()),
             fd => Ok(L3Socket { fd }),
         }
@@ -52,8 +53,43 @@ impl L3Socket {
     ///
     /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
     /// refer to its documentation.
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        let sockaddr = addr.to_sockaddr();
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        let sockaddr = libc::sockaddr_ll {
+            sll_family: libc::AF_PACKET as u16,
+            sll_protocol: u16::from(proto),
+            sll_ifindex: iface.index()? as i32,
+            sll_hatype: 0,
+            sll_pkttype: 0,
+            sll_halen: 6,
+            sll_addr: [0u8; 8],
+        };
+
+        // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
+        // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
+        match unsafe {
+            libc::bind(
+                self.fd,
+                ptr::addr_of!(sockaddr) as *const libc::sockaddr,
+                mem::size_of::<libc::sockaddr_ll>() as u32,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+
+    /// Binds the device to all interfaces, enabling it to begin receiving packets matching the
+    /// link-layer protocol `proto`.
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        let sockaddr = libc::sockaddr_ll {
+            sll_family: libc::AF_PACKET as u16,
+            sll_protocol: u16::from(proto),
+            sll_ifindex: 0,
+            sll_hatype: 0,
+            sll_pkttype: 0,
+            sll_halen: 6,
+            sll_addr: [0u8; 8],
+        };
 
         // SAFETY: `ptr::addr_of!(sockaddr_ll)` will always yield a pointer to
         // `mem::size_of::<libc::sockaddr_ll>()` valid bytes.
@@ -692,13 +728,17 @@ pub struct L3MappedSocket {
 }
 
 impl L3MappedSocket {
-    /// Bind the network-layer socket to a particular protocol/address and interface and begin
-    /// receiving packets.
-    ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    /// Bind the network-layer socket to a particular interface and begin receiving packets matching
+    /// the link-layer protocol `proto`.
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(iface, proto)
+    }
+
+    /// Binds the device to all interfaces, enabling it to begin receiving packets matching the
+    /// link-layer protocol `proto`.
+    #[inline]
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind_all(proto)
     }
 
     /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
@@ -972,13 +1012,18 @@ pub struct L3TxMappedSocket {
 }
 
 impl L3TxMappedSocket {
-    /// Bind the network-layer socket to a particular protocol/address and interface and begin
-    /// receiving packets.
-    ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    /// Bind the network-layer socket to a particular interface and begin receiving packets matching
+    /// the link-layer protocol `proto`.
+    #[inline]
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(iface, proto)
+    }
+
+    /// Binds the device to all interfaces, enabling it to begin receiving packets matching the
+    /// link-layer protocol `proto`.
+    #[inline]
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind_all(proto)
     }
 
     /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.
@@ -989,6 +1034,7 @@ impl L3TxMappedSocket {
     /// kernel will not be buffering packets originating from the socket).
     ///
     /// This option is disabled (`false`) by default.
+    #[inline]
     pub fn set_qdisc_bypass(&self, bypass: bool) -> io::Result<()> {
         self.socket.set_qdisc_bypass(bypass)
     }
@@ -1184,13 +1230,18 @@ pub struct L3RxMappedSocket {
 }
 
 impl L3RxMappedSocket {
-    /// Bind the network-layer socket to a particular protocol/address and interface and begin
-    /// receiving packets.
-    ///
-    /// The address type can be any implementor of the [`L2Addr`] trait. For concrete examples,
-    /// refer to its documentation.
-    pub fn bind<A: L2Addr>(&self, addr: A) -> io::Result<()> {
-        self.socket.bind(addr)
+    /// Bind the network-layer socket to a particular interface and begin receiving packets matching
+    /// the link-layer protocol `proto`.
+    #[inline]
+    pub fn bind(&self, iface: Interface, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind(iface, proto)
+    }
+
+    /// Binds the network-layer socket to all interfaces, enabling it to begin receiving packets
+    /// matching the link-layer protocol `proto`.
+    #[inline]
+    pub fn bind_all(&self, proto: L2Protocol) -> io::Result<()> {
+        self.socket.bind_all(proto)
     }
 
     /// When set, configures transmitted packets to bypass kernel's traffic control (qdisc) layer.

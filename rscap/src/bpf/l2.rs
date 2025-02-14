@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::ffi::{CStr, CString};
+use std::ffi::{CString, OsStr};
 use std::mem;
 #[cfg(unix)]
 use std::os::fd::RawFd;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 #[cfg(target_os = "freebsd")]
 use std::slice;
 
@@ -409,9 +411,11 @@ impl Bpf {
 
         let res = unsafe { libc::ioctl(self.fd, BIOCGETIF, ptr::addr_of_mut!(ifreq)) };
         match res {
-            0 => Ok(Interface::new(unsafe {
-                CStr::from_ptr(ifreq.ifr_name.as_ptr())
-            })?),
+            0 => {
+                let name: [u8; 16] = array::from_fn(|i| ifreq.ifr_name[i] as u8);
+                let end = name.partition_point(|&x| x != 0);
+                Interface::new(OsStr::from_bytes(&name[..end]))
+            }
             _ => Err(io::Error::last_os_error()),
         }
     }
