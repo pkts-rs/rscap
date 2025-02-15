@@ -199,197 +199,217 @@ impl Npcap {
         }
     }
 
-    pub fn driver_version(&self) -> &CStr {
-        unsafe { CStr::from_ptr((self.container.PacketGetDriverVersion)() as *const i8) }
+    pub unsafe fn driver_version(&self) -> &CStr {
+        CStr::from_ptr((self.container.PacketGetDriverVersion)() as *const i8)
     }
 
-    pub fn driver_name(&self) -> &CStr {
-        unsafe { CStr::from_ptr((self.container.PacketGetDriverName)() as *const i8) }
+    pub unsafe fn driver_name(&self) -> &CStr {
+        CStr::from_ptr((self.container.PacketGetDriverName)() as *const i8)
     }
 
-    pub fn set_min_to_copy(&self, adapter: &mut Adapter, nbytes: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetMinToCopy)(adapter, nbytes) } {
+    pub unsafe fn set_min_to_copy(&self, adapter: NonNull<Adapter>, nbytes: libc::c_int) -> bool {
+        match (self.container.PacketSetMinToCopy)(adapter.as_ptr(), nbytes) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_num_writes(&self, adapter: &mut Adapter, nwrites: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetNumWrites)(adapter, nwrites) } {
+    pub unsafe fn set_num_writes(&self, adapter: NonNull<Adapter>, nwrites: libc::c_int) -> bool {
+        match (self.container.PacketSetNumWrites)(adapter.as_ptr(), nwrites) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_mode(&self, adapter: &mut Adapter, mode: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetMode)(adapter, mode) } {
+    pub unsafe fn set_mode(&self, adapter: NonNull<Adapter>, mode: libc::c_int) -> bool {
+        match (self.container.PacketSetMode)(adapter.as_ptr(), mode) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_read_timeout(&self, adapter: &mut Adapter, timeout: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetReadTimeout)(adapter, timeout) } {
+    pub unsafe fn set_read_timeout(&self, adapter: NonNull<Adapter>, timeout: libc::c_int) -> bool {
+        match (self.container.PacketSetReadTimeout)(adapter.as_ptr(), timeout) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_bpf(&self, adapter: &mut Adapter, program: &BpfProgram) -> bool {
-        match unsafe { (self.container.PacketSetBpf)(adapter, program as *const BpfProgram) } {
+    pub unsafe fn set_bpf(&self, adapter: NonNull<Adapter>, program: &BpfProgram) -> bool {
+        match (self.container.PacketSetBpf)(adapter.as_ptr(), program as *const BpfProgram) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_loopback_behavior(&self, adapter: &mut Adapter, behavior: libc::c_uint) -> bool {
-        match unsafe { (self.container.PacketSetLoopbackBehavior)(adapter, behavior) } {
+    pub unsafe fn set_loopback_behavior(
+        &self,
+        adapter: NonNull<Adapter>,
+        behavior: libc::c_uint,
+    ) -> bool {
+        match (self.container.PacketSetLoopbackBehavior)(adapter.as_ptr(), behavior) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_timestamp_mode(&self, adapter: &mut Adapter, mode: libc::c_ulong) -> bool {
-        match unsafe { (self.container.PacketSetTimestampMode)(adapter, mode) } {
+    pub unsafe fn set_timestamp_mode(
+        &self,
+        adapter: NonNull<Adapter>,
+        mode: libc::c_ulong,
+    ) -> bool {
+        match (self.container.PacketSetTimestampMode)(adapter.as_ptr(), mode) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_timestamp_modes(&self, adapter: &mut Adapter, modes: *mut libc::c_ulong) -> bool {
-        match unsafe { (self.container.PacketGetTimestampModes)(adapter, modes) } {
+    pub unsafe fn get_timestamp_modes(
+        &self,
+        adapter: NonNull<Adapter>,
+        modes: *mut libc::c_ulong,
+    ) -> bool {
+        match (self.container.PacketGetTimestampModes)(adapter.as_ptr(), modes) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_snaplen(&self, adapter: &mut Adapter, snaplen: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetSnaplen)(adapter, snaplen) } {
+    pub unsafe fn set_snaplen(&self, adapter: NonNull<Adapter>, snaplen: libc::c_int) -> bool {
+        match (self.container.PacketSetSnaplen)(adapter.as_ptr(), snaplen) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_stats(&self, adapter: &mut Adapter, stats: &mut BpfStat) -> bool {
-        match unsafe { (self.container.PacketGetStats)(adapter, stats as *mut BpfStat) } {
+    pub unsafe fn get_stats(&self, adapter: NonNull<Adapter>, stats: &mut BpfStat) -> bool {
+        match (self.container.PacketGetStats)(adapter.as_ptr(), stats as *mut BpfStat) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_stats_ex(&self, adapter: &mut Adapter, stats: &mut BpfStat) -> bool {
-        match unsafe { (self.container.PacketGetStatsEx)(adapter, stats as *mut BpfStat) } {
+    pub unsafe fn get_stats_ex(&self, adapter: NonNull<Adapter>, stats: &mut BpfStat) -> bool {
+        match (self.container.PacketGetStatsEx)(adapter.as_ptr(), stats as *mut BpfStat) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_buff(&self, adapter: &mut Adapter, dim: libc::c_int) -> bool {
-        match unsafe { (self.container.PacketSetBuff)(adapter, dim) } {
+    pub unsafe fn set_buff(&self, adapter: NonNull<Adapter>, dim: libc::c_int) -> bool {
+        match (self.container.PacketSetBuff)(adapter.as_ptr(), dim) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_net_type(&self, adapter: &mut Adapter, ty: &mut NetType) -> bool {
-        match unsafe { (self.container.PacketGetNetType)(adapter, ty as *mut NetType) } {
+    pub unsafe fn get_net_type(&self, adapter: NonNull<Adapter>, ty: &mut NetType) -> bool {
+        match (self.container.PacketGetNetType)(adapter.as_ptr(), ty as *mut NetType) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn is_loopback_adapter(&self, adapter_name: &CStr) -> bool {
-        match unsafe { (self.container.PacketIsLoopbackAdapter)(adapter_name.as_ptr()) } {
+    pub unsafe fn is_loopback_adapter(&self, adapter_name: &CStr) -> bool {
+        match (self.container.PacketIsLoopbackAdapter)(adapter_name.as_ptr()) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn is_monitor_mode_supported(&self, adapter_name: &CStr) -> libc::c_int {
-        unsafe { (self.container.PacketIsMonitorModeSupported)(adapter_name.as_ptr()) }
+    pub unsafe fn is_monitor_mode_supported(&self, adapter_name: &CStr) -> libc::c_int {
+        (self.container.PacketIsMonitorModeSupported)(adapter_name.as_ptr())
     }
 
-    pub fn set_monitor_mode(&self, adapter_name: &CStr, mode: libc::c_int) -> libc::c_int {
-        unsafe { (self.container.PacketSetMonitorMode)(adapter_name.as_ptr(), mode) }
+    pub unsafe fn set_monitor_mode(&self, adapter_name: &CStr, mode: libc::c_int) -> libc::c_int {
+        (self.container.PacketSetMonitorMode)(adapter_name.as_ptr(), mode)
     }
 
-    pub fn get_monitor_mode(&self, adapter_name: &CStr) -> libc::c_int {
-        unsafe { (self.container.PacketGetMonitorMode)(adapter_name.as_ptr()) }
+    pub unsafe fn get_monitor_mode(&self, adapter_name: &CStr) -> libc::c_int {
+        (self.container.PacketGetMonitorMode)(adapter_name.as_ptr())
     }
 
-    pub fn open_adapter(&self, adapter_name: &CStr) -> *mut Adapter {
-        unsafe { (self.container.PacketOpenAdapter)(adapter_name.as_ptr()) }
+    pub unsafe fn open_adapter(&self, adapter_name: &CStr) -> Option<NonNull<Adapter>> {
+        NonNull::new((self.container.PacketOpenAdapter)(adapter_name.as_ptr()))
     }
 
-    pub fn send_packet(&self, adapter: &mut Adapter, packet: &mut Packet) -> bool {
-        match unsafe { (self.container.PacketSendPacket)(adapter, packet as *mut Packet, 1) } {
+    pub unsafe fn send_packet(&self, adapter: NonNull<Adapter>, packet: NonNull<Packet>) -> bool {
+        match (self.container.PacketSendPacket)(adapter.as_ptr(), packet.as_ptr(), 1) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn send_packets(&self, adapter: &mut Adapter, packets: &mut [Packet]) -> libc::c_int {
+    pub unsafe fn send_packets(
+        &self,
+        adapter: NonNull<Adapter>,
+        packets: &mut [Packet],
+    ) -> libc::c_int {
         let packets_ptr = packets.as_mut_ptr() as *mut libc::c_void;
         let packets_len = packets.len() as u32;
 
         // TODO: does this set the correct length?
-        unsafe { (self.container.PacketSendPackets)(adapter, packets_ptr, packets_len, 1) }
+        (self.container.PacketSendPackets)(adapter.as_ptr(), packets_ptr, packets_len, 1)
     }
 
-    pub fn allocate_packet(&self) -> *mut Packet {
-        unsafe { (self.container.PacketAllocatePacket)() }
+    pub unsafe fn allocate_packet(&self) -> Option<NonNull<Packet>> {
+        NonNull::new((self.container.PacketAllocatePacket)())
     }
 
-    pub fn init_packet(&self, packet: &mut Packet, buffer: NonNull<u8>, buflen: usize) {
+    pub unsafe fn init_packet(&self, packet: NonNull<Packet>, buffer: NonNull<u8>, buflen: usize) {
         let buffer_ptr = buffer.as_ptr() as *mut libc::c_void;
         let buffer_len = buflen as libc::c_uint;
 
-        unsafe { (self.container.PacketInitPacket)(packet, buffer_ptr, buffer_len) }
+        (self.container.PacketInitPacket)(packet.as_ptr(), buffer_ptr, buffer_len)
     }
 
-    pub fn free_packet(&self, packet: &mut Packet) {
-        unsafe { (self.container.PacketFreePacket)(packet) }
+    pub unsafe fn free_packet(&self, packet: NonNull<Packet>) {
+        (self.container.PacketFreePacket)(packet.as_ptr())
     }
 
-    pub fn receive_packet(&self, adapter: &mut Adapter, packet: &mut Packet) -> bool {
-        match unsafe { (self.container.PacketReceivePacket)(adapter, packet as *mut Packet, 1) } {
+    pub unsafe fn receive_packet(
+        &self,
+        adapter: NonNull<Adapter>,
+        packet: NonNull<Packet>,
+    ) -> bool {
+        match (self.container.PacketReceivePacket)(adapter.as_ptr(), packet.as_ptr(), 1) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn set_hw_filter(&self, adapter: &mut Adapter, filter: libc::c_ulong) -> bool {
-        match unsafe { (self.container.PacketSetHwFilter)(adapter, filter) } {
+    pub unsafe fn set_hw_filter(&self, adapter: NonNull<Adapter>, filter: libc::c_ulong) -> bool {
+        match (self.container.PacketSetHwFilter)(adapter.as_ptr(), filter) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_adapter_names(&self, buf: &mut [u8], len: &mut libc::c_ulong) {
+    pub unsafe fn get_adapter_names(&self, buf: &mut [u8], len: &mut libc::c_ulong) {
         let buf_ptr = buf.as_mut_ptr() as *mut libc::c_char;
         let buflen_ptr = len as *mut libc::c_ulong;
 
-        unsafe { (self.container.PacketGetAdapterNames)(buf_ptr, buflen_ptr) }
+        (self.container.PacketGetAdapterNames)(buf_ptr, buflen_ptr)
     }
 
-    pub fn get_net_info_ex(
+    pub unsafe fn get_net_info_ex(
         &self,
-        adapter: &mut Adapter,
+        adapter: NonNull<Adapter>,
         addrs: &mut [NpfIfAddr],
         entries: &mut libc::c_long,
     ) -> bool {
         let addrs_ptr = addrs.as_mut_ptr();
         let entries_ptr = entries as *mut libc::c_long;
 
-        match unsafe { (self.container.PacketGetNetInfoEx)(adapter, addrs_ptr, entries_ptr) } {
+        match (self.container.PacketGetNetInfoEx)(adapter.as_ptr(), addrs_ptr, entries_ptr) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_request(
+    pub unsafe fn get_request(
         &self,
-        adapter: &mut Adapter,
+        adapter: NonNull<Adapter>,
         set: bool,
         oid_data: &mut PacketOidData,
     ) -> bool {
@@ -398,31 +418,31 @@ impl Npcap {
             false => 0,
         };
 
-        match unsafe { (self.container.PacketRequest)(adapter, set, oid_data) } {
+        match (self.container.PacketRequest)(adapter.as_ptr(), set, oid_data) {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn get_read_event(&self, adapter: &mut Adapter) -> HANDLE {
-        unsafe { (self.container.PacketGetReadEvent)(adapter) }
+    pub unsafe fn get_read_event(&self, adapter: NonNull<Adapter>) -> HANDLE {
+        (self.container.PacketGetReadEvent)(adapter.as_ptr())
     }
 
-    pub fn stop_driver(&self) -> bool {
-        match unsafe { (self.container.PacketStopDriver)() } {
+    pub unsafe fn stop_driver(&self) -> bool {
+        match (self.container.PacketStopDriver)() {
             0 => false,
             _ => true,
         }
     }
 
-    pub fn stop_driver_60(&self) -> bool {
-        match unsafe { (self.container.PacketStopDriver60)() } {
+    pub unsafe fn stop_driver_60(&self) -> bool {
+        match (self.container.PacketStopDriver60)() {
             0 => false,
             _ => true,
         }
     }
 
-    pub unsafe fn close_adapter(&self, adapter: *mut Adapter) {
-        (self.container.PacketCloseAdapter)(adapter)
+    pub unsafe fn close_adapter(&self, adapter: NonNull<Adapter>) {
+        (self.container.PacketCloseAdapter)(adapter.as_ptr())
     }
 }

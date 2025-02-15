@@ -39,7 +39,7 @@ pub struct NpcapAdapter {
 }
 
 impl NpcapAdapter {
-    pub const DEFAULT_DRIVER_BUFFER: usize = 1024 * 1024 * 1024; // Default buffer of 1MB (similar to libpcap)
+    pub const DEFAULT_DRIVER_BUFFER: usize = 1024 * 1024; // Default buffer of 1MB (similar to libpcap)
 
     /// Retrieves the name of the npcap driver.
     ///
@@ -47,13 +47,13 @@ impl NpcapAdapter {
     /// the one from the other.
     #[inline]
     pub fn driver_name(&self) -> &CStr {
-        self.npcap.driver_name()
+        unsafe { self.npcap.driver_name() }
     }
 
     /// Retrieves the version of the npcap driver.
     #[inline]
     pub fn driver_version(&self) -> &CStr {
-        self.npcap.driver_version()
+        unsafe { self.npcap.driver_version() }
     }
 
     /// Retrieves the interface the npcap driver is listening on.
@@ -66,7 +66,7 @@ impl NpcapAdapter {
     pub fn monitor_mode(iface: Interface) -> io::Result<bool> {
         let npcap = NPCAP_API.get_or_try_init(Npcap::new)?;
 
-        match npcap.get_monitor_mode(iface.name_cstr()) {
+        match unsafe { npcap.get_monitor_mode(iface.name_cstr()) } {
             1 => Ok(true),
             0 => Ok(false),
             _ => Err(io::Error::last_os_error()),
@@ -88,7 +88,7 @@ impl NpcapAdapter {
             false => 0,
         };
 
-        match npcap.set_monitor_mode(iface.name_cstr(), enabled) {
+        match unsafe { npcap.set_monitor_mode(iface.name_cstr(), enabled) } {
             1 => Ok(()),
             0 => Err(io::ErrorKind::Unsupported.into()),
             _ => Err(io::Error::last_os_error()),
@@ -122,8 +122,7 @@ impl NpcapAdapter {
     pub fn new(iface: Interface) -> io::Result<Self> {
         let npcap = NPCAP_API.get_or_try_init(Npcap::new)?;
 
-        let packet_ptr = npcap.allocate_packet();
-        let packet = match NonNull::new(packet_ptr) {
+        let packet = match unsafe { npcap.allocate_packet() } {
             None => return Err(io::ErrorKind::OutOfMemory.into()),
             Some(p) => p,
         };
@@ -140,7 +139,7 @@ impl NpcapAdapter {
         // TODO: should we append "\Device\" or "NPF_" to the interface name?
         // TODO: when should we append "WIFI_"? (for AirNpcap)
 
-        let adapter = match NonNull::new(npcap.open_adapter(iface.name_cstr())) {
+        let adapter = match unsafe { npcap.open_adapter(iface.name_cstr()) } {
             None => {
                 let error = io::Error::last_os_error();
                 return Err(match error.raw_os_error().map(|e| e as u32) {
@@ -179,10 +178,7 @@ impl NpcapAdapter {
     /// the packet filter.
     /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     pub fn set_filter(&mut self, filter: &mut PacketFilter) -> io::Result<()> {
-        match unsafe {
-            self.npcap
-                .set_bpf(self.adapter.as_mut(), &filter.as_bpf_program())
-        } {
+        match unsafe { self.npcap.set_bpf(self.adapter, &filter.as_bpf_program()) } {
             false => Err(io::Error::last_os_error()),
             true => Ok(()),
         }
@@ -211,18 +207,15 @@ impl NpcapAdapter {
 
         // Loop through messages until none left to be received
         loop {
+            let buf = unsafe { NonNull::new_unchecked(tmp_buf.as_mut_ptr()) };
             unsafe {
-                let buf = NonNull::new_unchecked(tmp_buf.as_mut_ptr());
-                self.npcap.init_packet(self.packet.as_mut(), buf, 0);
+                self.npcap.init_packet(self.packet, buf, 0);
+            }
 
-                // This is nonblocking by default
-                match self
-                    .npcap
-                    .receive_packet(self.adapter.as_mut(), self.packet.as_mut())
-                {
-                    false => break, // TODO: check return value here
-                    true => (),
-                }
+            // This is nonblocking by default
+            match unsafe { self.npcap.receive_packet(self.adapter, self.packet) } {
+                false => break, // TODO: check return value here
+                true => (),
             }
         }
 
@@ -252,10 +245,7 @@ impl NpcapAdapter {
             bs_capt: 0,
         };
 
-        match self
-            .npcap
-            .get_stats_ex(unsafe { self.adapter.as_mut() }, &mut stat)
-        {
+        match unsafe { self.npcap.get_stats_ex(self.adapter, &mut stat) } {
             true => Ok(PacketStatistics {
                 received: stat.bs_recv,
                 dropped: stat.bs_drop,
@@ -268,10 +258,7 @@ impl NpcapAdapter {
     pub fn set_driver_buffer(&mut self, buffer_size: usize) -> io::Result<()> {
         let buffer_size =
             libc::c_int::try_from(buffer_size).map_err(|_| io::ErrorKind::InvalidInput)?;
-        match self
-            .npcap
-            .set_buff(unsafe { self.adapter.as_mut() }, buffer_size)
-        {
+        match unsafe { self.npcap.set_buff(self.adapter, buffer_size) } {
             true => Ok(()),
             false => Err(io::Error::last_os_error()),
         }
@@ -281,40 +268,35 @@ impl NpcapAdapter {
     pub fn set_min_to_copy(&mut self, copy_bytes: usize) -> io::Result<()> {
         let copy_bytes =
             libc::c_int::try_from(copy_bytes).map_err(|_| io::ErrorKind::InvalidInput)?;
-        match self
-            .npcap
-            .set_min_to_copy(unsafe { self.adapter.as_mut() }, copy_bytes)
-        {
+        match unsafe { self.npcap.set_min_to_copy(self.adapter, copy_bytes) } {
             true => Ok(()),
             false => Err(io::Error::last_os_error()),
         }
     }
 
     pub fn read_event_handle(&mut self) -> HANDLE {
-        self.npcap.get_read_event(unsafe { self.adapter.as_mut() })
+        unsafe { self.npcap.get_read_event(self.adapter) }
     }
 
     /// Receive a datagram from the socket.
     pub fn recv(&mut self, packet: &mut [u8]) -> io::Result<usize> {
+        let buf = unsafe { NonNull::new_unchecked(packet.as_mut_ptr()) };
         unsafe {
-            let buf = NonNull::new_unchecked(packet.as_mut_ptr());
-            self.npcap
-                .init_packet(self.packet.as_mut(), buf, packet.len());
+            self.npcap.init_packet(self.packet, buf, packet.len());
+        }
 
-            loop {
-                match self
-                    .npcap
-                    .receive_packet(self.adapter.as_mut(), self.packet.as_mut())
-                {
-                    false if self.nonblocking => return Err(io::Error::last_os_error()),
-                    false => (), // TODO: check error
-                    true => return Ok(packet.len()),
-                }
-
-                let handle = self.read_event_handle();
-                WaitForSingleObject(handle, INFINITE);
-                // ^ TODO: handle errors from this
+        loop {
+            match unsafe { self.npcap.receive_packet(self.adapter, self.packet) } {
+                false if self.nonblocking => return Err(io::Error::last_os_error()),
+                false => (), // TODO: check error
+                true => return Ok(packet.len()),
             }
+
+            let handle = self.read_event_handle();
+            unsafe {
+                WaitForSingleObject(handle, INFINITE);
+            }
+            // ^ TODO: handle errors from this
         }
     }
 
@@ -324,10 +306,7 @@ impl NpcapAdapter {
         let num_repeats =
             libc::c_int::try_from(num_repeats).map_err(|_| io::ErrorKind::InvalidInput)?;
 
-        match self
-            .npcap
-            .set_num_writes(unsafe { self.adapter.as_mut() }, num_repeats)
-        {
+        match unsafe { self.npcap.set_num_writes(self.adapter, num_repeats) } {
             true => Ok(()),
             false => Err(io::Error::last_os_error()),
         }
@@ -335,22 +314,21 @@ impl NpcapAdapter {
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     pub fn send(&mut self, packet: &[u8]) -> io::Result<usize> {
+        // Safety: this casts a `*const u8` into a `*mut u8`. `npcap.init_packet()` uses this
+        // buffer without modifying its contents, so this is sound; the C API simply neglects
+        // to specify that the buffer pointer is const, so it requires a `*mut u8` as input.
+        let buf = unsafe { NonNull::new_unchecked(packet.as_ptr().cast_mut()) };
+        // Safety: `init_packet()` is called within a `&mut self` context, so `self.packet` is
+        // exclusively accessed at this point.
         unsafe {
-            // BUG: this casts a `*const u8` into a `*mut u8`.
-            // Depending on how the resulting mut pointer is used, this could be unsound/UB.
-            let buf = NonNull::new_unchecked(packet.as_ptr() as *mut u8);
-            self.npcap
-                .init_packet(self.packet.as_mut(), buf, packet.len());
+            self.npcap.init_packet(self.packet, buf, packet.len());
+        }
 
-            // BUG: this technically blocks regardless of blocking/nonblocking mode.
-            // This is an issue in npcap that will require an API addition to resolve.
-            match self
-                .npcap
-                .send_packet(self.adapter.as_mut(), self.packet.as_mut())
-            {
-                false => return Err(io::Error::last_os_error()),
-                true => Ok(packet.len()),
-            }
+        // BUG: this technically blocks regardless of blocking/nonblocking mode.
+        // This is an issue in npcap that will require an API addition to resolve.
+        match unsafe { self.npcap.send_packet(self.adapter, self.packet) } {
+            false => return Err(io::Error::last_os_error()),
+            true => Ok(packet.len()),
         }
     }
 
@@ -383,10 +361,9 @@ impl NpcapAdapter {
             }
         };
 
-        match self
-            .npcap
-            .set_read_timeout(unsafe { self.adapter.as_mut() }, timeout)
-        {
+        // Safety: `self` guaranteed to be borrowed only once due to &mut, so `self.adapter` is
+        // exclusively accessed here.
+        match unsafe { self.npcap.set_read_timeout(self.adapter, timeout) } {
             true => Ok(()),
             false => Err(io::Error::last_os_error()),
         }
