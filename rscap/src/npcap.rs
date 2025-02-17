@@ -51,7 +51,7 @@ pub(crate) struct SnifferImpl {
 impl SnifferImpl {
     #[inline]
     pub fn new(iface: Interface) -> io::Result<Self> {
-        let mut adapter = NpcapAdapter::new(iface)?;
+        let adapter = NpcapAdapter::new(iface)?;
         adapter.set_filter(&mut PacketFilter::reject_all())?;
 
         Ok(Self { adapter })
@@ -71,7 +71,7 @@ impl SnifferImpl {
     }
 
     #[inline]
-    pub fn set_nonblocking(&mut self, nonblocking: bool) -> io::Result<()> {
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         self.adapter.set_nonblocking(nonblocking);
         Ok(())
     }
@@ -82,12 +82,12 @@ impl SnifferImpl {
     }
 
     #[inline]
-    pub fn send(&mut self, packet: &[u8]) -> io::Result<usize> {
-        self.adapter.send(packet)
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.adapter.send(buf)
     }
 
     #[inline]
-    pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.adapter.recv(buf)
     }
 }

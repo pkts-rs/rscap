@@ -144,7 +144,7 @@ impl Sniffer {
     /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
     /// a packet.
     #[inline]
-    pub fn nonblocking(&mut self) -> io::Result<bool> {
+    pub fn nonblocking(&self) -> io::Result<bool> {
         self.inner.nonblocking()
     }
 
@@ -154,7 +154,7 @@ impl Sniffer {
     /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
     /// a packet.
     #[inline]
-    pub fn set_nonblocking(&mut self, nonblocking: bool) -> io::Result<()> {
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         self.inner.set_nonblocking(nonblocking)
     }
 
@@ -166,8 +166,8 @@ impl Sniffer {
     /// A `Sniffer` does not need to be activated (see [`activate()`](Self::activate)) to send
     /// packets.
     #[inline]
-    pub fn send(&mut self, packet: &[u8]) -> io::Result<usize> {
-        self.inner.send(packet)
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.send(buf)
     }
 
     // TODO: `sendmsg`, `recvmsg` implementations that return additional data
@@ -178,7 +178,7 @@ impl Sniffer {
     /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
     /// fail with an error of kind [`io::ErrorKind::NotConnected`].
     #[inline]
-    pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.recv(buf)
     }
 

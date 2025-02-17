@@ -95,8 +95,8 @@ impl SnifferImpl {
     }
 
     #[inline]
-    pub fn send(&self, packet: &[u8]) -> io::Result<usize> {
-        self.bpf.send(packet)
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.bpf.send(buf)
     }
 
     #[inline]
