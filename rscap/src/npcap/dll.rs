@@ -23,6 +23,8 @@ use windows_sys::Win32::Networking::WinSock::SOCKADDR_STORAGE;
 use windows_sys::Win32::System::Threading::CRITICAL_SECTION;
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
+use std::mem;
+
 use crate::filter::BpfInstruction;
 
 // pub const PACKET_MODE_CAPT: libc::c_int = 0x00;
@@ -31,12 +33,10 @@ use crate::filter::BpfInstruction;
 // pub const PACKET_MODE_DUMP: libc::c_int = 0x10;
 // pub const PACKET_MODE_STAT_DUMP: libc::c_int = PACKET_MODE_DUMP | PACKET_MODE_STAT;
 
-/*
 pub const PACKET_ALIGNMENT: usize = mem::size_of::<libc::c_int>();
 pub const fn packet_wordalign(x: usize) -> usize {
     (x + (PACKET_ALIGNMENT - 1)) & !(PACKET_ALIGNMENT - 1)
 }
-*/
 
 // pub const NDIS_MEDIUM_NULL: i32 = -1;
 // pub const NDIS_MEDIUM_CHDLC: i32 = -2;
@@ -89,10 +89,10 @@ pub struct BpfStat {
 #[allow(unused)]
 #[repr(C)]
 pub struct BpfHdr {
-    pub bh_tstamp: libc::timeval,
-    pub bh_caplen: libc::c_uint,
-    pub bh_datalen: libc::c_uint,
-    pub bh_hdrlen: libc::c_ushort,
+    pub bh_tstamp: libc::timeval,  // Seconds since Jan 1, 1970 (+ usec)
+    pub bh_caplen: libc::c_uint,   // truncated length
+    pub bh_datalen: libc::c_uint,  // total length that would have been captured
+    pub bh_hdrlen: libc::c_ushort, // the length of the header that encapsulates the packet (e.g. sizeof(BpfHdr))
 }
 
 #[allow(unused)]

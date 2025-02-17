@@ -450,8 +450,8 @@ impl SnifferImpl {
     }
 
     #[inline]
-    pub fn send(&self, packet: &[u8]) -> io::Result<usize> {
-        self.socket.send(packet)
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.socket.send(buf)
     }
 
     #[inline]

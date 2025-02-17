@@ -522,14 +522,8 @@ impl Bpf {
 
     /// Send a link-layer packet on the interface bound to the given socket.
     #[inline]
-    pub fn send(&self, packet: &[u8]) -> io::Result<usize> {
-        let res = unsafe {
-            libc::write(
-                self.fd,
-                packet.as_ptr() as *const libc::c_void,
-                packet.len(),
-            )
-        };
+    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        let res = unsafe { libc::write(self.fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
         match res {
             0.. => Ok(res as usize),
             _ => Err(io::Error::last_os_error()),
