@@ -302,6 +302,28 @@ impl NpcapAdapter {
 
     /// Receive a datagram from the socket.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.recv_nonblocking(buf) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // Nonblocking case--return WouldBlock
+                    if self.nonblocking.load(Ordering::Relaxed) {
+                        return Err(e);
+                    }
+
+                    // Blocking case--loop until input received
+                    let handle = self.read_event_handle();
+                    unsafe {
+                        WaitForSingleObject(handle, INFINITE);
+                    }
+                    // ^ TODO: handle errors from WaitForSingleObject?
+                }
+                res => return res,
+            }
+        }
+    }
+
+    /// Receive a datagram from the socket.
+    fn recv_nonblocking(&self, buf: &mut [u8]) -> io::Result<usize> {
         // This method is implemented via a non-trivial number of concurrency operations.
         // It is advisable not to introduce or shuffle ANY code in this method unless you've
         // done thorough analysis of the potential concurrency issues that may arise.
@@ -370,18 +392,24 @@ impl NpcapAdapter {
                     // of (see the documentation to `UnsafeCell`). It is guaranteed that no other
                     // tasks will have `pktbuf` referenced at this point, as borrows only happen
                     // while `pkt_ctx.outstanding` > 0 or in this exclusive critical zone.
-                    match unsafe { self.npcap.receive_packet(self.adapter, self.pkt_ctx.packet) } {
-                        false if self.nonblocking.load(Ordering::Relaxed) => {
+                    let res =
+                        unsafe { self.npcap.receive_packet(self.adapter, self.pkt_ctx.packet) };
+                    let err = io::Error::last_os_error();
+
+                    match res {
+                        false
+                            if self.nonblocking.load(Ordering::Relaxed)
+                                || err.kind() != io::ErrorKind::WouldBlock =>
+                        {
                             self.pkt_ctx.outstanding.store(0, Ordering::Relaxed);
                             return Err(io::Error::last_os_error());
                         }
                         false => {
-                            // TODO: check error
                             let handle = self.read_event_handle();
                             unsafe {
                                 WaitForSingleObject(handle, INFINITE);
                             }
-                            // ^ TODO: handle errors from this?
+                            // ^ TODO: handle errors from WaitForSingleObject?
                         }
                         true => {
                             // This scope is necessary to clear `indices`, `pktbuf` references
