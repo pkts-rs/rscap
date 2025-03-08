@@ -17,6 +17,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+async-std = ["dep:async-io", "dep:async-std"]
+mio = ["dep:mio"]
+smol = ["dep:async-io", "dep:smol"]
+tokio = ["dep:tokio"]
+
 # Enables use of the npcap driver on Windows systems when the necessary dll libraries are present.
 # 
 # If `Packet.dll` is not present on the system, this option will gracefully return runtime errors
@@ -40,3 +45,9 @@ libc = { version = "0.2" }
 once_cell = { version = "1.19" }
 pkts-common = { version = "0.1.0" }
 windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
+
+async-io = { version = "2.3.4", optional = true }
+async-std = { version = "1.13.0", optional = true }
+mio = { version = "0.8.11", features = ["net"], optional = true }
+smol = { version = "2.0.2", optional = true }
+tokio = { version = "1.38.1", features = ["net", "rt", "time"], optional = true }

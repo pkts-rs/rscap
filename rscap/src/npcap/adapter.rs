@@ -302,28 +302,6 @@ impl NpcapAdapter {
 
     /// Receive a datagram from the socket.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        loop {
-            match self.recv_nonblocking(buf) {
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Nonblocking case--return WouldBlock
-                    if self.nonblocking.load(Ordering::Relaxed) {
-                        return Err(e);
-                    }
-
-                    // Blocking case--loop until input received
-                    let handle = self.read_event_handle();
-                    unsafe {
-                        WaitForSingleObject(handle, INFINITE);
-                    }
-                    // ^ TODO: handle errors from WaitForSingleObject?
-                }
-                res => return res,
-            }
-        }
-    }
-
-    /// Receive a datagram from the socket.
-    fn recv_nonblocking(&self, buf: &mut [u8]) -> io::Result<usize> {
         // This method is implemented via a non-trivial number of concurrency operations.
         // It is advisable not to introduce or shuffle ANY code in this method unless you've
         // done thorough analysis of the potential concurrency issues that may arise.
@@ -517,7 +495,6 @@ impl NpcapAdapter {
             written
         };
 
-        // This is `Ordering::Release` so that
         self.pkt_ctx.outstanding.fetch_sub(1, Ordering::Relaxed);
 
         Ok(written)
@@ -604,6 +581,10 @@ impl NpcapAdapter {
         }
     }
 }
+
+unsafe impl Send for NpcapAdapter {}
+
+unsafe impl Sync for NpcapAdapter {}
 
 impl Drop for NpcapAdapter {
     fn drop(&mut self) {

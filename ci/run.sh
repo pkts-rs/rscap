@@ -27,15 +27,39 @@ done
 
 case "${OS}" in
     windows*)
-        cargo test
+        cargo test --all-targets
 
-        cargo test --features npcap
+        cargo test --all-targets --features npcap
 
-        cargo test --features npcap-runtime
+        cargo test --all-targets --features npcap-runtime
+
+        cargo test --all-targets --features async-std
+
+        cargo test --all-targets --features smol
+
+        cargo test --all-targets --features tokio
+        
+        cargo test --all-targets --all-features
+
+        # doc tests must have all features enabled to run
+        cargo test --doc --all-features
         ;;
     *)
         # No extra features in any platform other than windows
 
-        cargo test
+        cargo test --all-targets
+
+        cargo test --all-targets --features async-std
+
+        cargo test --all-targets --features mio
+
+        cargo test --all-targets --features smol
+
+        cargo test --all-targets --features tokio
+
+        cargo test --all-targets --all-features
+
+        # doc tests must have all features enabled to run
+        cargo test --doc --all-features
         ;;
 esac

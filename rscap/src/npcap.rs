@@ -91,3 +91,7 @@ impl SnifferImpl {
         self.adapter.recv(buf)
     }
 }
+
+unsafe impl Send for SnifferImpl {}
+
+unsafe impl Sync for SnifferImpl {}
