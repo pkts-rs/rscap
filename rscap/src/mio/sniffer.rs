@@ -9,75 +9,38 @@
 // except according to those terms.
 
 use std::io;
-#[cfg(doc)]
-use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 #[cfg(not(target_os = "windows"))]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 
-#[cfg(target_os = "openbsd")]
-use crate::bpf::RxFrameImpl;
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd"
-))]
-use crate::bpf::SnifferImpl;
-/*
-#[cfg(any(target_os = "illumos", target_os = "solaris"))]
-use crate::dlpi::SnifferImpl;
-*/
-#[cfg(target_os = "linux")]
-use crate::linux::{RxFrameImpl, SnifferImpl};
-#[cfg(all(target_os = "windows", feature = "npcap"))]
-use crate::npcap::SnifferImpl;
-use crate::{filter::PacketFilter, Interface};
-// TODO: add pktmon here
+use crate::filter::PacketFilter;
+use crate::{Interface, Sniffer};
 
-// Linux doesn't start capturing packets by default until bind() is called.
-// Both npcap and BPF do.
-// We need to handle this edge case.
+use mio::event::Source;
+use mio::net::UdpSocket;
+use mio::{Interest, Registry, Token};
 
-// BIOCFLUSH - flushes BPF
-// BIOCSETFNR - sets filter without flushing BPF
-// NPF_ResetBufferContents
-//
-// SO_ATTACH_FILTER doesn't flush BPF
-
-/// A device capable of transmitting and receiving arbitrary link-layer (i.e., L2) packets.
-///
-/// This device is specifically capable of transmitting a link-layer packet composed of arbitrary
-/// (including potentially invalid) bytes, as well as receiving all packets passing _in either
-/// direction_ through a given network interface (including those being transmitted by the device
-/// itself).
-pub struct Sniffer {
-    #[cfg(not(doc))]
-    inner: SnifferImpl,
+/// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
+/// over network interfaces in a manner compatible with `mio`.
+pub struct AsyncSniffer {
+    sniffer: Sniffer,
+    io: ManuallyDrop<UdpSocket>,
 }
 
-impl Sniffer {
-    /// Creates a new Sniffer instance.
-    ///
-    /// The sniffer will not capture new packets by default until [`activate()`](Self::activate)
-    /// is called.
+impl AsyncSniffer {
+    /// Creates a new Sniffer for the given interface.
     #[inline]
     pub fn new(iface: Interface) -> io::Result<Self> {
-        Ok(Self {
-            inner: SnifferImpl::new(iface)?,
-        })
-    }
+        let sniffer = Sniffer::new(iface)?;
+        sniffer.set_nonblocking(true)?;
 
-    /// Creates a new sniffer instance using `ring_size` for the size of any zero-copy RX or TX
-    /// rings.
-    ///
-    /// `ring_size` must be a multiple of 524288 (0x80000, or 512 KiB) to work across relevant
-    /// platforms (currently Linux and FreeBSD).
-    #[cfg(any(doc, target_os = "freebsd", target_os = "linux"))]
-    #[inline]
-    pub fn new_with_size(iface: Interface, ring_size: usize) -> io::Result<Self> {
+        // SAFETY: `AsyncTun` ensures that the RawFd is extracted from `io` in its drop()
+        // implementation so that the descriptor isn't closed twice.
+        let io = unsafe { UdpSocket::from_raw_fd(sniffer.as_raw_fd()) };
+
         Ok(Self {
-            inner: SnifferImpl::new_with_size(iface, ring_size)?,
+            sniffer,
+            io: ManuallyDrop::new(io),
         })
     }
 
@@ -111,10 +74,7 @@ impl Sniffer {
     /// `activate()` is first called.
     #[inline]
     pub fn activate(&mut self, filter: Option<PacketFilter>) -> io::Result<()> {
-        // This method needs to:
-        // 1. flush the buffer of any pending packets from a previous call to `deactivate()`
-        // 2. Set the BPF to the one provided, or else `ret 1`
-        self.inner.activate(filter)
+        self.sniffer.activate(filter)
     }
 
     /// Stops the sniffer from capturing packets.
@@ -133,10 +93,8 @@ impl Sniffer {
     /// available, the behavior and documentation of this method will be updated appropriately.
     ///
     pub fn deactivate(&mut self) -> io::Result<()> {
-        self.inner.deactivate()
+        self.sniffer.deactivate()
     }
-
-    // TODO: ^ since Solaris/IllumOS support PF_PACKET, it's actually the case that they *will*
 
     /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
     ///
@@ -145,7 +103,7 @@ impl Sniffer {
     /// a packet.
     #[inline]
     pub fn nonblocking(&self) -> io::Result<bool> {
-        self.inner.nonblocking()
+        self.sniffer.nonblocking()
     }
 
     /// Enables or disables nonblocking I/O for the given socket.
@@ -155,8 +113,10 @@ impl Sniffer {
     /// a packet.
     #[inline]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        self.inner.set_nonblocking(nonblocking)
+        self.sniffer.set_nonblocking(nonblocking)
     }
+
+    // TODO: `sendmsg`, `recvmsg` implementations that return additional data
 
     /// Send a packet out on the [`Interface`] the `Sniffer` is associated with.
     ///
@@ -167,10 +127,8 @@ impl Sniffer {
     /// packets.
     #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.send(buf)
+        self.sniffer.send(buf)
     }
-
-    // TODO: `sendmsg`, `recvmsg` implementations that return additional data
 
     /// Receive a packet from the [`Interface`] the `Sniffer` is listening on.
     ///
@@ -179,65 +137,39 @@ impl Sniffer {
     /// fail with an error of kind [`io::ErrorKind::NotConnected`].
     #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.recv(buf)
-    }
-
-    /// Receive a zero-copy packet from the [`Interface`] the `Sniffer` is listening on.
-    ///
-    /// The `Sniffer` must be activated prior to receiving packets. Any attempt to receive a packet
-    /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
-    /// fail with an error of kind [`io::ErrorKind::NotConnected`].
-    #[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-    #[inline]
-    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        Some(RxFrame {
-            inner: self.inner.mapped_recv()?,
-        })
+        self.sniffer.recv(buf)
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-impl AsRawFd for Sniffer {
-    #[inline]
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
+impl Source for AsyncSniffer {
+    fn register(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        self.io.register(registry, token, interests)
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        self.io.reregister(registry, token, interests)
+    }
+
+    fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
+        self.io.deregister(registry)
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-impl AsFd for Sniffer {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.inner.as_fd()
+impl Drop for AsyncSniffer {
+    fn drop(&mut self) {
+        // This ensures that `UdpSocket` is dropped properly while not double-closing the RawFd.
+        // SAFETY: `self.io` won't be accessed after this thanks to ManuallyDrop
+        let io = unsafe { ManuallyDrop::take(&mut self.io) };
+        let _ = io.into_raw_fd();
     }
-}
-
-/// A packet frame holding a single received zero-copy packet.
-#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-pub struct RxFrame<'a> {
-    #[cfg(not(doc))]
-    inner: RxFrameImpl<'a>,
-    #[cfg(doc)]
-    _phantom: PhantomData<&'a ()>,
-}
-
-#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-impl RxFrame<'_> {
-    /// A slice to the underlying zero-copy packet.
-    ///
-    /// Once a packet is finished with, simply dropping the `RxFrame` will lead to the packet frame
-    /// being correctly marked for the kernel to use for future packets.
-    pub fn data(&self) -> &[u8] {
-        self.inner.data()
-    }
-
-    /// A mutable slice to the underlying zero-copy packet.
-    ///
-    /// Any desired modifications may be performed on the packet safely; once a packet is finished
-    /// with, simply dropping the `RxFrame` will lead to the packet frame being correctly marked
-    /// for the kernel to use for future packets.
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        self.inner.data_mut()
-    }
-
-    // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
 }

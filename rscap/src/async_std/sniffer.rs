@@ -8,76 +8,69 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(target_os = "windows")]
+use std::borrow::ToOwned;
 use std::io;
-#[cfg(doc)]
-use std::marker::PhantomData;
+#[cfg(target_os = "windows")]
+use std::sync::Arc;
+
 #[cfg(not(target_os = "windows"))]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use async_io::Async;
 
-#[cfg(target_os = "openbsd")]
-use crate::bpf::RxFrameImpl;
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd"
-))]
-use crate::bpf::SnifferImpl;
-/*
-#[cfg(any(target_os = "illumos", target_os = "solaris"))]
-use crate::dlpi::SnifferImpl;
-*/
-#[cfg(target_os = "linux")]
-use crate::linux::{RxFrameImpl, SnifferImpl};
-#[cfg(all(target_os = "windows", feature = "npcap"))]
-use crate::npcap::SnifferImpl;
-use crate::{filter::PacketFilter, Interface};
-// TODO: add pktmon here
+use crate::filter::PacketFilter;
+use crate::{Interface, Sniffer};
 
-// Linux doesn't start capturing packets by default until bind() is called.
-// Both npcap and BPF do.
-// We need to handle this edge case.
+#[cfg(target_os = "windows")]
+#[derive(Clone)]
+struct SnifferWrapper(Arc<Sniffer>);
 
-// BIOCFLUSH - flushes BPF
-// BIOCSETFNR - sets filter without flushing BPF
-// NPF_ResetBufferContents
-//
-// SO_ATTACH_FILTER doesn't flush BPF
+#[cfg(target_os = "windows")]
+impl SnifferWrapper {
+    /// Returns a reference to the underlying `Sniffer` function.
+    fn get_ref(&self) -> &Sniffer {
+        self.0.as_ref()
+    }
 
-/// A device capable of transmitting and receiving arbitrary link-layer (i.e., L2) packets.
-///
-/// This device is specifically capable of transmitting a link-layer packet composed of arbitrary
-/// (including potentially invalid) bytes, as well as receiving all packets passing _in either
-/// direction_ through a given network interface (including those being transmitted by the device
-/// itself).
-pub struct Sniffer {
-    #[cfg(not(doc))]
-    inner: SnifferImpl,
+    /// Returns a reference to the underlying `Sniffer` function.
+    unsafe fn get_mut(&mut self) -> &mut Sniffer {
+        // SAFETY: we never use this within spawn_blocking or similar async contexts
+        Arc::<Sniffer>::get_mut(&mut self.0).unwrap()
+    }
 }
 
-impl Sniffer {
-    /// Creates a new Sniffer instance.
-    ///
-    /// The sniffer will not capture new packets by default until [`activate()`](Self::activate)
-    /// is called.
+/// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
+/// over network interfaces in a manner compatible with `async-std`.
+pub struct AsyncSniffer {
+    #[cfg(not(target_os = "windows"))]
+    sniffer: Async<Sniffer>,
+    #[cfg(target_os = "windows")]
+    sniffer: SnifferWrapper,
+}
+
+impl AsyncSniffer {
+    /// Creates a new Sniffer for the given interface.
     #[inline]
     pub fn new(iface: Interface) -> io::Result<Self> {
+        Self::new_impl(iface)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn new_impl(iface: Interface) -> io::Result<Self> {
+        let sniffer = Sniffer::new(iface)?;
+        sniffer.set_nonblocking(true)?;
+
         Ok(Self {
-            inner: SnifferImpl::new(iface)?,
+            sniffer: Async::new(sniffer)?,
         })
     }
 
-    /// Creates a new sniffer instance using `ring_size` for the size of any zero-copy RX or TX
-    /// rings.
-    ///
-    /// `ring_size` must be a multiple of 524288 (0x80000, or 512 KiB) to work across relevant
-    /// platforms (currently Linux and FreeBSD).
-    #[cfg(any(doc, target_os = "freebsd", target_os = "linux"))]
-    #[inline]
-    pub fn new_with_size(iface: Interface, ring_size: usize) -> io::Result<Self> {
+    #[cfg(target_os = "windows")]
+    fn new_impl(iface: Interface) -> io::Result<Self> {
+        let sniffer = Sniffer::new(iface)?;
+        // Note: nonblocking mode should NOT be set here, as in Windows we spawn a new thread for each send()/recv()
+
         Ok(Self {
-            inner: SnifferImpl::new_with_size(iface, ring_size)?,
+            sniffer: SnifferWrapper(Arc::new(sniffer)),
         })
     }
 
@@ -111,10 +104,7 @@ impl Sniffer {
     /// `activate()` is first called.
     #[inline]
     pub fn activate(&mut self, filter: Option<PacketFilter>) -> io::Result<()> {
-        // This method needs to:
-        // 1. flush the buffer of any pending packets from a previous call to `deactivate()`
-        // 2. Set the BPF to the one provided, or else `ret 1`
-        self.inner.activate(filter)
+        unsafe { self.sniffer.get_mut().activate(filter) }
     }
 
     /// Stops the sniffer from capturing packets.
@@ -133,10 +123,8 @@ impl Sniffer {
     /// available, the behavior and documentation of this method will be updated appropriately.
     ///
     pub fn deactivate(&mut self) -> io::Result<()> {
-        self.inner.deactivate()
+        unsafe { self.sniffer.get_mut().deactivate() }
     }
-
-    // TODO: ^ since Solaris/IllumOS support PF_PACKET, it's actually the case that they *will*
 
     /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
     ///
@@ -145,7 +133,7 @@ impl Sniffer {
     /// a packet.
     #[inline]
     pub fn nonblocking(&self) -> io::Result<bool> {
-        self.inner.nonblocking()
+        self.sniffer.get_ref().nonblocking()
     }
 
     /// Enables or disables nonblocking I/O for the given socket.
@@ -155,8 +143,10 @@ impl Sniffer {
     /// a packet.
     #[inline]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        self.inner.set_nonblocking(nonblocking)
+        self.sniffer.get_ref().set_nonblocking(nonblocking)
     }
+
+    // TODO: `sendmsg`, `recvmsg` implementations that return additional data
 
     /// Send a packet out on the [`Interface`] the `Sniffer` is associated with.
     ///
@@ -166,11 +156,23 @@ impl Sniffer {
     /// A `Sniffer` does not need to be activated (see [`activate()`](Self::activate)) to send
     /// packets.
     #[inline]
-    pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.send(buf)
+    pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
+        self.send_impl(buf).await
     }
 
-    // TODO: `sendmsg`, `recvmsg` implementations that return additional data
+    #[cfg(not(target_os = "windows"))]
+    #[inline]
+    async fn send_impl(&self, buf: &[u8]) -> io::Result<usize> {
+        self.sniffer.write_with(|inner| inner.send(buf)).await
+    }
+
+    #[cfg(target_os = "windows")]
+    #[inline]
+    async fn send_impl(&self, buf: &[u8]) -> io::Result<usize> {
+        let arc = self.sniffer.clone();
+        let buf = buf.to_owned();
+        async_std::task::spawn_blocking(move || arc.get_ref().send(buf.as_slice())).await
+    }
 
     /// Receive a packet from the [`Interface`] the `Sniffer` is listening on.
     ///
@@ -178,66 +180,36 @@ impl Sniffer {
     /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
     /// fail with an error of kind [`io::ErrorKind::NotConnected`].
     #[inline]
-    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.recv(buf)
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.recv_impl(buf).await
     }
 
-    /// Receive a zero-copy packet from the [`Interface`] the `Sniffer` is listening on.
-    ///
-    /// The `Sniffer` must be activated prior to receiving packets. Any attempt to receive a packet
-    /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
-    /// fail with an error of kind [`io::ErrorKind::NotConnected`].
-    #[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-    #[inline]
-    pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        Some(RxFrame {
-            inner: self.inner.mapped_recv()?,
+    #[cfg(not(target_os = "windows"))]
+    pub async fn recv_impl(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.sniffer.read_with(|inner| inner.recv(buf)).await
+    }
+
+    #[cfg(target_os = "windows")]
+    pub async fn recv_impl(&self, buf: &mut [u8]) -> io::Result<usize> {
+        // Prepare to share ownership of `Sniffer` with a blocking thread
+        let arc = self.sniffer.clone();
+        let buflen = buf.len();
+
+        // Run `recv()` in a blocking thread
+        let (res, data) = async_std::task::spawn_blocking(move || {
+            let mut buf = vec![0; buflen];
+            let res = arc.get_ref().recv(buf.as_mut_slice());
+            (res, buf)
         })
+        .await;
+
+        // Copy data output from the blocking thread to `buf`
+        match res {
+            Ok(len) => {
+                buf[..len].copy_from_slice(&data[..len]);
+                Ok(len)
+            }
+            err => err,
+        }
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-impl AsRawFd for Sniffer {
-    #[inline]
-    fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-impl AsFd for Sniffer {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.inner.as_fd()
-    }
-}
-
-/// A packet frame holding a single received zero-copy packet.
-#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-pub struct RxFrame<'a> {
-    #[cfg(not(doc))]
-    inner: RxFrameImpl<'a>,
-    #[cfg(doc)]
-    _phantom: PhantomData<&'a ()>,
-}
-
-#[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
-impl RxFrame<'_> {
-    /// A slice to the underlying zero-copy packet.
-    ///
-    /// Once a packet is finished with, simply dropping the `RxFrame` will lead to the packet frame
-    /// being correctly marked for the kernel to use for future packets.
-    pub fn data(&self) -> &[u8] {
-        self.inner.data()
-    }
-
-    /// A mutable slice to the underlying zero-copy packet.
-    ///
-    /// Any desired modifications may be performed on the packet safely; once a packet is finished
-    /// with, simply dropping the `RxFrame` will lead to the packet frame being correctly marked
-    /// for the kernel to use for future packets.
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        self.inner.data_mut()
-    }
-
-    // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
 }

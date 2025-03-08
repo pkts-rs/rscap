@@ -11,7 +11,7 @@
 //! Link-layer packet capture/transmission utilities.
 //!
 
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::{io, mem, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
@@ -1154,6 +1154,13 @@ impl AsRawFd for L2Socket {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+impl AsFd for L2Socket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
+
 /// A link-layer socket with zero-copy packet transmission and reception.
 pub struct L2MappedSocket {
     socket: L2Socket,
@@ -1579,6 +1586,13 @@ impl AsRawFd for L2MappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl AsFd for L2MappedSocket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.socket.fd) }
     }
 }
 

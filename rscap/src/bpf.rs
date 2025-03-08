@@ -23,7 +23,7 @@ pub use l2::{RxBlock, RxFrame, RxFrameIter, RxMappedBpf, RxRing};
 
 use std::io;
 #[cfg(not(target_os = "windows"))]
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 use crate::{filter::PacketFilter, Interface};
 
@@ -117,6 +117,13 @@ impl SnifferImpl {
 impl AsRawFd for SnifferImpl {
     fn as_raw_fd(&self) -> RawFd {
         self.bpf.as_raw_fd()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl AsFd for SnifferImpl {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.bpf.as_fd()
     }
 }
 

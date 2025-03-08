@@ -11,9 +11,7 @@
 use std::ffi::{CString, OsStr};
 use std::mem;
 #[cfg(unix)]
-use std::os::fd::AsRawFd;
-#[cfg(unix)]
-use std::os::fd::RawFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(target_os = "freebsd")]
@@ -742,6 +740,13 @@ impl AsRawFd for Bpf {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.fd
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl AsFd for Bpf {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
 }
 
