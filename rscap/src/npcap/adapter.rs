@@ -517,7 +517,6 @@ impl NpcapAdapter {
             written
         };
 
-        // This is `Ordering::Release` so that
         self.pkt_ctx.outstanding.fetch_sub(1, Ordering::Relaxed);
 
         Ok(written)
