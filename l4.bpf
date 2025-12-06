@@ -1,0 +1,127 @@
+"(tcp or udp or sctp) and ((src host 1.1.1.1 and dst host 8.8.8.8) or (src host 1:2:3:4:5:6:7:8 and dst host 4:4:4:4:4:4:4:4)) and src port 8080 and dst port 4242"
+
+NOTE: BPF supports (limited) loops. The tcpdump `protochain` command for IPv6 enables filtering protocol after all the IPv6 headers have been traversed; this is important for full coverage. It doesn't seem to support *all* IPv6 headers though; notably, the Mobility Header and both Destination Options header numbers are missing (see https://www.cisco.com/en/US/technologies/tk648/tk872/technologies_white_paper0900aecd8054d37d.html).
+
+
+Special protocols: TCP, UDP, DCCP, SCTP, UDP-Lite (6, 17, 33, 132, 136)
+
+1. IPv4 || IPv6 || Any
+
+2. User-specified protocol || Portful protocol || Any
+
+3. 
+
+
+
+[23] -> #poff + 11
+
+(000) ld       proto
+(001) jeq      #0x800           jt 2	jf ipv6     ; if IPv6-only, change to jt ipv6
+(002) ld       poff
+(003) add      #0x9                          ; Get the protocol index
+(004) tax
+(005) ldh      %x
+(006) jeq      #0x6             jt 11	jf 4 ; if specific proto, change to #0x<proto> and jf fail; if any, change to jf 11
+(007) jeq      #0x11            jt 11   jf 5
+(008) jeq      #0x21            jt 11	jf 6 
+(009) jeq      #0x84            jt 11	jf 7 
+(010) jeq      #0x88            jt 11   jf fail
+
+Address cases:
+a. src=A && dst=B (local: Some, remote: Some, direction: Outgoing || Incoming)
+b. (src=A && dst=B) || (src=B && dst=A) (local: Some, remote: Some, direction: Bidirectional)
+c. src=A || dst=A (local: Some, remote: None, direction: Bidirectional) || (local: None, remote: Some, direction: Bidirectional)
+d. src=A (local: Some, remote: None, direction: Outgoing) || (local: None, remote: Some, direction: Incoming)
+e. dst=A (local: None, remote: Some, direction: Outgoing) || (local: Some, remote: None, direction: Incoming)
+f. <null> (local: None, remote: None, direction: any)
+
+; Decision tree: (f. is an immediate Success)
+; 1. src=A ? 2 : 3          // success leaf: c, d | fail leaf: a
+; 2. dst=B ? Success : Fail // success leaf: a, b | fail leaf: a, b
+; 3. dst=A ? 4 : Fail       // success leaf: c, e | fail leaf: c, e
+; 4. src=B ? Success : Fail // success leaf: b    | fail leaf: b
+
+
+; Check if src=A
+(011) ld       [x + 3]
+(012) jeq      #0x10101010      jt 13   jf 15
+(013) ld       [x + 7]
+(014) jeq      #0x80808080      jt 19   jf fail
+(015) ld       [x + 7]
+(016) jeq      #0x10101010      jt 17   jf fail
+(017) ld       [x + 3]
+(018) jeq      #0x80808080      jt 19   jf fail
+; src/dst addresses matched in some way; now check port numbers
+(019) ld 
+
+
+(013) jeq      #0x80808080      jt 14   jf fail ; replace with `remote` (depending on direction)
+; AND path
+(014) ld       [x + 7]
+(015) jeq      #0x80808080      jt 20   jf 16 ; if only one direction, jf fail; replace with `remote` (depending on direction)
+(016) jeq      #0x10101010      jt 20   jf fail
+; OR path--useed only when local is Some, remote is None and 
+(017) ld       [x + 7]
+(018) jeq      #0x80808080      jt 17   jf 16 ; if only one direction, jf fail; replace with `remote` (depending on direction)
+(019) jeq      #0x10101010      jt 17   jf fail
+
+
+
+(007) jeq      #0x1010101       jt 8	jf 54
+(008) ld       [30]
+(009) jeq      #0x8080808       jt 10	jf 54
+(010) ldb      [23]
+(011) jeq      #0x84            jt 14	jf 12
+(012) jeq      #0x6             jt 14	jf 13
+(013) jeq      #0x11            jt 14	jf 54
+(014) ldh      [20]
+(015) jset     #0x1fff          jt 54	jf 16
+(016) ldxb     4*([14]&0xf)
+(017) ldh      [x + 14]
+(018) jeq      #0x1f90          jt 19	jf 54
+(019) ldh      [x + 16]
+(020) jeq      #0x1092          jt 53	jf 54
+
+ipv6:
+(021) jeq      #0x86dd          jt 22	jf 54 ; if IPv4-only, change to jt 54
+(022) ldb      [20]
+(023) jeq      #0x6             jt 29	jf 24
+(024) jeq      #0x2c            jt 25	jf 27
+(025) ldb      [54]
+(026) jeq      #0x6             jt 29	jf 27
+(027) jeq      #0x11            jt 29	jf 28
+(028) jeq      #0x84            jt 29	jf 54
+(029) ld       [22]
+(030) jeq      #0x10002         jt 31	jf 54
+(031) ld       [26]
+(032) jeq      #0x30004         jt 33	jf 54
+(033) ld       [30]
+(034) jeq      #0x50006         jt 35	jf 54
+(035) ld       [34]
+(036) jeq      #0x70008         jt 37	jf 54
+(037) ld       [38]
+(038) jeq      #0x40004         jt 39	jf 54
+(039) ld       [42]
+(040) jeq      #0x40004         jt 41	jf 54
+(041) ld       [46]
+(042) jeq      #0x40004         jt 43	jf 54
+(043) ld       [50]
+(044) jeq      #0x40004         jt 45	jf 54
+(045) ldb      [20]
+(046) jeq      #0x84            jt 49	jf 47
+(047) jeq      #0x6             jt 49	jf 48
+(048) jeq      #0x11            jt 49	jf 54
+(049) ldh      [54]
+(050) jeq      #0x1f90          jt 51	jf 54
+(051) ldh      [56]
+(052) jeq      #0x1092          jt 53	jf 54
+success:
+(053) ret      #262144
+fail:
+(054) ret      #0
+
+
+
+
+
+

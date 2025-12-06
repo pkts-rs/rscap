@@ -39,6 +39,18 @@ impl SnifferWrapper {
     }
 }
 
+// TODO: in the (distant) future, implement an `AsyncAnySniffer` (name can be different) that
+// listens on all devices simultaneously. Would specifically support:
+// - capturing on all devices (not just for Linux, but for MacOS/*BSD/Windows)
+// - monitoring new device creation and adding device to capture new interfaces dynamically
+// - capturing on a specific list of user-inputted device names, or monitoring all devices except
+//   for specific device names
+//
+// This would be made possible via PF_ROUTE/RTNETLINK sockets in MacOS/*BSD, and the virtual `any`
+// interface (if_index = 0) for Linux. Dunno how it would work for Windows; someone said on Stack
+// overflow that npcap doesn't support monitoring device state changes. :/.
+
+
 /// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
 /// over network interfaces in a manner compatible with `tokio`.
 pub struct AsyncSniffer {

@@ -120,13 +120,13 @@ impl Sniffer {
     /// Stops the sniffer from capturing packets.
     ///
     /// A `Sniffer` may have outstanding packets in its buffers at the time this method is called.
-    /// These packets can be retrieved via consecutive calls to [`recv()`](Self::recv); once all
-    /// outstanding packets have been received, `recv()` will return an error of kind
-    /// [`io::ErrorKind::NotConnected`]. This behavior is consistent for both nonblocking and
-    /// blocking modes of operation.
+    /// On some platforms, these packets can be retrieved via consecutive calls to
+    /// [`recv()`](Self::recv); once all outstanding packets have been received, `recv()` will
+    /// return an error of kind [`io::ErrorKind::NotConnected`]. This behavior is consistent across
+    /// both nonblocking and blocking modes of operation.
     ///
-    /// **WARNING:** the above behavior is not yet guaranteed across operating systems--Linux, MacOS
-    /// and FreeBSD correctly retain outstanding packets when `deactivate()` is called, whereas all
+    /// **WARNING:** the above behavior is not yet guaranteed across all operating systems--while
+    /// Linux, MacOS and FreeBSD correctly retain outstanding packets when `deactivate()` is called,
     /// other operating systems (Windows, other *BSD variants, Solaris/IllumOS) flush outstanding
     /// packets from their buffers on deactivation. This is due to fundamental limitations in the
     /// packet capture APIs available on these platforms. If/when this functionality is made

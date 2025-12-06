@@ -12,6 +12,8 @@
 //!
 //!
 
+use std::marker::PhantomData;
+
 /// Information on packets generally received/dropped over a sniffing interface.
 #[derive(Clone, Debug)]
 pub struct PacketStatistics {
@@ -35,12 +37,13 @@ impl PacketStatistics {
 
 /// A BPF filter program.
 #[repr(C)]
-pub struct BpfProgram {
+pub struct BpfProgram<'a> {
     #[cfg(target_os = "windows")]
     bf_len: u32,
     #[cfg(not(target_os = "windows"))]
     bf_len: u16,
     bf_insns: *mut BpfInstruction,
+    _phantom: PhantomData<&'a ()>,
 }
 
 /// Represents a single machine instruction for a BPF program.
@@ -75,7 +78,7 @@ impl PacketFilter {
     /// be taken to ensure that mutable aliasing rules are not violated. Using the struct for
     /// `SO_ATTACH_FILTER` on a socket is a safe use case.
     #[inline]
-    pub unsafe fn as_bpf_program(&mut self) -> BpfProgram {
+    pub unsafe fn as_bpf_program(&mut self) -> BpfProgram<'_> {
         #[cfg(target_os = "windows")]
         let bf_len = self.filter.len() as u32;
         #[cfg(not(target_os = "windows"))]
@@ -84,6 +87,7 @@ impl PacketFilter {
         BpfProgram {
             bf_len,
             bf_insns: self.filter.as_mut_ptr(),
+            _phantom: Default::default(),
         }
     }
 

@@ -743,6 +743,17 @@ impl RxFrame<'_> {
         UNIX_EPOCH + Duration::new(self.header.tp_sec as u64, self.header.tp_nsec)
     }
 
+    // ARPHRD_ETHER
+    // This can be retrieved using `hatype` in a BPF program
+    // This is SUUUPER important for linux, as a PF_PACKET socket can be bound to all interfaces (if_index == 0)
+    // and therefore receive ethernet frames from multiple differing hardware interfaces (e.g., bluetooth, wifi, LAN).
+    // `proto` and `poff` can respectively be used to get the network protocol and the offset to its first byte,
+    // respectively. These three enable filtering by specific data link type, or else handling of arbitrary data link
+    // types by jumping straight to L3.
+
+
+    
+
     /// The Layer 2 socket address of the received packet.
     #[inline]
     pub fn sockaddr_ll(&self) -> libc::sockaddr_ll {

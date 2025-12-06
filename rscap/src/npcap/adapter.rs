@@ -214,7 +214,7 @@ impl NpcapAdapter {
     ///
     /// This method should not need to be called during general active capture; Raw/Packet sockets
     /// internally use a ring buffer, so if more packets are received than the application can
-    /// handle within a given time frame then oldsockets will be automatically flushed by the ring
+    /// handle within a given time frame then old packets will be automatically flushed by the ring
     /// buffer. **However**, this method is very important when it comes to applying a new filter
     /// to an active socket or changing the `Interface`/protocol an active socket is bound to
     /// (see [`set_filter()`](Self::set_filter) for more details on this).
@@ -236,7 +236,7 @@ impl NpcapAdapter {
         loop {
             // This is nonblocking by default
             match unsafe { self.npcap.receive_packet(self.adapter, self.pkt_ctx.packet) } {
-                false => break, // TODO: check return value here
+                false => break, // TODO: check return value here?
                 true => (),
             }
         }
@@ -311,7 +311,7 @@ impl NpcapAdapter {
         //    but `npcap` fundamentally uses memory-mapped buffers as its underlying method of
         //    transport. Thus, we need a way of handling accesses/updates to the buffer in a
         //    thread-safe way.
-        // 2. We can't use any synchronization primitives that block. Async runimes offer their
+        // 2. We can't use any synchronization primitives that block. Async runtimes offer their
         //    own version of primitives that are safe to use, but using those would bind this
         //    function to a specific `async` backend.
         // 3. We'd ideally like multiple tasks to be able to read packets concurrently when more
@@ -359,7 +359,7 @@ impl NpcapAdapter {
                     // of execution cycles despite being ready to run for this to ever be remotely
                     // possible. Given that the tasks consuming tickets would be looping through
                     // polling for readiness on the socket each time they consumed a ticket, I find
-                    // this case to be impossible enough to not be a worry. Someone may prove me
+                    // this case to be improbable enough to not be a worry. Someone may prove me
                     // wrong in this with a concrete counterexample; if so, I'll happily revise this
                     // code.
                     self.pkt_ctx.ticket_info.store(0, Ordering::Relaxed);
@@ -500,8 +500,8 @@ impl NpcapAdapter {
         Ok(written)
     }
 
-    /// Configures the number of times a packet written to the interface via `send()` will b
-    /// repeated.
+    /// Configures the number of times a packet written to the interface via `send()` will
+    /// be repeated.
     pub fn set_repeat_send(&self, num_repeats: u32) -> io::Result<()> {
         let num_repeats =
             libc::c_int::try_from(num_repeats).map_err(|_| io::ErrorKind::InvalidInput)?;
@@ -530,8 +530,8 @@ impl NpcapAdapter {
         }
 
         // Safety: `send_packet()` is thread-safe so long as `Packet`s are not shared.
-        // BUG: this technically blocks regardless of blocking/nonblocking mode.
-        // This is an issue in npcap that will require an API addition to resolve.
+        // BUG: this technically blocks regardless of blocking/nonblocking mode. This is an issue
+        // in npcap that will require an API addition on their end to resolve.
         let res = unsafe { self.npcap.send_packet(self.adapter, packet) };
 
         unsafe {

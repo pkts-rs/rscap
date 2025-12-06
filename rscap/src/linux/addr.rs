@@ -27,9 +27,12 @@ use pkts_common::Buffer;
 ///
 /// This value corresponds directly to `libc::ETH_P_*` protocol specifier values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum L2Protocol {
     All,
-    Ip,
+    Ipv4,
+    Arp,
+    Ipv6,
     Other(u16),
 }
 
@@ -38,7 +41,9 @@ impl From<u16> for L2Protocol {
     fn from(value: u16) -> Self {
         match value as i32 {
             libc::ETH_P_ALL => L2Protocol::All,
-            libc::ETH_P_IP => L2Protocol::Ip,
+            libc::ETH_P_IP => L2Protocol::Ipv4,
+            libc::ETH_P_ARP => L2Protocol::Arp,
+            libc::ETH_P_IPV6 => L2Protocol::Ipv6,
             _ => L2Protocol::Other(value),
         }
     }
@@ -49,7 +54,9 @@ impl From<L2Protocol> for u16 {
     fn from(value: L2Protocol) -> Self {
         match value {
             L2Protocol::All => libc::ETH_P_ALL as u16,
-            L2Protocol::Ip => libc::ETH_P_IP as u16,
+            L2Protocol::Ipv4 => libc::ETH_P_IP as u16,
+            L2Protocol::Arp => libc::ETH_P_ARP as u16,
+            L2Protocol::Ipv6 => libc::ETH_P_IPV6 as u16,
             L2Protocol::Other(val) => val,
         }
     }
@@ -317,7 +324,7 @@ impl TryFrom<libc::sockaddr_ll> for L2AddrIp {
 impl L2Addr for L2AddrIp {
     #[inline]
     fn protocol(&self) -> L2Protocol {
-        L2Protocol::Ip
+        L2Protocol::Ipv4
     }
 
     #[inline]

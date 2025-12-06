@@ -35,7 +35,6 @@ pub mod l4;
 pub mod mapped;
 #[doc(hidden)]
 pub mod prelude;
-mod sndrcv;
 
 // Temporarily used until they are merged into libc:
 

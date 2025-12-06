@@ -20,7 +20,7 @@ use super::mapped::{
 };
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
-use crate::filter::PacketStatistics;
+use crate::filter::{PacketFilter, PacketStatistics};
 use crate::Interface;
 
 /// A socket that exchanges packets at the network layer.
@@ -47,6 +47,227 @@ impl L3Socket {
             ..=-1 => Err(std::io::Error::last_os_error()),
             fd => Ok(L3Socket { fd }),
         }
+    }
+
+    /// Sets `filter` as the packet filter for the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::InvalidInput] - `filter` was too short (e.g. 0 instructions), too long
+    /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
+    /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
+    /// has invalid instructions.
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
+    /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
+    /// the packet filter.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn set_filter(&self, filter: &mut PacketFilter) -> io::Result<()> {
+        let bpf = unsafe { filter.as_bpf_program() };
+
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_ATTACH_FILTER,
+                    ptr::addr_of!(bpf) as *const libc::c_void,
+                    mem::size_of::<libc::sock_fprog>() as u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            (_, libc::EFAULT) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "internal filter memory corrupt (EFAULT)",
+            )),
+            (_, libc::EINVAL) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid filter program",
+            )),
+            (_, libc::EPERM) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "filter is locked",
+            )),
+            (_, libc::ENOMEM) => Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "insufficient memory to allocate packet filter in operating system",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                io::Error::last_os_error(),
+            )),
+        }
+    }
+
+    /// Removes any filter previously applied to the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [io::ErrorKind::NotFound] - no filter was found for the given socket
+    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// [`lock_filter()`](Self::lock_filter) and cannot have its filter removed.
+    /// - [io::ErrorKind::Other] - some other unexpected error occurred.
+    #[inline]
+    pub fn clear_filter(&self) -> io::Result<()> {
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_DETACH_FILTER,
+                    ptr::null(),
+                    0u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            (_, libc::ENOENT) => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no filter was found for the given socket",
+            )),
+            (_, libc::EPERM) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "filter is locked",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                io::Error::last_os_error(),
+            )),
+        }
+    }
+
+    /// Locks the current filter configuration of the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure this function will return an [`io::Error`] indicating the cause of the error.
+    /// Generally, this method will succeed unless there is some fundamental issue in the `rscap`
+    /// library.
+    pub fn lock_filter(&self) -> io::Result<()> {
+        let lock = 1i32;
+        match unsafe {
+            (
+                libc::setsockopt(
+                    self.fd,
+                    libc::SOL_SOCKET,
+                    libc::SO_LOCK_FILTER,
+                    ptr::addr_of!(lock) as *const libc::c_void,
+                    mem::size_of::<i32>() as u32,
+                ),
+                *libc::__errno_location(),
+            )
+        } {
+            (0, _) => Ok(()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+
+    /// Retrieves the packet filter currently being used by the socket.
+    ///
+    /// # Errors
+    ///
+    /// On failure, one of the following error kinds may be returned:
+    ///
+    /// - [`io::ErrorKind::NotFound`] - no filter (BPF or eBPF) is currently assigned to the socket.
+    /// - [`io::ErrorKind::InvalidData`] - the filter assigned to the socket exceeded an internal
+    /// maximum size limit (currently 128 MiB). This is _highly unlikely_ to ever be returned, as
+    /// the Linux kernel has internal limits on filters that are usually set to far below this.
+    /// - [`io::ErrorKind::Unsupported`] - the filter attached to the socket is an eBPF program
+    /// with no original classical BPF representation.
+    /// - [io::ErrorKind::Other] - an unexpected internal error occurred while attempting to obtain
+    /// the filter program. This error kind may be raised if the packet filter of the socket is
+    /// modified by another thread or process during this method's invocation.
+    ///
+    #[inline]
+    pub fn get_filter(&self) -> io::Result<PacketFilter> {
+        let mut len = 24u32;
+
+        // First, get the length of the filter
+        loop {
+            let mut optlen = len;
+            match unsafe {
+                (
+                    libc::getsockopt(
+                        self.fd,
+                        libc::SOL_SOCKET,
+                        libc::SO_GET_FILTER,
+                        ptr::null_mut(),
+                        ptr::addr_of_mut!(optlen),
+                    ),
+                    *libc::__errno_location(),
+                )
+            } {
+                (0, _) => return Err(io::ErrorKind::NotFound.into()),
+                (-1, libc::EINVAL) => {
+                    // The supplied length was insufficient for the filter program's length
+                    // Retry with 1.5x buffer size. A buffer increase of 1.5x will still lead to
+                    // the maximum size being reached within 40 `setsockopt` calls
+                    len = len + (len >> 1);
+
+                    if len > 0x8000000 {
+                        // 128 MiB
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "excessively large BPF program detected",
+                        ));
+                    }
+                }
+                (-1, libc::EACCES) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "attached filter has no classical BPF representation",
+                    ))
+                }
+                (-1, libc::EFAULT) => break,
+                (_, errno) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "unexpected error received from `getsockopt()` (errno {}",
+                            errno
+                        ),
+                    ))
+                }
+            }
+        }
+
+        // Now allocate the filter buffer
+        let mut filter = Vec::new();
+        filter.reserve_exact(len as usize);
+        let mut actual_len = len;
+
+        unsafe {
+            if libc::getsockopt(
+                self.fd,
+                libc::SOL_SOCKET,
+                libc::SO_GET_FILTER,
+                filter.as_mut_ptr() as *mut libc::c_void,
+                ptr::addr_of_mut!(actual_len),
+            ) != 0
+                || actual_len > len
+            {
+                let errno = *libc::__errno_location();
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "internal error in correctly estimating filter buffer size (errno {}",
+                        errno
+                    ),
+                ));
+            }
+
+            filter.set_len(actual_len as usize);
+        }
+
+        Ok(PacketFilter::from_vec(filter))
     }
 
     /// Bind the network-layer socket to a particular protocol/address and interface and begin
@@ -104,6 +325,15 @@ impl L3Socket {
             0 => Ok(()),
             _ => Err(io::Error::last_os_error()),
         }
+    }
+
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        let flags = unsafe { libc::fcntl(self.fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(flags & libc::O_NONBLOCK > 0)
     }
 
     /// Moves the network-layer socket's behavior in or out of blocking mode.

@@ -59,7 +59,7 @@ impl L2Socket {
     /// (> 4096 instructions) or invalid in some other way. The absence of this error _does not_
     /// guarantee that the filter has valid instructions, but it _may_ be present if the filter
     /// has invalid instructions.
-    /// - [io::ErrorKind::PermissionDenied] - the filter was previously locked using
+    /// - [io::ErrorKind::PermissionDenied] - the socket's filter was previously locked using
     /// [`lock_filter()`](Self::lock_filter) and cannot have its filter replaced.
     /// - [io::ErrorKind::OutOfMemory] - the operating system had insufficent memory to allocate
     /// the packet filter.
