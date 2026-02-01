@@ -182,7 +182,7 @@ impl Interface {
     #[cfg(not(target_os = "windows"))]
     pub fn from_index(if_index: u32) -> io::Result<Self> {
         let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
-        match unsafe { libc::if_indextoname(if_index, name.as_mut_ptr() as *mut i8) } {
+        match unsafe { libc::if_indextoname(if_index, name.as_mut_ptr() as *mut _) } {
             ptr if ptr.is_null() => Err(io::Error::last_os_error()),
             _ => Ok(Self { name }),
         }
@@ -192,7 +192,7 @@ impl Interface {
     #[inline]
     #[cfg(not(target_os = "windows"))]
     pub fn index(&self) -> io::Result<u32> {
-        match unsafe { libc::if_nametoindex(self.name.as_ptr() as *const i8) } {
+        match unsafe { libc::if_nametoindex(self.name.as_ptr() as *const _) } {
             0 => Err(io::Error::last_os_error()),
             i => Ok(i),
         }
@@ -231,7 +231,7 @@ impl Interface {
         use std::ptr;
 
         let mut ifr = libc::ifreq {
-            ifr_name: array::from_fn(|i| self.name[i] as i8),
+            ifr_name: array::from_fn(|i| self.name[i] as _),
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_hwaddr: libc::sockaddr {
                     sa_family: 0,
@@ -245,7 +245,7 @@ impl Interface {
             return Err(io::Error::last_os_error());
         }
 
-        if unsafe { libc::ioctl(fd, libc::SIOCGIFHWADDR, ptr::addr_of_mut!(ifr)) } < 0 {
+        if unsafe { libc::ioctl(fd, libc::SIOCGIFHWADDR as _, ptr::addr_of_mut!(ifr)) } < 0 {
             let err = io::Error::last_os_error();
             unsafe {
                 libc::close(fd);
