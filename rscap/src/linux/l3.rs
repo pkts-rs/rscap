@@ -254,7 +254,7 @@ impl L3Socket {
 
             let iface = self.interface()?;
 
-            let mut if_name = [0i8; libc::IF_NAMESIZE];
+            let mut if_name = [0; libc::IF_NAMESIZE];
             let if_name_ptr = if_name.as_mut_ptr();
 
             let res = unsafe { libc::if_indextoname(iface.index()?, if_name_ptr) };
@@ -265,12 +265,12 @@ impl L3Socket {
             let mut ifreq = libc::ifreq {
                 ifr_name: if_name,
                 ifr_ifru: libc::__c_anonymous_ifr_ifru {
-                    ifru_data: ptr::addr_of_mut!(hwtstamp_config) as *mut i8,
+                    ifru_data: ptr::addr_of_mut!(hwtstamp_config) as *mut _,
                 },
             };
 
             let res =
-                unsafe { libc::ioctl(self.fd, libc::SIOCSHWTSTAMP, ptr::addr_of_mut!(ifreq)) };
+                unsafe { libc::ioctl(self.fd, libc::SIOCSHWTSTAMP as _, ptr::addr_of_mut!(ifreq)) };
             if res != 0 {
                 return Err(io::Error::last_os_error());
             }
