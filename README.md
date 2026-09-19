@@ -1,6 +1,6 @@
 # rscap
 
-[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.74+]][Rust 1.74]
+[![Latest Version]][crates.io] [![Documentation]][docs.rs] [![rscap: rustc 1.85+]][Rust 1.85]
 
 [Latest Version]: https://img.shields.io/crates/v/rscap.svg
 [crates.io]: https://crates.io/crates/rscap
