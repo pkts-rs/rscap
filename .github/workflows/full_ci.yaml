@@ -30,7 +30,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - 1.74.0
+          - 1.85.0
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust toolchain
@@ -49,7 +49,7 @@ jobs:
       matrix:
         target:
           - { toolchain: stable, os: macos-14 }
-          - { toolchain: 1.74.0, os: macos-14 }
+          - { toolchain: 1.85.0, os: macos-14 }
     runs-on: ${{ matrix.target.os }}
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
 
   build_channels_windows:
     name: Build Channels Windows
-    runs-on: windows-2019
+    runs-on: windows-latest
     env:
       OS: windows
       RUSTFLAGS: -D warnings
@@ -69,7 +69,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - 1.74.0
+          - 1.85.0
         target:
           - x86_64-pc-windows-msvc
     steps:
