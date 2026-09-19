@@ -8,23 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::ffi::{CString, OsStr};
+use std::ffi::CStr;
+use std::fs::{File, OpenOptions};
+use std::io::{IoSliceMut, Read, Write};
 use std::mem;
 #[cfg(unix)]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
 #[cfg(target_os = "freebsd")]
 use std::slice;
 
 #[cfg(any(doc, target_os = "freebsd"))]
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::{array, cmp, io, ptr};
+use std::{cmp, io, ptr};
 
 use crate::filter::{PacketFilter, PacketStatistics};
 use crate::Interface;
 
-const BPF_PATH: &[u8] = b"/dev/bpf\0";
 /// `L2Socket::new()` will only iterate through up to this many BPF device names before failing.
 const MAX_OPEN_BPF: u32 = 1024;
 
@@ -229,41 +228,48 @@ impl ReceiveIndex {
 
 /// A BPF device, capable of spoofing or sniffing packets on a specified interface.
 pub struct Bpf {
-    #[cfg(unix)]
-    fd: RawFd,
+    inner: File,
 }
 
 impl Bpf {
     /// Creates a new BPF instance with the given access mode.
     pub fn new(access_mode: BpfAccess) -> io::Result<Self> {
-        let mode = match access_mode {
-            BpfAccess::ReadOnly => libc::O_RDONLY,
-            BpfAccess::ReadWrite => libc::O_RDWR,
-            BpfAccess::WriteOnly => libc::O_WRONLY,
+        let mut file = match OpenOptions::new()
+            .read(matches!(
+                access_mode,
+                BpfAccess::ReadOnly | BpfAccess::ReadWrite
+            ))
+            .write(matches!(
+                access_mode,
+                BpfAccess::WriteOnly | BpfAccess::ReadWrite
+            ))
+            .open("/dev/bpf")
+        {
+            Ok(file) => Some(file),
+            Err(e) if e.raw_os_error() == Some(libc::ENOENT) => None,
+            Err(e) => return Err(e),
         };
-
-        let mut fd = unsafe { libc::open(BPF_PATH.as_ptr() as *const i8, mode) };
-        if fd >= 0 {
-            return Ok(Bpf { fd });
-        }
-
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(libc::ENOENT) {
-            return Err(error);
-        }
 
         // `/dev/bpf` isn't available--try `/dev/bpfX`
         // Some net utilities hardcode /dev/bpf0 for use, so we politely avoid it
-        for dev_idx in 1..MAX_OPEN_BPF {
-            let device = CString::new(format!("/dev/bpf{}", dev_idx).into_bytes()).unwrap();
-            fd = unsafe { libc::open(device.as_ptr(), mode) };
-            if fd >= 0 {
-                return Ok(Bpf { fd });
-            }
+        let mut dev_idx = 1;
+        while file.is_none() {
+            match OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(format!("/dev/bpf{}", dev_idx))
+            {
+                Ok(f) => file = Some(f),
+                Err(e) if e.raw_os_error() == Some(libc::EBUSY) => (),
+                Err(e) => return Err(e),
+            };
 
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::EBUSY) {
-                break; // Device wasn't in use, but some other error occurred--return
+            dev_idx += 1;
+            if dev_idx > MAX_OPEN_BPF {
+                return Err(io::Error::new(
+                    io::ErrorKind::QuotaExceeded,
+                    "all avaliable bpf devices were taken",
+                ));
             }
         }
 
@@ -276,9 +282,9 @@ impl Bpf {
 
         let res = unsafe {
             libc::ioctl(
-                self.fd,
+                self.inner.as_raw_fd(),
                 BIOCVERSION,
-                ptr::addr_of_mut!(version) as *mut libc::c_char,
+                (&raw mut version).cast::<libc::c_char>(),
             )
         };
         match res {
@@ -295,7 +301,7 @@ impl Bpf {
     /// Any packet exceeding this length will be truncated to fit within the frame.
     pub fn frame_len(&self) -> io::Result<u32> {
         let mut frame_len: libc::c_uint = 0;
-        let res = unsafe { libc::ioctl(self.fd, BIOCGBLEN, ptr::addr_of_mut!(frame_len)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCGBLEN, &raw mut frame_len) };
         match res {
             0.. => Ok(frame_len),
             _ => Err(io::Error::last_os_error()),
@@ -306,7 +312,7 @@ impl Bpf {
     ///
     /// Any packet exceeding this length will be truncated to fit within the frame.
     pub fn set_frame_len(&self, mut frame_len: u32) -> io::Result<()> {
-        let res = unsafe { libc::ioctl(self.fd, BIOCSBLEN, ptr::addr_of_mut!(frame_len)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSBLEN, &raw mut frame_len) };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -316,7 +322,7 @@ impl Bpf {
     /// Returns the type of the link layer associated with the interface the socket is bound to.
     pub fn link_type(&self) -> io::Result<u16> {
         let mut linktype: u16 = 0;
-        let res = unsafe { libc::ioctl(self.fd, BIOCGDLT, ptr::addr_of_mut!(linktype)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCGDLT, &raw mut linktype) };
         match res {
             0.. => Ok(linktype),
             _ => Err(io::Error::last_os_error()),
@@ -329,7 +335,7 @@ impl Bpf {
     /// not just those destined for it. When this option is used, _any sockets bound to the device_
     /// will receive packets promiscuously, not just the socket that `set_promiscuous()` was called on.
     pub fn set_promiscuous(&self) -> io::Result<()> {
-        let res = unsafe { libc::ioctl(self.fd, BIOCPROMISC) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCPROMISC) };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -342,9 +348,9 @@ impl Bpf {
         unsafe {
             let mut bpf_program = filter.as_bpf_program();
             match libc::ioctl(
-                self.fd,
+                self.inner.as_raw_fd(),
                 BIOCSETF,
-                ptr::addr_of_mut!(bpf_program) as *mut libc::c_void,
+                (&raw mut bpf_program).cast::<libc::c_void>(),
             ) {
                 0.. => Ok(()),
                 _ => Err(io::Error::last_os_error()),
@@ -370,9 +376,9 @@ impl Bpf {
         let mut bpf_program = unsafe { filter.as_bpf_program() };
         match unsafe {
             libc::ioctl(
-                self.fd,
+                self.inner.as_raw_fd(),
                 BIOCSETFNR,
-                ptr::addr_of_mut!(bpf_program) as *mut libc::c_void,
+                (&raw mut bpf_program).cast::<libc::c_void>(),
             )
         } {
             0.. => Ok(()),
@@ -383,9 +389,8 @@ impl Bpf {
     /// Binds the device to the given interface, enabling it to begin receiving packets from that
     /// interface.
     pub fn bind(&self, iface: Interface) -> io::Result<()> {
-        let name = iface.name_raw();
         let mut ifreq = libc::ifreq {
-            ifr_name: array::from_fn(|i| if i < name.len() { name[i] as i8 } else { 0i8 }),
+            ifr_name: iface.name_raw_char(),
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_addr: libc::sockaddr {
                     sa_family: 0,
@@ -395,7 +400,7 @@ impl Bpf {
             },
         };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCSETIF, ptr::addr_of_mut!(ifreq)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSETIF, &raw mut ifreq) };
         match res {
             0 => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -405,22 +410,26 @@ impl Bpf {
     /// Returns the interface the device is bound to.
     pub fn interface(&self) -> io::Result<Interface> {
         let mut ifreq = libc::ifreq {
-            ifr_name: [0i8; 16],
+            ifr_name: [0; 16],
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
                 ifru_addr: libc::sockaddr {
                     sa_family: 0,
                     sa_len: 0,
-                    sa_data: [0i8; 14],
+                    sa_data: [0; 14],
                 },
             },
         };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCGETIF, ptr::addr_of_mut!(ifreq)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCGETIF, &raw mut ifreq) };
         match res {
             0 => {
-                let name: [u8; 16] = array::from_fn(|i| ifreq.ifr_name[i] as u8);
-                let end = name.partition_point(|&x| x != 0);
-                Interface::new(OsStr::from_bytes(&name[..end]))
+                let if_bytes = ifreq.ifr_name.map(|c| c as u8);
+                let cstr = match CStr::from_bytes_until_nul(if_bytes.as_slice()) {
+                    Ok(c) => c,
+                    Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidInput, e)),
+                };
+
+                Interface::from_cstr(cstr)
             }
             _ => Err(io::Error::last_os_error()),
         }
@@ -433,7 +442,7 @@ impl Bpf {
             bs_drop: 0,
         };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCGSTATS, ptr::addr_of_mut!(stats)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCGSTATS, &raw mut stats) };
         match res {
             0.. => Ok(PacketStatistics {
                 received: stats.bs_recv,
@@ -447,7 +456,7 @@ impl Bpf {
     pub fn set_immediate(&self, immediate: bool) -> io::Result<()> {
         let mut immediate: libc::c_uint = if immediate { 1 } else { 0 };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCIMMEDIATE, ptr::addr_of_mut!(immediate)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCIMMEDIATE, &raw mut immediate) };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -460,7 +469,7 @@ impl Bpf {
     /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
     /// a packet.
     pub fn nonblocking(&self) -> io::Result<bool> {
-        let flags = unsafe { libc::fcntl(self.fd, libc::F_GETFL) };
+        let flags = unsafe { libc::fcntl(self.inner.as_raw_fd(), libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -474,7 +483,7 @@ impl Bpf {
     /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
     /// a packet.
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        let flags = unsafe { libc::fcntl(self.fd, libc::F_GETFL) };
+        let flags = unsafe { libc::fcntl(self.inner.as_raw_fd(), libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -484,7 +493,7 @@ impl Bpf {
             false => flags & !libc::O_NONBLOCK,
         };
 
-        if unsafe { libc::fcntl(self.fd, libc::F_SETFL, flags) } < 0 {
+        if unsafe { libc::fcntl(self.inner.as_raw_fd(), libc::F_SETFL, flags) } < 0 {
             return Err(io::Error::last_os_error());
         } else {
             Ok(())
@@ -501,7 +510,13 @@ impl Bpf {
     pub fn set_feedback(&self, allow_feedback: bool) -> io::Result<()> {
         let mut allow_feedback: libc::c_int = if allow_feedback { 1 } else { 0 };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCFEEDBACK, ptr::addr_of_mut!(allow_feedback)) };
+        let res = unsafe {
+            libc::ioctl(
+                self.inner.as_raw_fd(),
+                BIOCFEEDBACK,
+                &raw mut allow_feedback,
+            )
+        };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -511,7 +526,7 @@ impl Bpf {
     /// Locks the socket from further configuration changes.
     #[inline]
     pub fn lock(&self) -> io::Result<()> {
-        let res = unsafe { libc::ioctl(self.fd, BIOCLOCK) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCLOCK) };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -521,86 +536,63 @@ impl Bpf {
     /// Send a link-layer packet on the interface bound to the given socket.
     #[inline]
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        let res = unsafe { libc::write(self.fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
-        match res {
-            0.. => Ok(res as usize),
-            _ => Err(io::Error::last_os_error()),
-        }
+        (&self.inner).write(buf)
     }
 
     /// Receive a link-layer packet.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        // TODO: tweak this value (and even make it OS-specific)
         let mut header = [0u8; mem::size_of::<bpf_xhdr>()];
         let mut end_padding = [0u8; 0x40];
 
         let mut iov = [
-            libc::iovec {
-                iov_base: header.as_mut_ptr() as *mut libc::c_void,
-                iov_len: header.len(),
-            },
-            libc::iovec {
-                iov_base: buf.as_mut_ptr() as *mut libc::c_void,
-                iov_len: buf.len(),
-            },
-            libc::iovec {
-                iov_base: end_padding.as_mut_ptr() as *mut libc::c_void,
-                iov_len: end_padding.len(),
-            },
+            IoSliceMut::new(header.as_mut_slice()),
+            IoSliceMut::new(buf),
+            IoSliceMut::new(end_padding.as_mut_slice()),
         ];
 
-        match usize::try_from(unsafe {
-            libc::readv(self.fd, iov.as_mut_ptr(), iov.len() as libc::c_int)
-        }) {
-            Ok(len) => {
-                if len < mem::size_of::<bpf_xhdr>() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "BPF recv() returned insufficient bytes for header",
-                    ));
-                }
-
-                let xhdr_bytes: [u8; mem::size_of::<bpf_xhdr>()] =
-                    header[..mem::size_of::<bpf_xhdr>()].try_into().unwrap();
-                let xhdr: bpf_xhdr = unsafe { mem::transmute_copy(&xhdr_bytes) };
-
-                let caplen = xhdr.bh_caplen as usize;
-                let _datalen = xhdr.bh_datalen as usize;
-                let hdrlen = xhdr.bh_hdrlen as usize;
-
-                // We attempt to anticipate the value of `hdrlen` at compile-time. If our guess
-                // is correct, return the buffer as-is. Otherwise, shift the data so that it is
-                // situated within the return buffer, then return it
-                match hdrlen.cmp(&header.len()) {
-                    cmp::Ordering::Equal => (),
-                    cmp::Ordering::Less => {
-                        // Some bytes of the payload are situated in `header`
-                        let offset = header.len() - hdrlen;
-                        let buf_len = buf.len();
-                        unsafe {
-                            ptr::copy(buf[offset..].as_ptr(), buf.as_mut_ptr(), buf_len - offset)
-                        };
-                        buf[..offset].copy_from_slice(&header[header.len() - offset..]);
-                    }
-                    cmp::Ordering::Greater => {
-                        // Some bytes of the payload are situated in `end_padding`
-                        let offset = hdrlen - header.len();
-                        let buf_len = buf.len();
-
-                        assert!(
-                            offset <= end_padding.len(),
-                            "BPF recv() returned unusually long header padding"
-                        );
-                        unsafe {
-                            ptr::copy(buf.as_ptr(), buf[offset..].as_mut_ptr(), buf.len() - offset)
-                        };
-                        buf[buf_len - offset..].copy_from_slice(&end_padding[..offset]);
-                    }
-                }
-                Ok(cmp::min(caplen, buf.len()))
-            }
-            _ => Err(io::Error::last_os_error()),
+        let len = (&self.inner).read_vectored(&mut iov)?;
+        if len < mem::size_of::<bpf_xhdr>() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "BPF recv() returned insufficient bytes for header",
+            ));
         }
+
+        let xhdr_bytes: [u8; mem::size_of::<bpf_xhdr>()] =
+            header[..mem::size_of::<bpf_xhdr>()].try_into().unwrap();
+        let xhdr: bpf_xhdr = unsafe { mem::transmute_copy(&xhdr_bytes) };
+
+        let caplen = xhdr.bh_caplen as usize;
+        let _datalen = xhdr.bh_datalen as usize;
+        let hdrlen = xhdr.bh_hdrlen as usize;
+
+        // We attempt to anticipate the value of `hdrlen` at compile-time. If our guess
+        // is correct, return the buffer as-is. Otherwise, shift the data so that it is
+        // situated within the return buffer, then return it
+        match hdrlen.cmp(&header.len()) {
+            cmp::Ordering::Equal => (),
+            cmp::Ordering::Less => {
+                // Some bytes of the payload are situated in `header`
+                let offset = header.len() - hdrlen;
+                let buf_len = buf.len();
+                unsafe { ptr::copy(buf[offset..].as_ptr(), buf.as_mut_ptr(), buf_len - offset) };
+                buf[..offset].copy_from_slice(&header[header.len() - offset..]);
+            }
+            cmp::Ordering::Greater => {
+                // Some bytes of the payload are situated in `end_padding`
+                let offset = hdrlen - header.len();
+                let buf_len = buf.len();
+
+                assert!(
+                    offset <= end_padding.len(),
+                    "BPF recv() returned unusually long header padding"
+                );
+                unsafe { ptr::copy(buf.as_ptr(), buf[offset..].as_mut_ptr(), buf.len() - offset) };
+                buf[buf_len - offset..].copy_from_slice(&end_padding[..offset]);
+            }
+        }
+
+        Ok(cmp::min(caplen, buf.len()))
     }
 
     /// Enable memory-mapped I/O for incoming packets.
@@ -613,19 +605,20 @@ impl Bpf {
 
         let ringbuf = unsafe { libc::mmap(ptr::null_mut(), buffer_size * 2, prot, flags, -1, 0) };
         if ringbuf == libc::MAP_FAILED {
-            let errno = unsafe { *libc::__error() };
-            // Clean up socket
-            unsafe { libc::close(self.fd) };
-            return Err(io::Error::from_raw_os_error(errno));
+            return Err(io::Error::last_os_error());
         }
 
         let mut req = bpf_zbuf {
             bz_bufa: ringbuf,
-            bz_bufb: unsafe { (ringbuf as *mut u8).add(buffer_size) as *mut libc::c_void },
+            bz_bufb: unsafe {
+                (ringbuf.cast::<u8>())
+                    .add(buffer_size)
+                    .cast::<libc::c_void>()
+            },
             bz_buflen: buffer_size,
         };
 
-        let res = unsafe { libc::ioctl(self.fd, BIOCSETZBUF, ptr::addr_of_mut!(req)) };
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSETZBUF, &raw mut req) };
         match res {
             0.. => Ok(RxMappedBpf {
                 l2: self,
@@ -634,27 +627,42 @@ impl Bpf {
                 recv_idx: ReceiveIndex::FirstBlock(0),
             }),
             _ => {
-                // Clean up socket and mmap
-                unsafe { libc::close(self.fd) };
+                let err = io::Error::last_os_error();
                 unsafe { libc::munmap(ringbuf, buffer_size * 2) };
-
-                Err(io::Error::from_raw_os_error(unsafe { *libc::__error() }))
+                Err(err)
             }
         }
     }
 }
 
-impl Drop for Bpf {
-    fn drop(&mut self) {
-        unsafe { libc::close(self.fd) };
-    }
-}
-
-#[cfg(target_os = "freebsd")]
+#[cfg(unix)]
 impl AsRawFd for Bpf {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        self.inner.as_raw_fd()
+    }
+}
+
+#[cfg(unix)]
+impl AsFd for Bpf {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+#[cfg(unix)]
+impl FromRawFd for Bpf {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self {
+            inner: File::from_raw_fd(fd),
+        }
+    }
+}
+
+#[cfg(unix)]
+impl IntoRawFd for Bpf {
+    fn into_raw_fd(self) -> RawFd {
+        self.inner.into_raw_fd()
     }
 }
 
@@ -732,21 +740,6 @@ impl Drop for RxMappedBpf {
         unsafe { libc::munmap(self.raw, self.buflen * 2) };
         // close() is called on the fd when the inner l2 socket is dropped
         // It shouldn't matter whether munmap or close is called first
-    }
-}
-
-#[cfg(unix)]
-impl AsRawFd for Bpf {
-    #[inline]
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-impl AsFd for Bpf {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
 }
 
