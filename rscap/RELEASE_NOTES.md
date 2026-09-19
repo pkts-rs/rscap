@@ -1,5 +1,9 @@
 # Release History:
 
+* 0.3.2 (2026-09-19)
+  - Fixed CI builds
+  - Removed platform-specific types
+
 * 0.3.1 (2025-02-14)
   - Resolve bug in `L4Socket` address binding
   - Add sponsors information
