@@ -215,17 +215,6 @@ impl Interface {
         self.name.clone()
     }
 
-    /*
-    /// Returns the raw byte name associated with the given interface.
-    ///
-    /// The returned byte slice contains a single null-terminating character at the end of the slice.
-    #[cfg(not(target_os = "windows"))]
-    pub fn name_raw(&self) -> &[u8] {
-        let end = self.name.partition_point(|&x| x != 0);
-        &self.name[..end]
-    }
-    */
-
     #[cfg(any(doc, target_os = "linux"))]
     pub fn arp_type(&self) -> io::Result<u16> {
         use std::ptr;
