@@ -214,7 +214,7 @@ pub(crate) struct tpacket_req {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct tpacket_req3 {
     pub tp_block_size: libc::c_uint,
     pub tp_block_nr: libc::c_uint,
@@ -361,7 +361,7 @@ pub enum FanoutAlgorithm {
     QueueMapping,
 }
 
-pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024; // Default each buffer of 1MB
+pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 4 * 1024 * 1024; // Default each buffer of 4MB
 
 pub(crate) struct SnifferImpl {
     socket: L2MappedSocket,
@@ -373,18 +373,18 @@ impl SnifferImpl {
         Self::new_with_size(if_name, DEFAULT_DRIVER_BUFFER)
     }
 
-    /// Note that `ring_size` must be greater than or equal to 524288 (512 KiB), and may be
-    /// rounded down to the nearest 512 KiB when allocating buffers.
+    /// Note that `ring_size` must be greater than or equal to 524288 (512 KB), and may be
+    /// rounded down to the nearest 512 KB when allocating buffers.
     #[inline]
     pub fn new_with_size(if_name: Interface, ring_size: usize) -> io::Result<Self> {
         let individual_ring_size = ring_size / 2;
 
-        let units = individual_ring_size / (131072 * 2);
+        let units = individual_ring_size / (262144 * 2);
         if units == 0 {
-            // Need at least 2 blocks, each of size 2*2^16.
+            // Need at least 2 blocks, each of size 2*2^18.
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "ring_size must be >= 524288 (512 KiB)",
+                "ring_size must be >= 512KB",
             ));
         }
 
@@ -395,7 +395,7 @@ impl SnifferImpl {
             ));
         };
 
-        let mut block_size = 131072;
+        let mut block_size = 262144;
         let mut block_cnt = 2;
 
         // Double the block size, and allocate the rest toward block count

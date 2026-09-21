@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::filter::PacketFilter;
 use crate::{Interface, Sniffer};
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(not(doc), all(not(target_os = "windows"), feature = "mio")))]
 use tokio::io::unix::AsyncFd;
 
 /// A convenience type used to make internal operations consistent between Windows and Unix.
@@ -42,7 +42,7 @@ impl SnifferWrapper {
 /// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
 /// over network interfaces in a manner compatible with `tokio`.
 pub struct AsyncSniffer {
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(doc), all(not(target_os = "windows"), feature = "mio")))]
     sniffer: AsyncFd<Sniffer>,
     #[cfg(target_os = "windows")]
     sniffer: SnifferWrapper,

@@ -949,8 +949,8 @@ impl L2Socket {
                 self.fd,
                 libc::SOL_PACKET,
                 crate::linux::PACKET_TX_RING,
-                ptr::addr_of!(req_tx) as *const libc::c_void,
-                mem::size_of::<crate::linux::tpacket_req>() as u32,
+                (&raw const req_tx).cast(),
+                mem::size_of_val(&req_tx) as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -975,7 +975,7 @@ impl L2Socket {
             tp_block_nr: config.block_cnt(),
             tp_frame_size: config.frame_size(),
             tp_frame_nr: config.frame_cnt(),
-            tp_retire_blk_tov: timeout.unwrap_or(0),
+            tp_retire_blk_tov: timeout.unwrap_or(10),
             tp_sizeof_priv: private_size.unwrap_or(0),
             tp_feature_req_word: 0,
         };
@@ -985,7 +985,7 @@ impl L2Socket {
                 self.fd,
                 libc::SOL_PACKET,
                 crate::linux::PACKET_RX_RING,
-                ptr::addr_of!(req_rx) as *const libc::c_void,
+                (&raw const req_rx).cast(),
                 mem::size_of_val(&req_rx) as u32,
             ) != 0
         } {
@@ -1011,7 +1011,7 @@ impl L2Socket {
 
         let mapped = unsafe {
             libc::mmap(
-                ptr::null::<*mut libc::c_void>() as *mut libc::c_void,
+                ptr::null_mut(),
                 map_length,
                 libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED | libc::MAP_LOCKED,
@@ -1042,12 +1042,12 @@ impl L2Socket {
         reserved: Option<u32>,
     ) -> io::Result<L2MappedSocket> {
         self.set_tpacket_v3_opt()?;
+        self.set_tx_ring_opt(config)?;
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, true)?;
-
         let rx_ring = unsafe {
             PacketRxRing::new(
-                mapping as *mut u8,
+                mapping.cast::<u8>(),
                 config,
                 reserved.unwrap_or(0) as usize,
                 OsiLayer::L2,
@@ -1055,7 +1055,7 @@ impl L2Socket {
         };
 
         let tx_ring =
-            unsafe { PacketTxRing::new((mapping as *mut u8).add(config.map_length()), config) };
+            unsafe { PacketTxRing::new((mapping.cast::<u8>()).add(config.map_length()), config) };
 
         // This will immediately wrap around to the first packet due to `frame_offset: None`
         let start_frame = FrameIndex {
@@ -1087,7 +1087,7 @@ impl L2Socket {
         self.set_tx_ring_opt(config)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let tx_ring = unsafe { PacketTxRing::new(mapping as *mut u8, config) };
+        let tx_ring = unsafe { PacketTxRing::new(mapping.cast(), config) };
 
         // This will immediately wrap around to the first packet due to `frame_offset: None`
         let start_frame = FrameIndex {

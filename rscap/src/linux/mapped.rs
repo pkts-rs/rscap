@@ -78,17 +78,10 @@ impl BlockConfig {
             ));
         }
 
-        let Some(frame_cnt_usize) = map_length.checked_div(frame_size as usize) else {
+        let Some(frame_cnt) = (block_size / frame_size).checked_mul(block_cnt) else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "overflowing total frame count",
-            ));
-        };
-
-        let Ok(frame_cnt) = u32::try_from(frame_cnt_usize) else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "overflowing total frame size",
             ));
         };
 

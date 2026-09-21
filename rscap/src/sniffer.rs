@@ -241,3 +241,31 @@ impl RxFrame<'_> {
 
     // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{Interface, Sniffer};
+    use std::net::UdpSocket;
+
+    #[test]
+    fn loopback_recv_single_udp() {
+        let udp1 = UdpSocket::bind("127.0.0.1:9876").unwrap();
+        let udp2 = UdpSocket::bind("127.0.0.1:5432").unwrap();
+
+        let loopback = Interface::loopback().unwrap();
+        let mut sniffer = Sniffer::new(loopback).unwrap();
+        sniffer.activate(None).unwrap();
+
+        let sent = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        udp1.send_to(sent.as_slice(), "127.0.0.1:5432").unwrap();
+
+        let mut recv_buf = [0u8; 131072];
+        let recvd = sniffer.recv(&mut recv_buf).unwrap();
+
+        println!("{:?}", &recv_buf[..recvd]);
+
+        assert_eq!(&recv_buf[recvd - 8..recvd], sent.as_slice());
+        drop(udp2);
+        drop(udp1);
+    }
+}

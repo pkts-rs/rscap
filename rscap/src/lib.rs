@@ -173,6 +173,40 @@ impl Interface {
         todo!()
     }
 
+    #[cfg(not(target_os = "windows"))]
+    pub fn from_cstr(cstr: &CStr) -> io::Result<Self> {
+        let mut name = [0u8; Self::MAX_INTERFACE_NAME_LEN + 1];
+        let b = cstr.to_bytes_with_nul();
+        if b.len() > name.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "interface name too long",
+            ));
+        }
+
+        name[..b.len()].copy_from_slice(b);
+
+        Ok(Interface { name })
+    }
+
+    /// Retrieves the name of the primary loopback interface on the system.
+    pub fn loopback() -> io::Result<Self> {
+        // TODO: right now this is hardcoded by name, but it should really retrieve based on set
+        // flags.
+        #[cfg(target_os = "windows")]
+        {
+            Interface::new("Loopback Pseudo-Interface 1")
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Interface::new("lo")
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        {
+            Interface::new("lo0")
+        }
+    }
+
     /// Returns an `Interface` corresponding to the given interface index.
     ///
     /// # Errors
@@ -213,6 +247,11 @@ impl Interface {
     /// Returns the underlying buffer storing the name associated with the given interface.
     pub fn name_raw(&self) -> [u8; Self::MAX_INTERFACE_NAME_LEN + 1] {
         self.name.clone()
+    }
+
+    /// Returns the underlying buffer storing the name associated with the given interface.
+    pub fn name_raw_char(&self) -> [libc::c_char; Self::MAX_INTERFACE_NAME_LEN + 1] {
+        self.name.map(|c| c as libc::c_char)
     }
 
     #[cfg(any(doc, target_os = "linux"))]
