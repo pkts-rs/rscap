@@ -48,6 +48,10 @@ impl SnifferImpl {
     fn new_impl(iface: Interface) -> io::Result<Self> {
         let bpf = Bpf::new(BpfAccess::ReadWrite)?;
         bpf.flush()?;
+        let len = bpf.set_frame_len(131072)?;
+        bpf.set_immediate(true)?;
+
+        assert!(len == 131072);
         bpf.bind(iface)?;
 
         Ok(Self { bpf })

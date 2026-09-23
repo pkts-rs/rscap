@@ -12,11 +12,13 @@
 //!
 
 use std::os::fd::RawFd;
+use std::ptr::NonNull;
+use std::time::Duration;
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
 use super::mapped::{
-    BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
+    BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame
 };
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
@@ -205,8 +207,8 @@ impl L3Socket {
         let res = unsafe {
             libc::getsockname(
                 self.fd,
-                ptr::addr_of_mut!(sockaddr) as *mut libc::sockaddr,
-                ptr::addr_of_mut!(sockaddr_len),
+                (&raw mut sockaddr).cast(),
+                &raw mut sockaddr_len,
             )
         };
         if res != 0 {
@@ -564,7 +566,7 @@ impl L3Socket {
         &self,
         config: BlockConfig,
         combined_tx_rx: bool,
-    ) -> io::Result<*mut libc::c_void> {
+    ) -> io::Result<NonNull<libc::c_void>> {
         let map_length = if combined_tx_rx {
             config.map_length() * 2
         } else {
@@ -586,7 +588,7 @@ impl L3Socket {
             return Err(io::Error::last_os_error());
         }
 
-        Ok(mapped)
+        Ok(NonNull::new(mapped).unwrap())
     }
 
     /// Enables zero-copy packet transmission and reception for the socket.
@@ -607,32 +609,16 @@ impl L3Socket {
         let mapping = self.mmap_socket(config, true)?;
 
         let rx_ring = unsafe {
-            PacketRxRing::new(
-                mapping as *mut u8,
-                config,
-                reserved.unwrap_or(0) as usize,
-                OsiLayer::L3,
-            )
+            PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize)
         };
 
         let tx_ring =
-            unsafe { PacketTxRing::new((mapping as *mut u8).add(config.map_length()), config) };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
+            unsafe { PacketTxRing::new(mapping.add(config.map_length()).cast(), config) };
 
         Ok(L3MappedSocket {
             socket: self,
             rx_ring,
-            next_rx: start_frame,
             tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
         })
     }
 
@@ -648,21 +634,12 @@ impl L3Socket {
         self.set_tx_ring_opt(config)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let tx_ring = unsafe { PacketTxRing::new(mapping as *mut u8, config) };
+        let tx_ring = unsafe { PacketTxRing::new(mapping.cast(), config) };
 
         // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
-
         Ok(L3TxMappedSocket {
             socket: self,
             tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
         })
     }
 
@@ -681,23 +658,15 @@ impl L3Socket {
 
         let rx_ring = unsafe {
             PacketRxRing::new(
-                mapping as *mut u8,
+                mapping.cast(),
                 config,
                 reserved.unwrap_or(0) as usize,
-                OsiLayer::L3,
             )
-        };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: rx_ring.blocks_cnt() - 1,
-            frame_offset: None,
         };
 
         Ok(L3RxMappedSocket {
             socket: self,
             rx_ring,
-            next_rx: start_frame,
         })
     }
 }
@@ -719,12 +688,7 @@ impl AsRawFd for L3Socket {
 pub struct L3MappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
-    next_rx: FrameIndex,
     tx_ring: PacketTxRing,
-    last_checked_tx: FrameIndex,
-    next_tx: FrameIndex,
-    manual_tx_status: bool,
-    tx_full: bool,
 }
 
 impl L3MappedSocket {
@@ -832,6 +796,7 @@ impl L3MappedSocket {
         self.socket.set_fanout(group_id, fan_alg, defrag, rollover)
     }
 
+    /*
     /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
     /// calls to [`tx_status()`](Self::tx_status).
     ///
@@ -847,6 +812,7 @@ impl L3MappedSocket {
     pub fn manual_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
     }
+    */
 
     /// Sends a datagram over the socket. On success, returns the number of bytes written.
     ///
@@ -872,6 +838,31 @@ impl L3MappedSocket {
         self.socket.recv(buf)
     }
 
+    pub fn poll_recv(&self, timeout: Option<Duration>) -> io::Result<bool> {
+        let mut pfd = libc::pollfd {
+            fd: self.socket.fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let timeout: libc::c_int = match timeout {
+            None => -1,
+            Some(d) => d.as_millis().try_into().unwrap()
+        };
+
+        let ret = unsafe {
+            libc::poll(&raw mut pfd, 1, timeout)
+        };
+
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else if ret == 0 {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
     /// The returned [`TxFrame`] should have data written to it via the
@@ -880,26 +871,29 @@ impl L3MappedSocket {
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
-        if self.tx_full {
-            return None;
-        }
+        self.tx_ring.next_frame()
+    }
 
-        let (frame_variant, next_tx) = self.tx_ring.next_frame(self.next_tx);
-        let TxFrameVariant::Available(frame) = frame_variant else {
-            return None;
+    /// Schedules packets previously written to the memory-mapped ring buffer via
+    /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
+    /// 
+    /// This method will follow non-blocking behavior set on the socket. In the event a blocking
+    /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
+    /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
+    /// again until a successful result is returned.
+    pub fn flush_send(&self) -> io::Result<()> {
+        let ret = unsafe {
+            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
         };
 
-        if !self.manual_tx_status {
-            self.last_checked_tx = self.next_tx;
-        } else if self.last_checked_tx == next_tx {
-            // TX has looped around fully with manual_tx_status enabled--indicate TX ring is now full
-            self.tx_full = true;
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
         }
-
-        self.next_tx = next_tx;
-
-        Some(frame)
     }
+
+    // TODO: flush_sendto
 
     //
     // # Examples
@@ -935,6 +929,7 @@ impl L3MappedSocket {
     // # Ok::<(), io::Error>(())
     // ```
 
+    /*
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when `manual_tx_status` is set to `false`, this method will only return the
@@ -966,6 +961,7 @@ impl L3MappedSocket {
 
         frame_variant
     }
+    */
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
@@ -976,10 +972,7 @@ impl L3MappedSocket {
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
-
-        Some(rx_frame)
+        self.rx_ring.next_frame()
     }
 }
 
@@ -987,8 +980,8 @@ impl Drop for L3MappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.rx_ring.mapped_start() as *mut libc::c_void,
-                self.rx_ring.mapped_size() * 2,
+                self.rx_ring.ring_start().cast().as_ptr(),
+                self.rx_ring.ring_size() * 2,
             );
         }
         // The L3Socket will close itself when dropped
@@ -1006,10 +999,6 @@ impl AsRawFd for L3MappedSocket {
 pub struct L3TxMappedSocket {
     socket: L3Socket,
     tx_ring: PacketTxRing,
-    last_checked_tx: FrameIndex,
-    next_tx: FrameIndex,
-    manual_tx_status: bool,
-    tx_full: bool,
 }
 
 impl L3TxMappedSocket {
@@ -1102,27 +1091,31 @@ impl L3TxMappedSocket {
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
-        if self.tx_full {
-            return None;
-        }
-
-        let (frame_variant, next_tx) = self.tx_ring.next_frame(self.next_tx);
-        let TxFrameVariant::Available(frame) = frame_variant else {
-            return None;
-        };
-
-        if !self.manual_tx_status {
-            self.last_checked_tx = self.next_tx;
-        } else if self.last_checked_tx == next_tx {
-            // TX has looped around fully with manual_tx_status enabled--indicate TX ring is now full
-            self.tx_full = true;
-        }
-
-        self.next_tx = next_tx;
-
-        Some(frame)
+        self.tx_ring.next_frame()
     }
 
+    /// Schedules packets previously written to the memory-mapped ring buffer via
+    /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
+    /// 
+    /// This method will follow non-blocking behavior set on the socket. In the event a blocking
+    /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
+    /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
+    /// again until a successful result is returned.
+    pub fn flush_send(&self) -> io::Result<()> {
+        let ret = unsafe {
+            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
+        };
+
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    // TODO: flush_sendto
+
+    /*
     /// Sets [`mapped_send()`](Self::mapped_send()) results to be manually handled via repeated
     /// calls to [`tx_status()`](Self::tx_status()).
     ///
@@ -1137,6 +1130,7 @@ impl L3TxMappedSocket {
     pub fn set_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
     }
+    */
 
     //
     // # Examples
@@ -1172,6 +1166,7 @@ impl L3TxMappedSocket {
     // # Ok::<(), io::Error>(())
     // ```
 
+    /*
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when [`set_tx_status()`](Self::set_tx_status()) is set to `false`, this
@@ -1203,14 +1198,15 @@ impl L3TxMappedSocket {
 
         frame_variant
     }
+    */
 }
 
 impl Drop for L3TxMappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.tx_ring.mapped_start() as *mut libc::c_void,
-                self.tx_ring.mapped_size(),
+                self.tx_ring.ring_start().cast().as_ptr(),
+                self.tx_ring.ring_size(),
             );
         }
         // The L3Socket will close itself when dropped
@@ -1228,7 +1224,6 @@ impl AsRawFd for L3TxMappedSocket {
 pub struct L3RxMappedSocket {
     socket: L3Socket,
     rx_ring: PacketRxRing,
-    next_rx: FrameIndex,
 }
 
 impl L3RxMappedSocket {
@@ -1353,14 +1348,36 @@ impl L3RxMappedSocket {
         self.socket.recv(buf)
     }
 
+    pub fn poll_recv(&self, timeout: Option<Duration>) -> io::Result<bool> {
+        let mut pfd = libc::pollfd {
+            fd: self.socket.fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let timeout: libc::c_int = match timeout {
+            None => -1,
+            Some(d) => d.as_millis().try_into().unwrap()
+        };
+
+        let ret = unsafe {
+            libc::poll(&raw mut pfd, 1, timeout)
+        };
+
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else if ret == 0 {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+
     /// Retrieves the next frame in the memory-mapped ring buffer to receive a packet from.
     ///
     /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
-
-        Some(rx_frame)
+        self.rx_ring.next_frame()
     }
 }
 
@@ -1368,8 +1385,8 @@ impl Drop for L3RxMappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.rx_ring.mapped_start() as *mut libc::c_void,
-                self.rx_ring.mapped_size(),
+                self.rx_ring.ring_start().cast().as_ptr(),
+                self.rx_ring.ring_size(),
             );
         }
         // The L3Socket will close itself when dropped

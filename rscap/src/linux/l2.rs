@@ -12,11 +12,13 @@
 //!
 
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use std::ptr::NonNull;
+use std::time::Duration;
 use std::{io, mem, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
 use super::mapped::{
-    BlockConfig, FrameIndex, OsiLayer, PacketRxRing, PacketTxRing, RxFrame, TxFrame, TxFrameVariant,
+    BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame
 };
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
@@ -949,8 +951,8 @@ impl L2Socket {
                 self.fd,
                 libc::SOL_PACKET,
                 crate::linux::PACKET_TX_RING,
-                ptr::addr_of!(req_tx) as *const libc::c_void,
-                mem::size_of::<crate::linux::tpacket_req>() as u32,
+                (&raw const req_tx).cast(),
+                mem::size_of_val(&req_tx) as u32,
             ) != 0
         } {
             return Err(io::Error::last_os_error());
@@ -975,7 +977,7 @@ impl L2Socket {
             tp_block_nr: config.block_cnt(),
             tp_frame_size: config.frame_size(),
             tp_frame_nr: config.frame_cnt(),
-            tp_retire_blk_tov: timeout.unwrap_or(0),
+            tp_retire_blk_tov: timeout.unwrap_or(10),
             tp_sizeof_priv: private_size.unwrap_or(0),
             tp_feature_req_word: 0,
         };
@@ -985,7 +987,7 @@ impl L2Socket {
                 self.fd,
                 libc::SOL_PACKET,
                 crate::linux::PACKET_RX_RING,
-                ptr::addr_of!(req_rx) as *const libc::c_void,
+                (&raw const req_rx).cast(),
                 mem::size_of_val(&req_rx) as u32,
             ) != 0
         } {
@@ -1002,7 +1004,7 @@ impl L2Socket {
         &self,
         config: BlockConfig,
         combined_tx_rx: bool,
-    ) -> io::Result<*mut libc::c_void> {
+    ) -> io::Result<NonNull<libc::c_void>> {
         let map_length = if combined_tx_rx {
             config.map_length() * 2
         } else {
@@ -1011,7 +1013,7 @@ impl L2Socket {
 
         let mapped = unsafe {
             libc::mmap(
-                ptr::null::<*mut libc::c_void>() as *mut libc::c_void,
+                ptr::null_mut(),
                 map_length,
                 libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED | libc::MAP_LOCKED,
@@ -1024,7 +1026,7 @@ impl L2Socket {
             return Err(io::Error::last_os_error());
         }
 
-        Ok(mapped)
+        Ok(NonNull::new(mapped).unwrap())
     }
 
     /// Enables zero-copy packet transmission and reception for the socket.
@@ -1042,36 +1044,25 @@ impl L2Socket {
         reserved: Option<u32>,
     ) -> io::Result<L2MappedSocket> {
         self.set_tpacket_v3_opt()?;
+        self.set_tx_ring_opt(config)?;
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, true)?;
-
         let rx_ring = unsafe {
             PacketRxRing::new(
-                mapping as *mut u8,
+                mapping.cast(),
                 config,
                 reserved.unwrap_or(0) as usize,
-                OsiLayer::L2,
             )
         };
 
-        let tx_ring =
-            unsafe { PacketTxRing::new((mapping as *mut u8).add(config.map_length()), config) };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
+        let tx_ring = unsafe {
+            PacketTxRing::new((mapping.cast::<u8>()).add(config.map_length()), config)
         };
 
         Ok(L2MappedSocket {
             socket: self,
             rx_ring,
-            next_rx: start_frame,
             tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
         })
     }
 
@@ -1087,21 +1078,12 @@ impl L2Socket {
         self.set_tx_ring_opt(config)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let tx_ring = unsafe { PacketTxRing::new(mapping as *mut u8, config) };
+        let tx_ring = unsafe { PacketTxRing::new(mapping.cast(), config) };
 
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: tx_ring.blocks_cnt() - 1,
-            frame_offset: None,
-        };
 
         Ok(L2TxMappedSocket {
             socket: self,
             tx_ring,
-            last_checked_tx: start_frame,
-            next_tx: start_frame,
-            manual_tx_status: false,
-            tx_full: false,
         })
     }
 
@@ -1120,23 +1102,15 @@ impl L2Socket {
 
         let rx_ring = unsafe {
             PacketRxRing::new(
-                mapping as *mut u8,
+                mapping.cast(),
                 config,
                 reserved.unwrap_or(0) as usize,
-                OsiLayer::L2,
             )
-        };
-
-        // This will immediately wrap around to the first packet due to `frame_offset: None`
-        let start_frame = FrameIndex {
-            blocks_index: rx_ring.blocks_cnt() - 1,
-            frame_offset: None,
         };
 
         Ok(L2RxMappedSocket {
             socket: self,
             rx_ring,
-            next_rx: start_frame,
         })
     }
 }
@@ -1165,12 +1139,7 @@ impl AsFd for L2Socket {
 pub struct L2MappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
-    next_rx: FrameIndex,
     tx_ring: PacketTxRing,
-    last_checked_tx: FrameIndex,
-    next_tx: FrameIndex,
-    manual_tx_status: bool,
-    tx_full: bool,
 }
 
 impl L2MappedSocket {
@@ -1302,6 +1271,7 @@ impl L2MappedSocket {
         Ok(())
     }
 
+    /*
     /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
     /// calls to [`tx_status()`](Self::tx_status).
     ///
@@ -1317,6 +1287,7 @@ impl L2MappedSocket {
     pub fn manual_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
     }
+    */
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
     ///
@@ -1327,10 +1298,32 @@ impl L2MappedSocket {
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
+        self.rx_ring.next_frame()
+    }
 
-        Some(rx_frame)
+    pub fn poll_recv(&self, timeout: Option<Duration>) -> io::Result<bool> {
+        let mut pfd = libc::pollfd {
+            fd: self.socket.fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let timeout: libc::c_int = match timeout {
+            None => -1,
+            Some(d) => d.as_millis().try_into().unwrap()
+        };
+
+        let ret = unsafe {
+            libc::poll(&raw mut pfd, 1, timeout)
+        };
+
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else if ret == 0 {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
     }
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
@@ -1341,26 +1334,29 @@ impl L2MappedSocket {
     /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
     /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
-        if self.tx_full {
-            return None;
-        }
+        self.tx_ring.next_frame()
+    }
 
-        let (frame_variant, next_tx) = self.tx_ring.next_frame(self.next_tx);
-        let TxFrameVariant::Available(frame) = frame_variant else {
-            return None;
+    /// Schedules packets previously written to the memory-mapped ring buffer via
+    /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
+    /// 
+    /// This method will follow non-blocking behavior set on the socket. In the event a blocking
+    /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
+    /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
+    /// again until a successful result is returned.
+    pub fn flush_send(&self) -> io::Result<()> {
+        let ret = unsafe {
+            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
         };
 
-        if !self.manual_tx_status {
-            self.last_checked_tx = self.next_tx;
-        } else if self.last_checked_tx == next_tx {
-            // TX has looped around fully with manual_tx_status enabled--indicate TX ring is now full
-            self.tx_full = true;
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
         }
-
-        self.next_tx = next_tx;
-
-        Some(frame)
     }
+
+    // TODO: flush_sendto()
 
     /// Moves the link-layer socket's behavior in or out of blocking mode.
     ///
@@ -1501,6 +1497,7 @@ impl L2MappedSocket {
         self.socket.set_timestamp_method(tx, rx)
     }
 
+    /*
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when `manual_tx_status` is set to `false`, this method will only return the
@@ -1568,14 +1565,15 @@ impl L2MappedSocket {
 
         frame_variant
     }
+    */
 }
 
 impl Drop for L2MappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.rx_ring.mapped_start() as *mut libc::c_void,
-                self.rx_ring.mapped_size() * 2,
+                self.rx_ring.ring_start().as_ptr().cast(),
+                self.rx_ring.ring_size() * 2,
             );
         }
         // The L2Socket will close itself when dropped
@@ -1600,10 +1598,6 @@ impl AsFd for L2MappedSocket {
 pub struct L2TxMappedSocket {
     socket: L2Socket,
     tx_ring: PacketTxRing,
-    last_checked_tx: FrameIndex,
-    next_tx: FrameIndex,
-    manual_tx_status: bool,
-    tx_full: bool,
 }
 
 impl L2TxMappedSocket {
@@ -1729,6 +1723,7 @@ impl L2TxMappedSocket {
         self.socket.flush()
     }
 
+    /*
     /// Sets [`mapped_send()`](Self::mapped_send) results to be manually handled through repeated
     /// calls to [`tx_status()`](Self::tx_status).
     ///
@@ -1744,35 +1739,44 @@ impl L2TxMappedSocket {
     pub fn manual_tx_status(&mut self, manual: bool) {
         self.manual_tx_status = manual;
     }
+    */
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
-    ///
+    /// 
     /// The returned [`TxFrame`] should have data written to it via the
-    /// [`data()`](`TxFrame::data()`) method. Following this, the packet can be sent with
-    /// [`send()`](`TxFrame::send()`), with the number of bytes written to `data()` specified in
-    /// `packet_length`. If `send()` is not called, the packet _will not_ be sent, and subsequent
-    /// calls to [`mapped_send()`](Self::mapped_send()) will return the same frame.
+    /// [`data()`](`TxFrame::data_mut`) method. Following this, the length of the packet must
+    /// be set using [`set_length()`](`TxFrame::set_length`). The packet will be marked as ready
+    /// to send as soon as it is dropped; in the event `set_length()` is not called before the
+    /// packet is dropped, the kernel will read a zero-byte packet in the given frame and mark
+    /// the slot as an [`InvalidTxFrame`].
+    /// 
+    /// Mapped packets written via this method **WILL NOT** be sent until a successful call to
+    /// [`flush_send()`](`Self::flush_send`) or [`flush_sendto()`](`Self::flush_sendto`).
+    /// 
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
-        if self.tx_full {
-            return None;
-        }
+        self.tx_ring.next_frame()
+    }
 
-        let (frame_variant, next_tx) = self.tx_ring.next_frame(self.next_tx);
-        let TxFrameVariant::Available(frame) = frame_variant else {
-            return None;
+    /// Schedules packets previously written to the memory-mapped ring buffer via
+    /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
+    /// 
+    /// This method will follow non-blocking behavior set on the socket. In the event a blocking
+    /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
+    /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
+    /// again until a successful result is returned.
+    pub fn flush_send(&self) -> io::Result<()> {
+        let ret = unsafe {
+            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
         };
 
-        if !self.manual_tx_status {
-            self.last_checked_tx = self.next_tx;
-        } else if self.last_checked_tx == next_tx {
-            // TX has looped around fully with manual_tx_status enabled--indicate TX ring is now full
-            self.tx_full = true;
+        if ret < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
         }
-
-        self.next_tx = next_tx;
-
-        Some(frame)
     }
+
+    // TODO: flush_sendto()
 
     /// Moves the link-layer socket's behavior in or out of blocking mode.
     ///
@@ -1859,22 +1863,7 @@ impl L2TxMappedSocket {
         self.socket.set_timestamp_method(tx, rx)
     }
 
-    /// Sets [`mapped_send()`](Self::mapped_send()) results to be manually handled via repeated
-    /// calls to [`tx_status()`](Self::tx_status()).
-    ///
-    /// By default (i.e., when `manual` = `false`), the results of packet transmission are
-    /// transparently handled. As a result, packets flagged as malformed by the kernel are
-    /// aggregated into statistics rather than being reported back to the user on a case-by-case
-    /// basis.
-    ///
-    /// If individual packet results are desired, setting this option to `true` modifies socket
-    /// behavior such that each sent packet must have its status checked using `tx_status` prior
-    /// to that packet being discarded from the ring.
-    #[inline]
-    pub fn set_tx_status(&mut self, manual: bool) {
-        self.manual_tx_status = manual;
-    }
-
+    /*
     /// Checks the status of previously-sent packets in the order they were sent.
     ///
     /// By default, or when [`set_tx_status()`](Self::set_tx_status()) is set to `false`, this
@@ -1943,14 +1932,16 @@ impl L2TxMappedSocket {
 
         frame_variant
     }
+
+    */
 }
 
 impl Drop for L2TxMappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.tx_ring.mapped_start() as *mut libc::c_void,
-                self.tx_ring.mapped_size(),
+                self.tx_ring.ring_start().as_ptr().cast(),
+                self.tx_ring.ring_size(),
             );
         }
         // The L2Socket will close itself when dropped
@@ -1968,7 +1959,6 @@ impl AsRawFd for L2TxMappedSocket {
 pub struct L2RxMappedSocket {
     socket: L2Socket,
     rx_ring: PacketRxRing,
-    next_rx: FrameIndex,
 }
 
 impl L2RxMappedSocket {
@@ -2098,10 +2088,37 @@ impl L2RxMappedSocket {
     /// The returned [`RxFrame`] contains packet data that may be modified in-place if desired.
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrame<'_>> {
-        let (rx_frame, next_rx) = self.rx_ring.next_frame(self.next_rx)?;
-        self.next_rx = next_rx;
+        self.rx_ring.next_frame()
+    }
 
-        Some(rx_frame)
+    pub fn poll_recv(&self, timeout: Option<Duration>) -> io::Result<bool> {
+        let mut pfd = libc::pollfd {
+            fd: self.socket.fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        let timeout: libc::c_int = match timeout {
+            None => -1,
+            Some(d) => d.as_millis().try_into().unwrap()
+        };
+
+        let ret = unsafe {
+            libc::poll(&raw mut pfd, 1, timeout)
+        };
+
+        if ret < 0 {
+            let e = io::Error::last_os_error();
+            if e.kind() == io::ErrorKind::Interrupted {
+                Ok(false)
+            } else {
+                Err(e)
+            }
+        } else if ret == 0 {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
     }
 
     /// Adds the given socket to a fanout group.
@@ -2208,23 +2225,56 @@ impl L2RxMappedSocket {
     pub fn set_timestamp_method(&self, tx: TxTimestamping, rx: RxTimestamping) -> io::Result<()> {
         self.socket.set_timestamp_method(tx, rx)
     }
+
+    /// Moves the link-layer socket's behavior in or out of blocking mode.
+    ///
+    /// An [`L2Socket`] that is nonblocking will return with an error of kind
+    /// [WouldBlock](io::ErrorKind::WouldBlock) whenever a packet cannot be immediately sent or
+    /// received. This is only applicable to the [`send()`](Self::send) or
+    /// [`recv()`](Self::recv) methods; any memory-mapped methods are always guaranteed to be
+    /// nonblocking.
+    #[inline]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        self.socket.set_nonblocking(nonblocking)
+    }
+
+    /// Indicates whether nonblocking I/O is enabled or disabled for the given socket.
+    ///
+    /// When enabled, calls to [`send()`](Self::send) or [`recv()`](Self::recv) will return an error
+    /// of kind [`io::ErrorKind::WouldBlock`] if the socket is unable to immediately send or receive
+    /// a packet.
+    #[inline]
+    pub fn nonblocking(&self) -> io::Result<bool> {
+        self.socket.nonblocking()
+    }
 }
 
 impl Drop for L2RxMappedSocket {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(
-                self.rx_ring.mapped_start() as *mut libc::c_void,
-                self.rx_ring.mapped_size(),
+                self.rx_ring.ring_start().as_ptr().cast(),
+                self.rx_ring.ring_size(),
             );
         }
         // The L2Socket will close itself when dropped
     }
 }
 
+#[cfg(unix)]
 impl AsRawFd for L2RxMappedSocket {
     #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.socket.fd
+    }
+}
+
+#[cfg(unix)]
+impl AsFd for L2RxMappedSocket {
+    #[inline]
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe {
+            BorrowedFd::borrow_raw(self.socket.fd)
+        }
     }
 }

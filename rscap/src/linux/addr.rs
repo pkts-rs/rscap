@@ -98,6 +98,12 @@ pub struct MacAddr {
     addr: [u8; 6],
 }
 
+impl MacAddr {
+    pub fn as_slice(&self) -> &[u8] {
+        self.addr.as_slice()
+    }
+}
+
 impl From<[u8; 6]> for MacAddr {
     #[inline]
     fn from(value: [u8; 6]) -> Self {
