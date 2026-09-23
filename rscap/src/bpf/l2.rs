@@ -26,6 +26,8 @@ use crate::Interface;
 
 /// `L2Socket::new()` will only iterate through up to this many BPF device names before failing.
 const MAX_OPEN_BPF: u32 = 1024;
+const RECV_PADDING_LEN: usize = 0x40;
+const FRAME_ANCILLARY_LEN: usize = mem::size_of::<bpf_xhdr>() + RECV_PADDING_LEN;
 
 // TODO: add AIX support by loading BPF driver
 
@@ -67,8 +69,8 @@ pub(crate) struct bpf_xhdr {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub(crate) struct bpf_ts {
-    bt_sec: i64,
-    bt_frac: u64,
+    bt_sec: i32,
+    bt_usec: i32,
 }
 
 pub const BIOCSETF: libc::c_ulong = 0x80104267;
@@ -234,43 +236,23 @@ pub struct Bpf {
 impl Bpf {
     /// Creates a new BPF instance with the given access mode.
     pub fn new(access_mode: BpfAccess) -> io::Result<Self> {
-        let mut file = match OpenOptions::new()
-            .read(matches!(
-                access_mode,
-                BpfAccess::ReadOnly | BpfAccess::ReadWrite
-            ))
-            .write(matches!(
-                access_mode,
-                BpfAccess::WriteOnly | BpfAccess::ReadWrite
-            ))
-            .open("/dev/bpf")
-        {
-            Ok(file) => Some(file),
-            Err(e) if e.raw_os_error() == Some(libc::ENOENT) => None,
-            Err(e) => return Err(e),
-        };
-
-        // `/dev/bpf` isn't available--try `/dev/bpfX`
         // Some net utilities hardcode /dev/bpf0 for use, so we politely avoid it
-        let mut dev_idx = 1;
-        while file.is_none() {
+        for dev_idx in 1..=MAX_OPEN_BPF {
             match OpenOptions::new()
-                .read(true)
-                .write(true)
+                .read(matches!(
+                    access_mode,
+                    BpfAccess::ReadOnly | BpfAccess::ReadWrite
+                ))
+                .write(matches!(
+                    access_mode,
+                    BpfAccess::WriteOnly | BpfAccess::ReadWrite
+                ))
                 .open(format!("/dev/bpf{}", dev_idx))
             {
-                Ok(f) => file = Some(f),
+                Ok(f) => return Ok(Self { inner: f }),
                 Err(e) if e.raw_os_error() == Some(libc::EBUSY) => (),
                 Err(e) => return Err(e),
             };
-
-            dev_idx += 1;
-            if dev_idx > MAX_OPEN_BPF {
-                return Err(io::Error::new(
-                    io::ErrorKind::QuotaExceeded,
-                    "all avaliable bpf devices were taken",
-                ));
-            }
         }
 
         Err(io::Error::last_os_error())
@@ -303,11 +285,30 @@ impl Bpf {
         let mut frame_len: libc::c_uint = 0;
         let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCGBLEN, &raw mut frame_len) };
         match res {
-            0.. => Ok(frame_len),
+            0.. => Ok(frame_len.checked_sub(FRAME_ANCILLARY_LEN as u32).unwrap()),
             _ => Err(io::Error::last_os_error()),
         }
     }
 
+    /// Sets the maximum byte length of packets received by the socket.
+    ///
+    /// Any packet exceeding this length will be truncated to fit within the frame.
+    pub fn set_frame_len(&self, mut frame_len: u32) -> io::Result<u32> {
+        frame_len = frame_len
+            .checked_add(FRAME_ANCILLARY_LEN as u32)
+            .ok_or(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "supplied frame_len exceeded maximum allowed size",
+            ))?;
+
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSBLEN, &raw mut frame_len) };
+        match res {
+            0.. => Ok(frame_len.checked_sub(FRAME_ANCILLARY_LEN as u32).unwrap()),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+
+    /*
     /// Sets the maximum byte length of packets received by the socket.
     ///
     /// Any packet exceeding this length will be truncated to fit within the frame.
@@ -318,6 +319,7 @@ impl Bpf {
             _ => Err(io::Error::last_os_error()),
         }
     }
+    */
 
     /// Returns the type of the link layer associated with the interface the socket is bound to.
     pub fn link_type(&self) -> io::Result<u16> {
@@ -395,7 +397,7 @@ impl Bpf {
                 ifru_addr: libc::sockaddr {
                     sa_family: 0,
                     sa_len: 0,
-                    sa_data: [0i8; 14],
+                    sa_data: [0; 14],
                 },
             },
         };
@@ -542,7 +544,7 @@ impl Bpf {
     /// Receive a link-layer packet.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         let mut header = [0u8; mem::size_of::<bpf_xhdr>()];
-        let mut end_padding = [0u8; 0x40];
+        let mut end_padding = [0u8; RECV_PADDING_LEN];
 
         let mut iov = [
             IoSliceMut::new(header.as_mut_slice()),

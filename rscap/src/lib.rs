@@ -189,6 +189,24 @@ impl Interface {
         Ok(Interface { name })
     }
 
+    /// Retrieves the name of the primary loopback interface on the system.
+    pub fn loopback() -> io::Result<Self> {
+        // TODO: right now this is hardcoded by name, but it should really retrieve based on set
+        // flags.
+        #[cfg(target_os = "windows")]
+        {
+            Interface::new("Loopback Pseudo-Interface 1")
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Interface::new("lo")
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        {
+            Interface::new("lo0")
+        }
+    }
+
     /// Returns an `Interface` corresponding to the given interface index.
     ///
     /// # Errors

@@ -29,7 +29,7 @@ use crate::bpf::SnifferImpl;
 use crate::dlpi::SnifferImpl;
 */
 #[cfg(target_os = "linux")]
-use crate::linux::{RxFrameImpl, SnifferImpl};
+use crate::linux::SnifferImpl;
 #[cfg(all(target_os = "windows", feature = "npcap"))]
 use crate::npcap::SnifferImpl;
 use crate::{filter::PacketFilter, Interface};
@@ -68,6 +68,7 @@ impl Sniffer {
         })
     }
 
+    /*
     /// Creates a new sniffer instance using `ring_size` for the size of any zero-copy RX or TX
     /// rings.
     ///
@@ -80,6 +81,7 @@ impl Sniffer {
             inner: SnifferImpl::new_with_size(iface, ring_size)?,
         })
     }
+    */
 
     /// Activates the `Sniffer` to begin capturing packets.
     ///
@@ -182,6 +184,7 @@ impl Sniffer {
         self.inner.recv(buf)
     }
 
+    /*
     /// Receive a zero-copy packet from the [`Interface`] the `Sniffer` is listening on.
     ///
     /// The `Sniffer` must be activated prior to receiving packets. Any attempt to receive a packet
@@ -194,6 +197,7 @@ impl Sniffer {
             inner: self.inner.mapped_recv()?,
         })
     }
+    */
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -211,6 +215,7 @@ impl AsFd for Sniffer {
     }
 }
 
+/*
 /// A packet frame holding a single received zero-copy packet.
 #[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
 pub struct RxFrame<'a> {
@@ -240,4 +245,33 @@ impl RxFrame<'_> {
     }
 
     // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
+}
+*/
+
+#[cfg(test)]
+mod test {
+    use crate::{Interface, Sniffer};
+    use std::net::UdpSocket;
+
+    #[test]
+    fn loopback_recv_single_udp() {
+        let udp1 = UdpSocket::bind("127.0.0.1:9876").unwrap();
+        let udp2 = UdpSocket::bind("127.0.0.1:5432").unwrap();
+
+        let loopback = Interface::loopback().unwrap();
+        let mut sniffer = Sniffer::new(loopback).unwrap();
+        sniffer.activate(None).unwrap();
+
+        let sent = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        udp1.send_to(sent.as_slice(), "127.0.0.1:5432").unwrap();
+
+        let mut recv_buf = [0u8; 131072];
+        let recvd = sniffer.recv(&mut recv_buf).unwrap();
+
+        println!("{:?}", &recv_buf[..recvd]);
+
+        assert_eq!(&recv_buf[recvd - 8..recvd], sent.as_slice());
+        drop(udp2);
+        drop(udp1);
+    }
 }

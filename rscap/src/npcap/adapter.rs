@@ -19,7 +19,7 @@ use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::{cmp, io, mem, ptr};
+use std::{cmp, io, mem};
 
 use crate::filter::{PacketFilter, PacketStatistics};
 use crate::Interface;
@@ -95,7 +95,7 @@ impl NpcapAdapter {
         let mut wsa_data: MaybeUninit<WSADATA> = MaybeUninit::uninit();
 
         unsafe {
-            match WSAStartup(WSA_VERSION, ptr::addr_of_mut!(wsa_data) as *mut WSADATA) {
+            match WSAStartup(WSA_VERSION, (&raw mut wsa_data).cast()) {
                 0 => (),
                 e => return Err(io::Error::from_raw_os_error(e)),
             }
@@ -311,7 +311,7 @@ impl NpcapAdapter {
         //    but `npcap` fundamentally uses memory-mapped buffers as its underlying method of
         //    transport. Thus, we need a way of handling accesses/updates to the buffer in a
         //    thread-safe way.
-        // 2. We can't use any synchronization primitives that block. Async runimes offer their
+        // 2. We can't use any synchronization primitives that block. Async runtimes offer their
         //    own version of primitives that are safe to use, but using those would bind this
         //    function to a specific `async` backend.
         // 3. We'd ideally like multiple tasks to be able to read packets concurrently when more
@@ -376,8 +376,8 @@ impl NpcapAdapter {
 
                     match res {
                         false
-                            if self.nonblocking.load(Ordering::Relaxed)
-                                || err.kind() != io::ErrorKind::WouldBlock =>
+                            if err.kind() != io::ErrorKind::WouldBlock
+                                || self.nonblocking.load(Ordering::Relaxed) =>
                         {
                             self.pkt_ctx.outstanding.store(0, Ordering::Relaxed);
                             return Err(io::Error::last_os_error());
@@ -500,7 +500,7 @@ impl NpcapAdapter {
         Ok(written)
     }
 
-    /// Configures the number of times a packet written to the interface via `send()` will b
+    /// Configures the number of times a packet written to the interface via `send()` will be
     /// repeated.
     pub fn set_repeat_send(&self, num_repeats: u32) -> io::Result<()> {
         let num_repeats =
@@ -523,7 +523,7 @@ impl NpcapAdapter {
         // buffer without modifying its contents, so this is sound; the C API simply neglects
         // to specify that the buffer pointer is const, so it requires a `*mut u8` as input.
         let data = unsafe { NonNull::new_unchecked(buf.as_ptr().cast_mut()) };
-        // Safety: `init_packet()` is called within a `&mut self` context, so `self.packet` is
+        // Safety: `init_packet()` is called within a `&mut self` context, so `packet` is
         // exclusively accessed at this point.
         unsafe {
             self.npcap.init_packet(packet, data, buf.len());
@@ -589,6 +589,7 @@ unsafe impl Sync for NpcapAdapter {}
 impl Drop for NpcapAdapter {
     fn drop(&mut self) {
         unsafe {
+            self.npcap.close_adapter(self.adapter);
             WSACleanup();
         }
     }

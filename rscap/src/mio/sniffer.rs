@@ -16,14 +16,18 @@ use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 use crate::filter::PacketFilter;
 use crate::{Interface, Sniffer};
 
+#[cfg(any(not(doc), feature = "mio"))]
 use mio::event::Source;
+#[cfg(any(not(doc), feature = "mio"))]
 use mio::net::UdpSocket;
+#[cfg(any(not(doc), feature = "mio"))]
 use mio::{Interest, Registry, Token};
 
 /// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
 /// over network interfaces in a manner compatible with `mio`.
 pub struct AsyncSniffer {
     sniffer: Sniffer,
+    #[cfg(any(not(doc), feature = "mio"))]
     io: ManuallyDrop<UdpSocket>,
 }
 
@@ -141,6 +145,7 @@ impl AsyncSniffer {
     }
 }
 
+#[cfg(any(not(doc), feature = "mio"))]
 impl Source for AsyncSniffer {
     fn register(
         &mut self,

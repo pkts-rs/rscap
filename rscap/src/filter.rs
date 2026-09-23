@@ -38,7 +38,11 @@ impl PacketStatistics {
 pub struct BpfProgram {
     #[cfg(target_os = "windows")]
     bf_len: u32,
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "freebsd")]
+    bf_len: libc::c_int,
+    #[cfg(target_os = "macos")]
+    bf_len: libc::c_uint,
+    #[cfg(target_os = "linux")]
     bf_len: u16,
     bf_insns: *mut BpfInstruction,
 }
@@ -79,7 +83,7 @@ impl PacketFilter {
         #[cfg(target_os = "windows")]
         let bf_len = self.filter.len() as u32;
         #[cfg(not(target_os = "windows"))]
-        let bf_len = self.filter.len() as u16;
+        let bf_len = self.filter.len() as _;
 
         BpfProgram {
             bf_len,

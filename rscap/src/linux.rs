@@ -18,13 +18,13 @@
 //! your source.
 
 use addr::L2Protocol;
-use l2::{L2MappedSocket, L2Socket};
+use l2::L2Socket;
 
-use mapped::{BlockConfig, RxFrame};
+// use mapped::{BlockConfig, RxFrame};
 
-#[cfg(not(target_os = "windows"))]
+use std::io;
+#[cfg(unix)]
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-use std::{cmp, io};
 
 use crate::{filter::PacketFilter, Interface};
 
@@ -80,11 +80,6 @@ pub(crate) const TP_STATUS_VLAN_VALID: u32 = 1 << 4;
 // pub(crate) const TP_STATUS_BLK_TMO: u32 = 1 << 5;
 pub(crate) const TP_STATUS_VLAN_TPID_VALID: u32 = 1 << 6;
 pub(crate) const TP_STATUS_CSUM_VALID: u32 = 1 << 7;
-
-pub(crate) const TP_STATUS_AVAILABLE: u32 = 0;
-pub(crate) const TP_STATUS_SEND_REQUEST: u32 = 1 << 0;
-pub(crate) const TP_STATUS_SENDING: u32 = 1 << 1;
-pub(crate) const TP_STATUS_WRONG_FORMAT: u32 = 1 << 2;
 
 // pub(crate) const TP_STATUS_TS_SOFTWARE: u32 = 1 << 29;
 // pub(crate) const TP_STATUS_TS_SYS_HARDWARE: u32 = 1 << 30;
@@ -178,6 +173,7 @@ pub(crate) struct tpacket_hdr {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Clone, Copy)]
 pub(crate) struct tpacket_hdr_variant1 {
     pub tp_rxhash: u32,
     pub tp_vlan_tci: u32,
@@ -214,7 +210,7 @@ pub(crate) struct tpacket_req {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct tpacket_req3 {
     pub tp_block_size: libc::c_uint,
     pub tp_block_nr: libc::c_uint,
@@ -244,6 +240,7 @@ pub(crate) struct tpacket_stats_v3 {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Clone, Copy)]
 pub(crate) struct tpacket3_hdr {
     pub tp_next_offset: u32,
     pub tp_sec: u32,
@@ -361,30 +358,35 @@ pub enum FanoutAlgorithm {
     QueueMapping,
 }
 
-pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 2 * 1024 * 1024; // Default each buffer of 1MB
+// pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 4 * 1024 * 1024; // Default each buffer of 4MB
 
 pub(crate) struct SnifferImpl {
-    socket: L2MappedSocket,
+    socket: L2Socket,
 }
 
 impl SnifferImpl {
     #[inline]
     pub fn new(if_name: Interface) -> io::Result<Self> {
-        Self::new_with_size(if_name, DEFAULT_DRIVER_BUFFER)
+        let socket = L2Socket::new()?;
+        socket.set_filter(&mut PacketFilter::reject_all())?;
+        socket.bind(if_name, L2Protocol::All)?;
+
+        Ok(Self { socket })
     }
 
-    /// Note that `ring_size` must be greater than or equal to 524288 (512 KiB), and may be
-    /// rounded down to the nearest 512 KiB when allocating buffers.
+    /*
+    /// Note that `ring_size` must be greater than or equal to 524288 (512 KB), and may be
+    /// rounded down to the nearest 512 KB when allocating buffers.
     #[inline]
     pub fn new_with_size(if_name: Interface, ring_size: usize) -> io::Result<Self> {
         let individual_ring_size = ring_size / 2;
 
-        let units = individual_ring_size / (131072 * 2);
+        let units = individual_ring_size / (262144 * 2);
         if units == 0 {
-            // Need at least 2 blocks, each of size 2*2^16.
+            // Need at least 2 blocks, each of size 2*2^18.
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "ring_size must be >= 524288 (512 KiB)",
+                "ring_size must be >= 512KB",
             ));
         }
 
@@ -395,7 +397,7 @@ impl SnifferImpl {
             ));
         };
 
-        let mut block_size = 131072;
+        let mut block_size = 262144;
         let mut block_cnt = 2;
 
         // Double the block size, and allocate the rest toward block count
@@ -414,15 +416,14 @@ impl SnifferImpl {
         }
 
         let socket = L2Socket::new()?;
-        let config = BlockConfig::new(block_size, block_cnt, 131072)?; // Big enough for loopback ethernet frame
-        let mapped_socket = socket.packet_ring(config, None, None)?;
-        mapped_socket.set_filter(&mut PacketFilter::reject_all())?;
-        mapped_socket.bind(if_name, L2Protocol::All)?;
+        socket.set_filter(&mut PacketFilter::reject_all())?;
+        socket.bind(if_name, L2Protocol::All)?;
 
         Ok(Self {
-            socket: mapped_socket,
+            socket,
         })
     }
+    */
 
     #[inline]
     pub fn activate(&mut self, filter: Option<PacketFilter>) -> io::Result<()> {
@@ -457,14 +458,29 @@ impl SnifferImpl {
     #[inline]
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.socket.recv(buf)
+
+        /*
+        loop {
+            if let Some(rx_frame) = self.socket.mapped_recv() {
+                let recv_data = rx_frame.data();
+                let len = cmp::min(buf.len(), recv_data.len());
+                buf.copy_from_slice(&recv_data[..len]);
+                return Ok(recv_data.len());
+            }
+
+            while !self.socket.poll_recv(None)? { }
+        }
+        */
     }
 
+    /*
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrameImpl<'_>> {
         Some(RxFrameImpl {
             frame: self.socket.mapped_recv()?,
         })
     }
+    */
 }
 
 impl AsRawFd for SnifferImpl {
@@ -480,6 +496,7 @@ impl AsFd for SnifferImpl {
     }
 }
 
+/*
 pub(crate) struct RxFrameImpl<'a> {
     frame: RxFrame<'a>,
 }
@@ -493,3 +510,4 @@ impl RxFrameImpl<'_> {
         self.frame.data_mut()
     }
 }
+*/
