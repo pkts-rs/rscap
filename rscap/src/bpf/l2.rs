@@ -312,9 +312,8 @@ impl Bpf {
     /// Sets the maximum byte length of packets received by the socket.
     ///
     /// Any packet exceeding this length will be truncated to fit within the frame.
-    pub fn set_snaplen(&self, mut snaplen: u32) -> io::Result<()> {
-
-        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSNAPLEN, &raw mut snaplen) };
+    pub fn set_frame_len(&self, mut frame_len: u32) -> io::Result<()> {
+        let res = unsafe { libc::ioctl(self.inner.as_raw_fd(), BIOCSBLEN, &raw mut frame_len) };
         match res {
             0.. => Ok(()),
             _ => Err(io::Error::last_os_error()),
@@ -573,7 +572,7 @@ impl Bpf {
         // is correct, return the buffer as-is. Otherwise, shift the data so that it is
         // situated within the return buffer, then return it
         match hdrlen.cmp(&header.len()) {
-            cmp::Ordering::Equal => println!("equal"),
+            cmp::Ordering::Equal => (),
             cmp::Ordering::Less => {
                 // Some bytes of the payload are situated in `header`
                 let offset = header.len() - hdrlen;
@@ -594,9 +593,6 @@ impl Bpf {
                 buf[buf_len - offset..].copy_from_slice(&end_padding[..offset]);
             }
         }
-
-        println!("caplen: {}", caplen);
-        println!("datalen: {}", _datalen);
 
         Ok(cmp::min(caplen, buf.len()))
     }
