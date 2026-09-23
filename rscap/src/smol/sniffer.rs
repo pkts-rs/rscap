@@ -14,7 +14,7 @@ use std::io;
 #[cfg(target_os = "windows")]
 use std::sync::Arc;
 
-#[cfg(any(not(doc), all(not(target_os = "windows"), feature = "mio")))]
+#[cfg(not(target_os = "windows"))]
 use async_io::Async;
 
 use crate::filter::PacketFilter;
@@ -41,7 +41,7 @@ impl SnifferWrapper {
 /// A cross-platform asynchronous Sniffer interface, suitable for sending/receiving raw packets
 /// over network interfaces in a manner compatible with `smol`.
 pub struct AsyncSniffer {
-    #[cfg(any(not(doc), all(not(target_os = "windows"), feature = "mio")))]
+    #[cfg(not(target_os = "windows"))]
     sniffer: Async<Sniffer>,
     #[cfg(target_os = "windows")]
     sniffer: SnifferWrapper,

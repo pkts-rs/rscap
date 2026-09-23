@@ -17,9 +17,7 @@ use std::time::Duration;
 use std::{io, mem, os::fd::AsRawFd, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
-use super::mapped::{
-    BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame
-};
+use super::mapped::{BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame};
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
 use crate::filter::PacketStatistics;
@@ -205,11 +203,7 @@ impl L3Socket {
         let mut sockaddr_len = mem::size_of::<libc::sockaddr_ll>() as u32;
 
         let res = unsafe {
-            libc::getsockname(
-                self.fd,
-                (&raw mut sockaddr).cast(),
-                &raw mut sockaddr_len,
-            )
+            libc::getsockname(self.fd, (&raw mut sockaddr).cast(), &raw mut sockaddr_len)
         };
         if res != 0 {
             return Err(io::Error::last_os_error());
@@ -608,12 +602,10 @@ impl L3Socket {
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, true)?;
 
-        let rx_ring = unsafe {
-            PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize)
-        };
+        let rx_ring =
+            unsafe { PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize) };
 
-        let tx_ring =
-            unsafe { PacketTxRing::new(mapping.add(config.map_length()).cast(), config) };
+        let tx_ring = unsafe { PacketTxRing::new(mapping.add(config.map_length()).cast(), config) };
 
         Ok(L3MappedSocket {
             socket: self,
@@ -656,13 +648,8 @@ impl L3Socket {
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let rx_ring = unsafe {
-            PacketRxRing::new(
-                mapping.cast(),
-                config,
-                reserved.unwrap_or(0) as usize,
-            )
-        };
+        let rx_ring =
+            unsafe { PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize) };
 
         Ok(L3RxMappedSocket {
             socket: self,
@@ -847,12 +834,10 @@ impl L3MappedSocket {
 
         let timeout: libc::c_int = match timeout {
             None => -1,
-            Some(d) => d.as_millis().try_into().unwrap()
+            Some(d) => d.as_millis().try_into().unwrap(),
         };
 
-        let ret = unsafe {
-            libc::poll(&raw mut pfd, 1, timeout)
-        };
+        let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -876,15 +861,13 @@ impl L3MappedSocket {
 
     /// Schedules packets previously written to the memory-mapped ring buffer via
     /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
-    /// 
+    ///
     /// This method will follow non-blocking behavior set on the socket. In the event a blocking
     /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
     /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
     /// again until a successful result is returned.
     pub fn flush_send(&self) -> io::Result<()> {
-        let ret = unsafe {
-            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
-        };
+        let ret = unsafe { libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -1096,15 +1079,13 @@ impl L3TxMappedSocket {
 
     /// Schedules packets previously written to the memory-mapped ring buffer via
     /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
-    /// 
+    ///
     /// This method will follow non-blocking behavior set on the socket. In the event a blocking
     /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
     /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
     /// again until a successful result is returned.
     pub fn flush_send(&self) -> io::Result<()> {
-        let ret = unsafe {
-            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
-        };
+        let ret = unsafe { libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -1357,12 +1338,10 @@ impl L3RxMappedSocket {
 
         let timeout: libc::c_int = match timeout {
             None => -1,
-            Some(d) => d.as_millis().try_into().unwrap()
+            Some(d) => d.as_millis().try_into().unwrap(),
         };
 
-        let ret = unsafe {
-            libc::poll(&raw mut pfd, 1, timeout)
-        };
+        let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())

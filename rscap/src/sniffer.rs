@@ -29,7 +29,7 @@ use crate::bpf::SnifferImpl;
 use crate::dlpi::SnifferImpl;
 */
 #[cfg(target_os = "linux")]
-use crate::linux::{RxFrameImpl, SnifferImpl};
+use crate::linux::SnifferImpl;
 #[cfg(all(target_os = "windows", feature = "npcap"))]
 use crate::npcap::SnifferImpl;
 use crate::{filter::PacketFilter, Interface};
@@ -68,6 +68,7 @@ impl Sniffer {
         })
     }
 
+    /*
     /// Creates a new sniffer instance using `ring_size` for the size of any zero-copy RX or TX
     /// rings.
     ///
@@ -80,6 +81,7 @@ impl Sniffer {
             inner: SnifferImpl::new_with_size(iface, ring_size)?,
         })
     }
+    */
 
     /// Activates the `Sniffer` to begin capturing packets.
     ///
@@ -178,10 +180,11 @@ impl Sniffer {
     /// prior to first activating the `Sniffer` via a call to [`activate()`](Self::activate) will
     /// fail with an error of kind [`io::ErrorKind::NotConnected`].
     #[inline]
-    pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner.recv(buf)
     }
 
+    /*
     /// Receive a zero-copy packet from the [`Interface`] the `Sniffer` is listening on.
     ///
     /// The `Sniffer` must be activated prior to receiving packets. Any attempt to receive a packet
@@ -194,6 +197,7 @@ impl Sniffer {
             inner: self.inner.mapped_recv()?,
         })
     }
+    */
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -211,6 +215,7 @@ impl AsFd for Sniffer {
     }
 }
 
+/*
 /// A packet frame holding a single received zero-copy packet.
 #[cfg(any(doc, target_os = "linux", target_os = "freebsd"))]
 pub struct RxFrame<'a> {
@@ -241,6 +246,7 @@ impl RxFrame<'_> {
 
     // TODO: any way to unify `bpf_ts` and the PACKET_RX_RING timestamps??
 }
+*/
 
 #[cfg(test)]
 mod test {

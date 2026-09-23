@@ -19,7 +19,7 @@ use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::{cmp, io, mem, ptr};
+use std::{cmp, io, mem};
 
 use crate::filter::{PacketFilter, PacketStatistics};
 use crate::Interface;

@@ -36,7 +36,7 @@ pub enum L2Protocol {
 impl From<u16> for L2Protocol {
     #[inline]
     fn from(value: u16) -> Self {
-        match value as i32 {
+        match value.to_be() as i32 {
             libc::ETH_P_ALL => L2Protocol::All,
             libc::ETH_P_IP => L2Protocol::Ip,
             _ => L2Protocol::Other(value),
@@ -52,6 +52,7 @@ impl From<L2Protocol> for u16 {
             L2Protocol::Ip => libc::ETH_P_IP as u16,
             L2Protocol::Other(val) => val,
         }
+        .to_be()
     }
 }
 

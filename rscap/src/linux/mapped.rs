@@ -131,7 +131,11 @@ pub struct PacketRxRing {
 
 impl PacketRxRing {
     /// Constructs a new `PacketRxRing` instance from a raw memory-mapped segment and configuration.
-    pub(crate) unsafe fn new(ring_start: NonNull<u8>, config: BlockConfig, priv_size: usize) -> Self {
+    pub(crate) unsafe fn new(
+        ring_start: NonNull<u8>,
+        config: BlockConfig,
+        priv_size: usize,
+    ) -> Self {
         PacketRxRing {
             ring_start,
             block_size: config.block_size() as usize,
@@ -155,7 +159,11 @@ impl PacketRxRing {
         if self.frame_offset == self.block_size {
             let block_start = unsafe { self.ring_start.add(self.block_idx * self.block_size) };
             let status_ptr = unsafe {
-                block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1.block_status))
+                block_start
+                    .add(mem::offset_of!(
+                        crate::linux::tpacket_block_desc,
+                        hdr.bh1.block_status
+                    ))
                     .cast::<u32>()
             };
 
@@ -173,7 +181,14 @@ impl PacketRxRing {
 
         if self.frame_offset == 0 {
             // Need to check if block is ready for reading
-            let status_ptr = unsafe { block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1.block_status)).cast::<u32>() };
+            let status_ptr = unsafe {
+                block_start
+                    .add(mem::offset_of!(
+                        crate::linux::tpacket_block_desc,
+                        hdr.bh1.block_status
+                    ))
+                    .cast::<u32>()
+            };
             let status = unsafe { ptr::read_volatile(status_ptr.as_ptr().cast_const()) };
             std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Acquire);
 
@@ -182,7 +197,8 @@ impl PacketRxRing {
             }
 
             let hdr = unsafe {
-                block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1))
+                block_start
+                    .add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1))
                     .cast::<crate::linux::tpacket_hdr_v1>()
                     .as_ref()
             };
@@ -197,19 +213,22 @@ impl PacketRxRing {
         self.rem_frames -= 1;
 
         let frame_hdr = unsafe {
-            block_start.add(self.frame_offset)
+            block_start
+                .add(self.frame_offset)
                 .cast::<crate::linux::tpacket3_hdr>()
                 .as_ref()
         };
 
         let ll_addr = unsafe {
-            block_start.add(self.frame_offset)
+            block_start
+                .add(self.frame_offset)
                 .add(tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>()))
                 .cast::<libc::sockaddr_ll>()
                 .read()
         };
 
-        let timestamp = Duration::from_secs(frame_hdr.tp_sec.into()) + Duration::from_nanos(frame_hdr.tp_nsec.into());
+        let timestamp = Duration::from_secs(frame_hdr.tp_sec.into())
+            + Duration::from_nanos(frame_hdr.tp_nsec.into());
 
         self.frame_offset = if self.rem_frames == 0 {
             self.block_size
@@ -221,10 +240,11 @@ impl PacketRxRing {
 
         let packet = unsafe {
             slice::from_raw_parts_mut(
-                block_start.add(self.frame_offset)
+                block_start
+                    .add(self.frame_offset)
                     .add(frame_hdr.tp_mac.into())
                     .as_ptr(),
-                frame_hdr.tp_snaplen as usize
+                frame_hdr.tp_snaplen as usize,
             )
         };
 
@@ -241,7 +261,7 @@ impl PacketRxRing {
             status_flags,
             rxhash,
             vlan_tci,
-            vlan_tpid
+            vlan_tpid,
         })
     }
 
@@ -249,7 +269,11 @@ impl PacketRxRing {
         if self.frame_offset == self.block_size {
             let block_start = unsafe { self.ring_start.add(self.block_idx * self.block_size) };
             let status_ptr = unsafe {
-                block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1.block_status))
+                block_start
+                    .add(mem::offset_of!(
+                        crate::linux::tpacket_block_desc,
+                        hdr.bh1.block_status
+                    ))
                     .cast::<u32>()
             };
 
@@ -267,7 +291,14 @@ impl PacketRxRing {
 
         if self.frame_offset == 0 {
             // Need to check if block is ready for reading
-            let status_ptr = unsafe { block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1.block_status)).cast::<u32>() };
+            let status_ptr = unsafe {
+                block_start
+                    .add(mem::offset_of!(
+                        crate::linux::tpacket_block_desc,
+                        hdr.bh1.block_status
+                    ))
+                    .cast::<u32>()
+            };
             let status = unsafe { ptr::read_volatile(status_ptr.as_ptr().cast_const()) };
             std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Acquire);
 
@@ -276,7 +307,8 @@ impl PacketRxRing {
             }
 
             let hdr = unsafe {
-                block_start.add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1))
+                block_start
+                    .add(mem::offset_of!(crate::linux::tpacket_block_desc, hdr.bh1))
                     .cast::<crate::linux::tpacket_hdr_v1>()
                     .as_ref()
             };
@@ -285,9 +317,8 @@ impl PacketRxRing {
             self.frame_offset = hdr.offset_to_first_pkt as usize;
         }
 
-        let block_data = unsafe {
-            slice::from_raw_parts_mut(block_start.as_ptr(), self.block_size)
-        };
+        let block_data =
+            unsafe { slice::from_raw_parts_mut(block_start.as_ptr(), self.block_size) };
 
         Some(RxBlock {
             block_data,
@@ -309,7 +340,8 @@ impl<'a> RxBlock<'a> {
     fn header(&self) -> &libc::tpacket_block_desc {
         unsafe {
             self.block_data[..mem::size_of::<libc::tpacket_block_desc>()]
-                .align_to::<libc::tpacket_block_desc>().1
+                .align_to::<libc::tpacket_block_desc>()
+                .1
                 .get(0)
                 .unwrap()
         }
@@ -341,17 +373,22 @@ impl<'a> RxBlock<'a> {
         *self.rem_frames -= 1;
 
         let frame_hdr = unsafe {
-            self.block_data[*self.frame_offset..*self.frame_offset + mem::size_of::<crate::linux::tpacket3_hdr>()]
-                .align_to::<crate::linux::tpacket3_hdr>().1[0]
+            self.block_data[*self.frame_offset
+                ..*self.frame_offset + mem::size_of::<crate::linux::tpacket3_hdr>()]
+                .align_to::<crate::linux::tpacket3_hdr>()
+                .1[0]
         };
 
-        let ll_offset = *self.frame_offset + tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>());
+        let ll_offset =
+            *self.frame_offset + tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>());
         let ll_addr = unsafe {
             self.block_data[ll_offset..ll_offset + mem::size_of::<libc::sockaddr_ll>()]
-                .align_to::<libc::sockaddr_ll>().1[0]
+                .align_to::<libc::sockaddr_ll>()
+                .1[0]
         };
 
-        let timestamp = Duration::from_secs(frame_hdr.tp_sec.into()) + Duration::from_nanos(frame_hdr.tp_nsec.into());
+        let timestamp = Duration::from_secs(frame_hdr.tp_sec.into())
+            + Duration::from_nanos(frame_hdr.tp_nsec.into());
 
         *self.frame_offset = if *self.rem_frames == 0 {
             self.block_data.len()
@@ -378,7 +415,7 @@ impl<'a> RxBlock<'a> {
             status_flags,
             rxhash,
             vlan_tci,
-            vlan_tpid
+            vlan_tpid,
         })
     }
 }
@@ -493,9 +530,6 @@ impl<'a> RxFrame<'a> {
     }
 }
 
-
-
-
 /// A reception-oriented ring buffer associated with a socket.
 pub struct PacketTxRing {
     ring_start: NonNull<u8>,
@@ -545,9 +579,15 @@ impl PacketTxRing {
         self.get_frame_impl(block_idx, frame_idx, false)
     }
 
-    fn get_frame_impl(&mut self, block_idx: usize, frame_idx: usize, update_frame_idx: bool) -> TxFrameVariant<'_> {
+    fn get_frame_impl(
+        &mut self,
+        block_idx: usize,
+        frame_idx: usize,
+        update_frame_idx: bool,
+    ) -> TxFrameVariant<'_> {
         let frame_data = unsafe {
-            self.ring_start.add(block_idx * self.block_size)
+            self.ring_start
+                .add(block_idx * self.block_size)
                 .add(frame_idx * self.frame_size)
         };
 
@@ -556,7 +596,8 @@ impl PacketTxRing {
         }
 
         let status_ptr = unsafe {
-            frame_data.add(mem::offset_of!(crate::linux::tpacket3_hdr, tp_status))
+            frame_data
+                .add(mem::offset_of!(crate::linux::tpacket3_hdr, tp_status))
                 .cast::<u32>()
         };
 
@@ -568,14 +609,14 @@ impl PacketTxRing {
         } else if status & libc::TP_STATUS_SENDING > 0 {
             return TxFrameVariant::Sending;
         } else {
-            let header = unsafe {
-                frame_data.cast::<crate::linux::tpacket3_hdr>().as_mut()
-            };
+            let header = unsafe { frame_data.cast::<crate::linux::tpacket3_hdr>().as_mut() };
 
             let data = unsafe {
                 slice::from_raw_parts_mut(
-                    frame_data.add(tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>())).as_ptr(),
-                    self.frame_size - tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>())
+                    frame_data
+                        .add(tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>()))
+                        .as_ptr(),
+                    self.frame_size - tpacket_align(mem::size_of::<crate::linux::tpacket3_hdr>()),
                 )
             };
 
@@ -587,16 +628,10 @@ impl PacketTxRing {
             header.tp_net = 0;
 
             if status == libc::TP_STATUS_AVAILABLE {
-                TxFrameVariant::Available(TxFrame {
-                    header,
-                    data,
-                })
+                TxFrameVariant::Available(TxFrame { header, data })
             } else {
                 debug_assert!(status & libc::TP_STATUS_WRONG_FORMAT > 0);
-                TxFrameVariant::WrongFormat(InvalidTxFrame {
-                    header,
-                    data,
-                })
+                TxFrameVariant::WrongFormat(InvalidTxFrame { header, data })
             }
         }
     }
@@ -610,14 +645,11 @@ impl PacketTxRing {
         let frame = match self.get_frame_impl(self.block_idx, self.frame_idx, true) {
             TxFrameVariant::Available(t) => Some(t),
             TxFrameVariant::WrongFormat(i) => Some(i.into_available()),
-            TxFrameVariant::SendRequest | TxFrameVariant::Sending => {
-                None
-            },
+            TxFrameVariant::SendRequest | TxFrameVariant::Sending => None,
         }?;
 
         Some(frame)
     }
-
 }
 
 /// A transmission frame capable of conveying a single packet.
@@ -633,7 +665,7 @@ impl<'a> TxFrame<'a> {
     }
 
     /// Sets the length of the packet to `packet_len` and marks the given packet as ready to send.
-    /// 
+    ///
     /// Note that this method does not explicitly send the packet; a call to `send()` or `poll()`
     /// is necessary for ready packets to actually be sent.
     pub fn set_length(&mut self, packet_len: usize) {

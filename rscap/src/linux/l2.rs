@@ -17,9 +17,7 @@ use std::time::Duration;
 use std::{io, mem, ptr};
 
 use super::addr::{L2Addr, L2Protocol};
-use super::mapped::{
-    BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame
-};
+use super::mapped::{BlockConfig, PacketRxRing, PacketTxRing, RxFrame, TxFrame};
 use super::{FanoutAlgorithm, RxTimestamping, TxTimestamping};
 
 use crate::filter::{PacketFilter, PacketStatistics};
@@ -76,8 +74,8 @@ impl L2Socket {
                     self.fd,
                     libc::SOL_SOCKET,
                     libc::SO_ATTACH_FILTER,
-                    ptr::addr_of!(bpf) as *const libc::c_void,
-                    mem::size_of::<libc::sock_fprog>() as u32,
+                    (&raw const bpf).cast(),
+                    mem::size_of::<libc::sock_fprog>() as libc::socklen_t,
                 ),
                 *libc::__errno_location(),
             )
@@ -118,19 +116,21 @@ impl L2Socket {
     /// - [io::ErrorKind::Other] - some other unexpected error occurred.
     #[inline]
     pub fn clear_filter(&self) -> io::Result<()> {
+        let dummy: libc::c_int = 0;
         match unsafe {
             (
                 libc::setsockopt(
                     self.fd,
                     libc::SOL_SOCKET,
                     libc::SO_DETACH_FILTER,
-                    ptr::null(),
-                    0u32,
+                    (&raw const dummy).cast(),
+                    mem::size_of_val(&dummy) as libc::socklen_t,
                 ),
                 *libc::__errno_location(),
             )
         } {
-            (0, _) => Ok(()),
+            // EINVAL occurs when the filter was not set to begin with.
+            (0, _) | (_, libc::EINVAL) => Ok(()),
             (_, libc::ENOENT) => Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "no filter was found for the given socket",
@@ -417,8 +417,8 @@ impl L2Socket {
         match unsafe {
             libc::bind(
                 self.fd,
-                ptr::addr_of!(sockaddr) as *const libc::sockaddr,
-                mem::size_of::<libc::sockaddr_ll>() as u32,
+                (&raw const sockaddr).cast(),
+                mem::size_of_val(&sockaddr) as libc::socklen_t,
             )
         } {
             0 => Ok(()),
@@ -444,8 +444,8 @@ impl L2Socket {
         match unsafe {
             libc::bind(
                 self.fd,
-                ptr::addr_of!(sockaddr) as *const libc::sockaddr,
-                mem::size_of::<libc::sockaddr_ll>() as u32,
+                (&raw const sockaddr).cast(),
+                mem::size_of_val(&sockaddr) as libc::socklen_t,
             )
         } {
             0 => Ok(()),
@@ -464,21 +464,17 @@ impl L2Socket {
             sll_halen: 0,
             sll_addr: [0u8; 8],
         };
-        let mut sockaddr_len = mem::size_of::<libc::sockaddr_ll>() as u32;
+        let mut sockaddr_len = mem::size_of_val(&sockaddr) as libc::socklen_t;
 
         let res = unsafe {
-            libc::getsockname(
-                self.fd,
-                ptr::addr_of_mut!(sockaddr) as *mut libc::sockaddr,
-                ptr::addr_of_mut!(sockaddr_len),
-            )
+            libc::getsockname(self.fd, (&raw mut sockaddr).cast(), (&raw mut sockaddr_len))
         };
 
         if res < 0 {
             return Err(io::Error::last_os_error());
         }
 
-        if sockaddr_len != mem::size_of::<libc::sockaddr_ll>() as u32
+        if sockaddr_len as usize != mem::size_of::<libc::sockaddr_ll>()
             || sockaddr.sll_family != libc::AF_PACKET as u16
         {
             return Err(io::Error::new(
@@ -839,7 +835,7 @@ impl L2Socket {
     /// This method will fail if the socket has not been bound  to an [`L2Addr`] (i.e., via
     /// [`bind()`](L2Socket::bind())).
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        match unsafe { libc::recv(self.fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0) } {
+        match unsafe { libc::recv(self.fd, buf.as_mut_ptr().cast(), buf.len(), 0) } {
             ..=-1 => Err(io::Error::last_os_error()),
             recvd => Ok(recvd as usize),
         }
@@ -1047,17 +1043,11 @@ impl L2Socket {
         self.set_tx_ring_opt(config)?;
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, true)?;
-        let rx_ring = unsafe {
-            PacketRxRing::new(
-                mapping.cast(),
-                config,
-                reserved.unwrap_or(0) as usize,
-            )
-        };
+        let rx_ring =
+            unsafe { PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize) };
 
-        let tx_ring = unsafe {
-            PacketTxRing::new((mapping.cast::<u8>()).add(config.map_length()), config)
-        };
+        let tx_ring =
+            unsafe { PacketTxRing::new((mapping.cast::<u8>()).add(config.map_length()), config) };
 
         Ok(L2MappedSocket {
             socket: self,
@@ -1080,7 +1070,6 @@ impl L2Socket {
 
         let tx_ring = unsafe { PacketTxRing::new(mapping.cast(), config) };
 
-
         Ok(L2TxMappedSocket {
             socket: self,
             tx_ring,
@@ -1100,13 +1089,8 @@ impl L2Socket {
         self.set_rx_ring_opt(config, timeout, reserved)?;
         let mapping = self.mmap_socket(config, false)?;
 
-        let rx_ring = unsafe {
-            PacketRxRing::new(
-                mapping.cast(),
-                config,
-                reserved.unwrap_or(0) as usize,
-            )
-        };
+        let rx_ring =
+            unsafe { PacketRxRing::new(mapping.cast(), config, reserved.unwrap_or(0) as usize) };
 
         Ok(L2RxMappedSocket {
             socket: self,
@@ -1310,12 +1294,10 @@ impl L2MappedSocket {
 
         let timeout: libc::c_int = match timeout {
             None => -1,
-            Some(d) => d.as_millis().try_into().unwrap()
+            Some(d) => d.as_millis().try_into().unwrap(),
         };
 
-        let ret = unsafe {
-            libc::poll(&raw mut pfd, 1, timeout)
-        };
+        let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -1339,15 +1321,13 @@ impl L2MappedSocket {
 
     /// Schedules packets previously written to the memory-mapped ring buffer via
     /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
-    /// 
+    ///
     /// This method will follow non-blocking behavior set on the socket. In the event a blocking
     /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
     /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
     /// again until a successful result is returned.
     pub fn flush_send(&self) -> io::Result<()> {
-        let ret = unsafe {
-            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
-        };
+        let ret = unsafe { libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -1742,32 +1722,30 @@ impl L2TxMappedSocket {
     */
 
     /// Retrieves the next frame in the memory-mapped ring buffer to transmit a packet with.
-    /// 
+    ///
     /// The returned [`TxFrame`] should have data written to it via the
     /// [`data()`](`TxFrame::data_mut`) method. Following this, the length of the packet must
     /// be set using [`set_length()`](`TxFrame::set_length`). The packet will be marked as ready
     /// to send as soon as it is dropped; in the event `set_length()` is not called before the
     /// packet is dropped, the kernel will read a zero-byte packet in the given frame and mark
     /// the slot as an [`InvalidTxFrame`].
-    /// 
+    ///
     /// Mapped packets written via this method **WILL NOT** be sent until a successful call to
     /// [`flush_send()`](`Self::flush_send`) or [`flush_sendto()`](`Self::flush_sendto`).
-    /// 
+    ///
     pub fn mapped_send(&mut self) -> Option<TxFrame<'_>> {
         self.tx_ring.next_frame()
     }
 
     /// Schedules packets previously written to the memory-mapped ring buffer via
     /// [`mapped_send()`](`Self::mapped_send`) to be sent immediately.
-    /// 
+    ///
     /// This method will follow non-blocking behavior set on the socket. In the event a blocking
     /// error is returned (i.e. [io::ErrorKind::WouldBlock]), packets in the memory-mapped send
     /// ring will **not** be fully sent; the socket must be polled and have `flush_send()` called
     /// again until a successful result is returned.
     pub fn flush_send(&self) -> io::Result<()> {
-        let ret = unsafe {
-            libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0)
-        };
+        let ret = unsafe { libc::sendto(self.socket.fd, ptr::null(), 0, 0, ptr::null(), 0) };
 
         if ret < 0 {
             Err(io::Error::last_os_error())
@@ -2100,12 +2078,10 @@ impl L2RxMappedSocket {
 
         let timeout: libc::c_int = match timeout {
             None => -1,
-            Some(d) => d.as_millis().try_into().unwrap()
+            Some(d) => d.as_millis().try_into().unwrap(),
         };
 
-        let ret = unsafe {
-            libc::poll(&raw mut pfd, 1, timeout)
-        };
+        let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout) };
 
         if ret < 0 {
             let e = io::Error::last_os_error();
@@ -2273,8 +2249,6 @@ impl AsRawFd for L2RxMappedSocket {
 impl AsFd for L2RxMappedSocket {
     #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe {
-            BorrowedFd::borrow_raw(self.socket.fd)
-        }
+        unsafe { BorrowedFd::borrow_raw(self.socket.fd) }
     }
 }

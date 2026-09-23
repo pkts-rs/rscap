@@ -20,13 +20,13 @@
 use addr::L2Protocol;
 use l2::L2Socket;
 
-use mapped::{BlockConfig, RxFrame};
+// use mapped::{BlockConfig, RxFrame};
 
-#[cfg(not(target_os = "windows"))]
+use std::io;
+#[cfg(unix)]
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-use std::{cmp, io};
 
-use crate::{Interface, filter::PacketFilter, linux::l2::L2RxMappedSocket};
+use crate::{filter::PacketFilter, Interface};
 
 pub mod addr;
 pub mod l2;
@@ -358,18 +358,23 @@ pub enum FanoutAlgorithm {
     QueueMapping,
 }
 
-pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 4 * 1024 * 1024; // Default each buffer of 4MB
+// pub(crate) const DEFAULT_DRIVER_BUFFER: usize = 4 * 1024 * 1024; // Default each buffer of 4MB
 
 pub(crate) struct SnifferImpl {
-    socket: L2RxMappedSocket,
+    socket: L2Socket,
 }
 
 impl SnifferImpl {
     #[inline]
     pub fn new(if_name: Interface) -> io::Result<Self> {
-        Self::new_with_size(if_name, DEFAULT_DRIVER_BUFFER)
+        let socket = L2Socket::new()?;
+        socket.set_filter(&mut PacketFilter::reject_all())?;
+        socket.bind(if_name, L2Protocol::All)?;
+
+        Ok(Self { socket })
     }
 
+    /*
     /// Note that `ring_size` must be greater than or equal to 524288 (512 KB), and may be
     /// rounded down to the nearest 512 KB when allocating buffers.
     #[inline]
@@ -411,15 +416,14 @@ impl SnifferImpl {
         }
 
         let socket = L2Socket::new()?;
-        let config = BlockConfig::new(block_size, block_cnt, 131072)?; // Big enough for loopback ethernet frame
-        let mapped_socket = socket.packet_rx_ring(config, None, None)?;
-        mapped_socket.set_filter(&mut PacketFilter::reject_all())?;
-        mapped_socket.bind(if_name, L2Protocol::All)?;
+        socket.set_filter(&mut PacketFilter::reject_all())?;
+        socket.bind(if_name, L2Protocol::All)?;
 
         Ok(Self {
-            socket: mapped_socket,
+            socket,
         })
     }
+    */
 
     #[inline]
     pub fn activate(&mut self, filter: Option<PacketFilter>) -> io::Result<()> {
@@ -452,7 +456,10 @@ impl SnifferImpl {
     }
 
     #[inline]
-    pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        self.socket.recv(buf)
+
+        /*
         loop {
             if let Some(rx_frame) = self.socket.mapped_recv() {
                 let recv_data = rx_frame.data();
@@ -463,14 +470,17 @@ impl SnifferImpl {
 
             while !self.socket.poll_recv(None)? { }
         }
+        */
     }
 
+    /*
     #[inline]
     pub fn mapped_recv(&mut self) -> Option<RxFrameImpl<'_>> {
         Some(RxFrameImpl {
             frame: self.socket.mapped_recv()?,
         })
     }
+    */
 }
 
 impl AsRawFd for SnifferImpl {
@@ -486,6 +496,7 @@ impl AsFd for SnifferImpl {
     }
 }
 
+/*
 pub(crate) struct RxFrameImpl<'a> {
     frame: RxFrame<'a>,
 }
@@ -499,3 +510,4 @@ impl RxFrameImpl<'_> {
         self.frame.data_mut()
     }
 }
+*/
